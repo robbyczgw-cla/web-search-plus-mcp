@@ -1,4 +1,9 @@
 FROM python:3.12-slim
+
+LABEL org.opencontainers.image.title="web-search-plus-mcp"
+LABEL org.opencontainers.image.description="Multi-provider web search MCP server"
+LABEL org.opencontainers.image.source="https://github.com/robbyczgw-cla/web-search-plus-mcp"
+
 WORKDIR /app
 RUN pip install --no-cache-dir web-search-plus-mcp
 
