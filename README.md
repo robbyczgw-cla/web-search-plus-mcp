@@ -27,13 +27,17 @@ web-search-plus-mcp
 
 ## Provider Routing
 
-| Provider | Best For | Required Key |
-|----------|----------|-------------|
+| Provider | Best For | Config |
+|----------|----------|--------|
 | **Serper** (Google) | General search, news, current events | `SERPER_API_KEY` |
 | **Tavily** | Research, deep content extraction | `TAVILY_API_KEY` |
 | **Exa** | Neural / semantic / discovery search | `EXA_API_KEY` |
+| **Querit** | Multilingual AI search | `QUERIT_API_KEY` |
+| **Perplexity** | AI-powered answers | `PERPLEXITY_API_KEY` |
+| **You.com** | RAG / real-time search | `YOU_API_KEY` |
+| **SearXNG** | Self-hosted / privacy-first | `SEARXNG_BASE_URL` |
 
-Auto-routing picks Serper for news/general queries, Tavily for research/analysis, and Exa for discovery-style or semantic queries. Falls back gracefully if a provider key is missing.
+Auto-routing picks the best provider per query: Serper for news/general, Tavily for research/analysis, Exa for discovery/semantic, Querit for multilingual, Perplexity for AI-powered answers, You.com for RAG/real-time, and SearXNG for privacy-first or self-hosted setups. Falls back gracefully if a provider key is missing.
 
 ## Claude Desktop Config
 
@@ -48,7 +52,11 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "env": {
         "SERPER_API_KEY": "your_serper_key",
         "TAVILY_API_KEY": "your_tavily_key",
-        "EXA_API_KEY": "your_exa_key"
+        "EXA_API_KEY": "your_exa_key",
+        "QUERIT_API_KEY": "your_querit_key",
+        "PERPLEXITY_API_KEY": "your_perplexity_key",
+        "YOU_API_KEY": "your_you_key",
+        "SEARXNG_BASE_URL": "https://your-searxng-instance.example.com"
       }
     }
   }
@@ -69,7 +77,11 @@ Add to your NanoBot `config.json` under `mcp_servers`:
       "env": {
         "SERPER_API_KEY": "your_serper_key",
         "TAVILY_API_KEY": "your_tavily_key",
-        "EXA_API_KEY": "your_exa_key"
+        "EXA_API_KEY": "your_exa_key",
+        "QUERIT_API_KEY": "your_querit_key",
+        "PERPLEXITY_API_KEY": "your_perplexity_key",
+        "YOU_API_KEY": "your_you_key",
+        "SEARXNG_BASE_URL": "https://your-searxng-instance.example.com"
       }
     }
   ]
@@ -78,13 +90,17 @@ Add to your NanoBot `config.json` under `mcp_servers`:
 
 ## API Keys
 
-| Provider | Free Tier | Get Key |
-|----------|-----------|---------|
-| Serper | 2,500 free searches/month | [serper.dev](https://serper.dev) |
-| Tavily | 1,000 free searches/month | [tavily.com](https://tavily.com) |
-| Exa | 1,000 free searches/month | [exa.ai](https://exa.ai) |
+| Provider | Free Tier | Get Key / Config |
+|----------|-----------|-----------------|
+| Serper | 2,500 free searches/month | [serper.dev](https://serper.dev) → `SERPER_API_KEY` |
+| Tavily | 1,000 free searches/month | [tavily.com](https://tavily.com) → `TAVILY_API_KEY` |
+| Exa | 1,000 free searches/month | [exa.ai](https://exa.ai) → `EXA_API_KEY` |
+| Querit | Free tier available | [querit.ai](https://querit.ai) → `QUERIT_API_KEY` |
+| Perplexity | Free tier available | [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api) → `PERPLEXITY_API_KEY` |
+| You.com | Free tier available | [you.com/api](https://you.com/api) → `YOU_API_KEY` |
+| SearXNG | Self-hosted, free | Set `SEARXNG_BASE_URL` to your instance URL |
 
-At least one provider key is required. All three recommended for best routing.
+At least one provider is required. More providers = better routing coverage. SearXNG needs no API key — just point `SEARXNG_BASE_URL` at your self-hosted instance.
 
 You can also drop a `.env` file next to the server script:
 
@@ -92,6 +108,10 @@ You can also drop a `.env` file next to the server script:
 SERPER_API_KEY=xxx
 TAVILY_API_KEY=xxx
 EXA_API_KEY=xxx
+QUERIT_API_KEY=xxx
+PERPLEXITY_API_KEY=xxx
+YOU_API_KEY=xxx
+SEARXNG_BASE_URL=https://your-searxng-instance.example.com
 ```
 
 ## Tool Reference
@@ -101,7 +121,7 @@ EXA_API_KEY=xxx
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `query` | string | *required* | Search query |
-| `provider` | string | `"auto"` | Force provider: `auto`, `serper`, `tavily`, `exa` |
+| `provider` | string | `"auto"` | Force provider: `auto`, `serper`, `tavily`, `exa`, `querit`, `perplexity`, `you`, `searxng` |
 | `count` | integer | `5` | Number of results to return |
 
 ## Credits
