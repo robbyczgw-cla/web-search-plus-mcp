@@ -9,6 +9,10 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io/) server that gives AI assistants access to 7 search providers with intelligent auto-routing. Analyzes query intent and picks the best provider automatically — no manual switching needed. Install, configure your keys, and go.
 
+<a href="https://glama.ai/mcp/servers/robbyczgw-cla/web-search-plus-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/robbyczgw-cla/web-search-plus-mcp/badge" alt="web-search-plus-mcp MCP server" />
+</a>
+
 ## ✨ Features
 
 - **Intelligent auto-routing** — analyzes query intent and picks the best provider automatically
