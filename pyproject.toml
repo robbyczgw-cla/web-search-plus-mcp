@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "web-search-plus-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Multi-provider web search MCP server with intelligent auto-routing (Serper, Tavily, Querit, Exa, Perplexity, You.com, SearXNG)"
 readme = "README.md"
 license = { file = "LICENSE" }
