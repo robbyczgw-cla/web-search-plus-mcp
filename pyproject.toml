@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "web-search-plus-mcp"
-version = "0.1.1"
+version = "0.1.2"
 description = "Multi-provider web search MCP server with intelligent auto-routing (Serper, Tavily, Querit, Exa, Perplexity, You.com, SearXNG)"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 dependencies = ["mcp>=1.0.0"]
 
 [project.scripts]
-web-search-plus-mcp = "web_search_plus_mcp.server:main"
+web-search-plus-mcp = "web_search_plus_mcp.server:run"
 
 [project.urls]
 Homepage = "https://github.com/robbyczgw-cla/web-search-plus-mcp"

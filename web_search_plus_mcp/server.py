@@ -87,5 +87,9 @@ async def main():
         await app.run(read_stream, write_stream, app.create_initialization_options())
 
 
-if __name__ == "__main__":
+def run():
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    run()
