@@ -1,4 +1,71 @@
 {
   "$schema": "https://glama.ai/mcp/schemas/server.json",
-  "maintainers": ["robbyczgw-cla"]
+  "maintainers": [
+    "robbyczgw-cla"
+  ],
+  "name": "web-search-plus-mcp",
+  "description": "Multi-provider web search MCP server with intelligent auto-routing across Serper, Tavily, Exa, Perplexity, You.com, SearXNG, and Querit.",
+  "repository": "https://github.com/robbyczgw-cla/web-search-plus-mcp",
+  "homepage": "https://github.com/robbyczgw-cla/web-search-plus-mcp",
+  "license": "MIT",
+  "runtime": "python",
+  "transport": [
+    "stdio"
+  ],
+  "install": {
+    "uvx": "uvx web-search-plus-mcp",
+    "pip": "pip install web-search-plus-mcp"
+  },
+  "mcp": {
+    "command": "uvx",
+    "args": [
+      "web-search-plus-mcp"
+    ]
+  },
+  "tools": [
+    {
+      "name": "web_search",
+      "description": "Search the web with intelligent auto-routing and optional provider override.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query"
+          },
+          "provider": {
+            "type": "string",
+            "description": "Provider override",
+            "enum": [
+              "auto",
+              "serper",
+              "tavily",
+              "exa"
+            ],
+            "default": "auto"
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of results",
+            "default": 5
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    }
+  ],
+  "features": {
+    "autoRouting": true,
+    "providers": [
+      "serper",
+      "tavily",
+      "exa",
+      "perplexity",
+      "you",
+      "searxng",
+      "querit"
+    ]
+  }
 }
