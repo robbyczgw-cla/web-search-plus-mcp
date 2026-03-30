@@ -142,3 +142,8 @@ Built on the **[web-search-plus](https://clawhub.com/skills/web-search-plus)** r
 ## License
 
 MIT © 2026 robbyczgw-cla
+
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/robbyczgw-cla-web-search-plus-mcp).
+
