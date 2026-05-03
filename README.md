@@ -6,53 +6,36 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Glama](https://glama.ai/mcp/servers/robbyczgw-cla/web-search-plus-mcp/badge)](https://glama.ai/mcp/servers/robbyczgw-cla/web-search-plus-mcp)
 
-**Multi-provider web search MCP server with intelligent auto-routing.**
+**Multi-provider web search and extraction MCP server with intelligent auto-routing.**
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) server that gives AI assistants access to 7 search providers with intelligent auto-routing. Analyzes query intent and picks the best provider automatically — no manual switching needed. Install, configure your keys, and go.
+`web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, NanoBot, Cursor, and other MCP-compatible hosts access to the same Python routing engine family used by the Hermes/OpenClaw Web Search Plus tools.
 
 ## ✨ Features
 
-- **Intelligent auto-routing** — analyzes query intent and picks the best provider automatically
-- **7 search providers** — use one or all, graceful fallback if any key is missing
-- **Zero install option** — run instantly with `uvx web-search-plus-mcp`
-- **MCP-native** — works with Claude Desktop, NanoBot, and any MCP-compatible host
-
-## 🔎 Supported Providers
-
-| Provider | Best for | Free tier |
-|----------|----------|-----------|
-| **Serper** (Google) | Facts, news, shopping, local businesses | 2,500 queries/month |
-| **Tavily** | Deep research, analysis, explanations | 1,000 queries/month |
-| **Querit** | Multi-lingual AI search with rich metadata and real-time info | 1,000 queries/month |
-| **Exa** (Neural) | Semantic discovery, finding similar content | 1,000 queries/month |
-| **Perplexity** | AI-synthesized answers with citations | Via API key |
-| **You.com** | Real-time RAG, LLM-ready snippets | Limited free tier |
-| **SearXNG** | Privacy-first, self-hosted, $0 cost | Free (self-hosted) |
-
-## 🧠 Auto-Routing Examples
-
-| Query | Routed to | Why |
-|-------|-----------|-----|
-| "iPhone 16 Pro price" | Serper | Shopping intent detected |
-| "how does TCP/IP work" | Tavily | Research/explanation intent |
-| "latest multilingual EV market updates" | Querit | Real-time AI search |
-| "companies like Stripe" | Exa | Discovery/semantic intent |
-| "what is quantum computing" | Perplexity | Direct answer intent |
+- **10 search providers** — Serper, Brave, Tavily, Exa, Querit, Linkup, Firecrawl, Perplexity, You.com, SearXNG
+- **5 extract providers** — Firecrawl, Linkup, Tavily, Exa, You.com
+- **Intelligent auto-routing** — scores query intent and picks a provider automatically
+- **Quality reports** — optional routing/result diagnostics
+- **Research mode** — opt-in multi-provider search + top-source extraction with a time budget
+- **Zero-install run** — `uvx web-search-plus-mcp`
+- **MCP-native** — stdio server exposing `web_search` and `web_extract`
 
 ## 🚀 Quick Start
 
 ```bash
-# Run instantly with uvx (no install needed)
+# Run instantly with uvx
 uvx web-search-plus-mcp
 
-# Or install globally with pip
+# Or install globally
 pip install web-search-plus-mcp
 web-search-plus-mcp
 ```
 
+At least one provider credential is required for search. Extraction needs at least one extraction-capable provider key.
+
 ## ⚙️ Claude Desktop Config
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS or `%APPDATA%\\Claude\\claude_desktop_config.json` on Windows:
 
 ```json
 {
@@ -61,83 +44,105 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "command": "uvx",
       "args": ["web-search-plus-mcp"],
       "env": {
-        "SERPER_API_KEY": "your_serper_key",
+        "LINKUP_API_KEY": "your_linkup_key",
         "TAVILY_API_KEY": "your_tavily_key",
-        "QUERIT_API_KEY": "your_querit_key",
         "EXA_API_KEY": "your_exa_key",
+        "FIRECRAWL_API_KEY": "your_firecrawl_key",
+        "BRAVE_API_KEY": "your_brave_key",
+        "SERPER_API_KEY": "your_serper_key",
+        "QUERIT_API_KEY": "your_querit_key",
         "PERPLEXITY_API_KEY": "your_perplexity_key",
         "YOU_API_KEY": "your_you_key",
-        "SEARXNG_BASE_URL": "https://your-searxng-instance.example.com"
+        "SEARXNG_INSTANCE_URL": "https://your-searxng-instance.example.com"
       }
     }
   }
 }
 ```
 
-## 🤖 NanoBot Config
+You can also place a `.env` file next to the package/project with the same variables.
 
-Add to your NanoBot `config.json` under `mcp_servers`:
+## 🔎 Search Providers
 
-```json
-{
-  "mcp_servers": [
-    {
-      "name": "web-search-plus",
-      "command": "uvx",
-      "args": ["web-search-plus-mcp"],
-      "env": {
-        "SERPER_API_KEY": "your_serper_key",
-        "TAVILY_API_KEY": "your_tavily_key",
-        "QUERIT_API_KEY": "your_querit_key",
-        "EXA_API_KEY": "your_exa_key",
-        "PERPLEXITY_API_KEY": "your_perplexity_key",
-        "YOU_API_KEY": "your_you_key",
-        "SEARXNG_BASE_URL": "https://your-searxng-instance.example.com"
-      }
-    }
-  ]
-}
-```
+- **Serper** — Google-style facts, news, shopping, local queries
+- **Brave** — general-purpose independent web index
+- **Tavily** — research and analysis
+- **Exa** — semantic discovery, similarity, deep/deep-reasoning synthesis
+- **Querit** — multilingual, real-time AI search
+- **Linkup** — source-backed grounding/citations
+- **Firecrawl** — web search plus scrape-ready content
+- **Perplexity** — direct synthesized answers
+- **You.com** — LLM-ready real-time snippets
+- **SearXNG** — privacy-first self-hosted meta-search
 
-## 🔑 Environment Variables
+## 📄 Extract Providers
 
-| Variable | Provider | Sign up |
-|----------|----------|---------|
-| `SERPER_API_KEY` | Serper (Google) | [console.serper.dev](https://console.serper.dev) |
-| `TAVILY_API_KEY` | Tavily | [tavily.com](https://tavily.com) |
-| `QUERIT_API_KEY` | Querit | [querit.ai](https://querit.ai) |
-| `EXA_API_KEY` | Exa | [exa.ai](https://exa.ai) |
-| `PERPLEXITY_API_KEY` | Perplexity | [docs.perplexity.ai](https://docs.perplexity.ai) |
-| `YOU_API_KEY` | You.com | [you.com/api](https://you.com/api) |
-| `SEARXNG_BASE_URL` | SearXNG (self-hosted) | [docs.searxng.org](https://docs.searxng.org) |
+- **Linkup** — recommended first choice for clean markdown and low cost
+- **Firecrawl** — robust scrape fallback, useful for JS-heavy/blocked pages
+- **Tavily** — extraction/content API
+- **Exa** — contents API
+- **You.com** — LLM-ready snippets/content where available
 
-At least one provider is required. More providers = better routing coverage. SearXNG needs no API key — just point `SEARXNG_BASE_URL` at your self-hosted instance.
-
-You can also drop a `.env` file next to the server:
-
-```env
-SERPER_API_KEY=xxx
-TAVILY_API_KEY=xxx
-QUERIT_API_KEY=xxx
-EXA_API_KEY=xxx
-PERPLEXITY_API_KEY=xxx
-YOU_API_KEY=xxx
-SEARXNG_BASE_URL=https://your-searxng-instance.example.com
-```
-
-## 🛠 Tool Reference
+## 🛠 MCP Tool Reference
 
 ### `web_search`
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `query` | string | *required* | Search query |
-| `provider` | string | `"auto"` | Force a provider: `auto`, `serper`, `tavily`, `querit`, `exa`, `perplexity`, `you`, `searxng` |
-| `count` | integer | `5` | Number of results to return |
+Parameters:
+
+- `query` — required search query
+- `provider` — `auto`, `serper`, `brave`, `tavily`, `exa`, `querit`, `linkup`, `firecrawl`, `perplexity`, `you`, `searxng`
+- `count` — results to return, default `5`, max `20`
+- `depth` — Exa depth: `normal`, `deep`, `deep-reasoning`
+- `time_range` — `hour`, `day`, `week`, `month`, `year`
+- `include_domains` / `exclude_domains` — domain allow/deny lists
+- `mode` — `normal` or `research`
+- `quality_report` — include routing/result diagnostics
+- `research_time_budget` — best-effort wall-clock budget for research mode
+
+Example MCP arguments:
+
+```json
+{
+  "query": "latest Hermes Agent release",
+  "provider": "linkup",
+  "count": 5,
+  "quality_report": true
+}
+```
+
+### `web_extract`
+
+Parameters:
+
+- `urls` — required list of URLs
+- `provider` — `auto`, `firecrawl`, `linkup`, `tavily`, `exa`, `you`
+- `format` — `markdown` or `html`
+- `include_images` — include image metadata when supported
+- `include_raw_html` — include raw HTML when supported
+- `render_js` — render JavaScript before extraction when supported
+
+Example MCP arguments:
+
+```json
+{
+  "urls": ["https://example.com"],
+  "provider": "linkup",
+  "format": "markdown"
+}
+```
+
+## 🧠 Auto-Routing Examples
+
+- `iPhone 16 Pro price` → Serper/Brave shopping-style search
+- `how does TCP/IP work` → Tavily research-style search
+- `latest multilingual EV market updates` → Querit/Linkup real-time/source-backed search
+- `companies like Stripe` → Exa discovery search
+- `what is quantum computing` → Perplexity/You.com direct-answer style search
+- `privacy focused search results` → SearXNG when configured
 
 ## Credits
 
-Built on the **[web-search-plus](https://clawhub.com/skills/web-search-plus)** routing logic — a multi-provider search skill for OpenClaw with intelligent auto-routing.
+Built on the Web Search Plus routing logic originally developed for OpenClaw/Clawhub and later ported to Hermes as `hermes-web-search-plus`.
 
 ## License
 

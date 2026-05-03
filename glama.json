@@ -4,7 +4,7 @@
     "robbyczgw-cla"
   ],
   "name": "web-search-plus-mcp",
-  "description": "Multi-provider web search MCP server with intelligent auto-routing across Serper, Tavily, Exa, Perplexity, You.com, SearXNG, and Querit.",
+  "description": "Multi-provider web search and extraction MCP server with intelligent auto-routing, quality reports, and research mode.",
   "repository": "https://github.com/robbyczgw-cla/web-search-plus-mcp",
   "homepage": "https://github.com/robbyczgw-cla/web-search-plus-mcp",
   "license": "MIT",
@@ -25,47 +25,68 @@
   "tools": [
     {
       "name": "web_search",
-      "description": "Search the web with intelligent auto-routing and optional provider override.",
+      "description": "Search the web with intelligent auto-routing, provider override, quality reports, and optional research mode.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "query": {
-            "type": "string",
-            "description": "Search query"
-          },
+          "query": {"type": "string", "description": "Search query"},
           "provider": {
             "type": "string",
             "description": "Provider override",
-            "enum": [
-              "auto",
-              "serper",
-              "tavily",
-              "exa"
-            ],
+            "enum": ["auto", "serper", "brave", "tavily", "exa", "querit", "linkup", "firecrawl", "perplexity", "you", "searxng"],
             "default": "auto"
           },
-          "count": {
-            "type": "integer",
-            "description": "Number of results",
-            "default": 5
-          }
+          "count": {"type": "integer", "description": "Number of results", "default": 5},
+          "depth": {"type": "string", "enum": ["normal", "deep", "deep-reasoning"], "default": "normal"},
+          "time_range": {"type": "string", "enum": ["hour", "day", "week", "month", "year"]},
+          "include_domains": {"type": "array", "items": {"type": "string"}},
+          "exclude_domains": {"type": "array", "items": {"type": "string"}},
+          "mode": {"type": "string", "enum": ["normal", "research"], "default": "normal"},
+          "quality_report": {"type": "boolean", "default": false},
+          "research_time_budget": {"type": "number", "default": 55.0}
         },
-        "required": [
-          "query"
-        ]
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "web_extract",
+      "description": "Extract markdown or HTML from URLs via Linkup, Firecrawl, Tavily, Exa, or You.com.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "urls": {"type": "array", "items": {"type": "string"}},
+          "provider": {"type": "string", "enum": ["auto", "firecrawl", "linkup", "tavily", "exa", "you"], "default": "auto"},
+          "format": {"type": "string", "enum": ["markdown", "html"], "default": "markdown"},
+          "include_images": {"type": "boolean", "default": false},
+          "include_raw_html": {"type": "boolean", "default": false},
+          "render_js": {"type": "boolean", "default": false}
+        },
+        "required": ["urls"]
       }
     }
   ],
   "features": {
     "autoRouting": true,
+    "qualityReports": true,
+    "researchMode": true,
     "providers": [
       "serper",
+      "brave",
       "tavily",
       "exa",
+      "querit",
+      "linkup",
+      "firecrawl",
       "perplexity",
       "you",
-      "searxng",
-      "querit"
+      "searxng"
+    ],
+    "extractProviders": [
+      "firecrawl",
+      "linkup",
+      "tavily",
+      "exa",
+      "you"
     ]
   }
 }
