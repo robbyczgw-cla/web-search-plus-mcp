@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-Web Search Plus — Unified Multi-Provider Search with Intelligent Auto-Routing
-Supports: Serper (Google), Tavily (Research), Querit (Multilingual AI Search),
-Exa (Neural), Perplexity (Direct Answers)
+Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
+Version: 1.7.0
+Supports search providers: Serper (Google), Brave Search, Tavily, Querit,
+Linkup, Exa, Firecrawl, Perplexity, You.com, SearXNG.
+Supports extract providers: Firecrawl, Linkup, Tavily, Exa, You.com.
 
 Smart Routing uses multi-signal analysis:
   - Query intent classification (shopping, research, discovery)
@@ -13,7 +15,7 @@ Smart Routing uses multi-signal analysis:
 
 Usage:
     python3 search.py --query "..."                    # Auto-route based on query
-    python3 search.py --provider [serper|tavily|querit|exa] --query "..." [options]
+    python3 search.py --provider [serper|brave|tavily|linkup|querit|exa|firecrawl|perplexity|you|searxng|auto] --query "..." [options]
 
 Examples:
     python3 search.py -q "iPhone 16 Pro price"              # → Serper (shopping intent)
@@ -33,7 +35,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlencode, urlparse
 
 
 # =============================================================================
@@ -246,9 +248,14 @@ def cache_stats() -> Dict[str, Any]:
 # Auto-load .env from skill directory (if exists)
 # =============================================================================
 def _load_env_file():
-    """Load .env file from skill root directory if it exists."""
-    env_path = Path(__file__).parent.parent / ".env"
-    if env_path.exists():
+    """Load .env files from plugin-local and legacy parent locations."""
+    env_paths = [
+        Path(__file__).parent / ".env",
+        Path(__file__).parent.parent / ".env",
+    ]
+    for env_path in env_paths:
+        if not env_path.exists():
+            continue
         with open(env_path) as f:
             for line in f:
                 line = line.strip()
@@ -277,7 +284,7 @@ DEFAULT_CONFIG = {
     "auto_routing": {
         "enabled": True,
         "fallback_provider": "serper",
-        "provider_priority": ["tavily", "querit", "exa", "perplexity", "serper", "you", "searxng"],
+        "provider_priority": ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "brave", "serper", "you", "searxng"],
         "disabled_providers": [],
         "confidence_threshold": 0.3,  # Below this, note low confidence
     },
@@ -285,6 +292,11 @@ DEFAULT_CONFIG = {
         "country": "us",
         "language": "en",
         "type": "search"
+    },
+    "brave": {
+        "country": "US",
+        "search_lang": "en",
+        "safesearch": "moderate",
     },
     "tavily": {
         "depth": "basic",
@@ -295,6 +307,12 @@ DEFAULT_CONFIG = {
         "base_path": "/v1/search",
         "timeout": 10
     },
+    "linkup": {
+        "api_url": "https://api.linkup.so/v1/search",
+        "depth": "standard",
+        "output_type": "searchResults",
+        "timeout": 30
+    },
     "exa": {
         "type": "neural",
         "depth": "normal",
@@ -303,6 +321,13 @@ DEFAULT_CONFIG = {
     "perplexity": {
         "api_url": "https://api.kilo.ai/api/gateway/chat/completions",
         "model": "perplexity/sonar-pro"
+    },
+    "firecrawl": {
+        "api_url": "https://api.firecrawl.dev/v2/search",
+        "country": "US",
+        "timeout": 30000,
+        "sources": ["web"],
+        "ignore_invalid_urls": False
     },
     "you": {
         "country": "us",
@@ -364,10 +389,13 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
         return os.environ.get("PERPLEXITY_API_KEY") or os.environ.get("KILOCODE_API_KEY")
     key_map = {
         "serper": "SERPER_API_KEY",
+        "brave": "BRAVE_API_KEY",
         "tavily": "TAVILY_API_KEY",
         "querit": "QUERIT_API_KEY",
+        "linkup": "LINKUP_API_KEY",
         "exa": "EXA_API_KEY",
         "you": "YOU_API_KEY",
+        "firecrawl": "FIRECRAWL_API_KEY",
     }
     return os.environ.get(key_map.get(provider, ""))
 
@@ -482,20 +510,26 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
     if not key:
         env_var = {
             "serper": "SERPER_API_KEY",
+            "brave": "BRAVE_API_KEY",
             "tavily": "TAVILY_API_KEY",
             "querit": "QUERIT_API_KEY",
+            "linkup": "LINKUP_API_KEY",
             "exa": "EXA_API_KEY",
             "you": "YOU_API_KEY",
-            "perplexity": "KILOCODE_API_KEY"
+            "perplexity": "KILOCODE_API_KEY",
+            "firecrawl": "FIRECRAWL_API_KEY"
         }[provider]
         
         urls = {
             "serper": "https://serper.dev",
+            "brave": "https://brave.com/search/api/",
             "tavily": "https://tavily.com",
             "querit": "https://querit.ai",
+            "linkup": "https://app.linkup.so",
             "exa": "https://exa.ai",
             "you": "https://api.you.com",
-            "perplexity": "https://api.kilo.ai"
+            "perplexity": "https://api.kilo.ai",
+            "firecrawl": "https://www.firecrawl.dev/app/api-keys"
         }
         
         error_msg = {
@@ -774,6 +808,30 @@ class QueryAnalyzer:
         r'\bnachrichten\b': 3.0,
     }
     
+    # Source-grounded/RAG retrieval signals → Linkup
+    # Linkup is strongest when the user wants source-backed evidence for LLM grounding.
+    LINKUP_SOURCE_SIGNALS = {
+        r'\bcitations?\b': 5.0,
+        r'\bsources?\b': 4.5,
+        r'\bsource.?backed\b': 5.0,
+        r'\bwith sources\b': 5.0,
+        r'\bwith references\b': 5.0,
+        r'\breferences?\b': 4.5,
+        r'\bevidence\b': 4.5,
+        r'\bcredible sources?\b': 5.5,
+        r'\bprimary sources?\b': 5.0,
+        r'\bsupporting links?\b': 4.5,
+        r'\bverify (this|the)?\b': 4.5,
+        r'\bfact.?check\b': 5.0,
+        r'\bground(ed|ing)?\b': 4.5,
+        r'\bground this\b': 5.0,
+        r'\bclaim\b': 2.5,
+        r'\bfind (credible )?sources?\b': 5.5,
+        r'\bfind pages? that support\b': 5.0,
+        r'\bwhere did this come from\b': 5.0,
+        r'\bsource material\b': 4.0,
+    }
+
     # RAG/AI signals → You.com
     # You.com excels at providing LLM-ready snippets and combined web+news
     RAG_SIGNALS = {
@@ -1124,6 +1182,9 @@ class QueryAnalyzer:
         privacy_score, privacy_matches = self._calculate_signal_score(
             query, self.PRIVACY_SIGNALS
         )
+        linkup_source_score, linkup_source_matches = self._calculate_signal_score(
+            query, self.LINKUP_SOURCE_SIGNALS
+        )
         direct_answer_score, direct_answer_matches = self._calculate_signal_score(
             query, self.DIRECT_ANSWER_SIGNALS
         )
@@ -1170,23 +1231,29 @@ class QueryAnalyzer:
         # Map intents to providers with final scores
         provider_scores = {
             "serper": shopping_score + local_news_score + (recency_score * 0.35),
+            "brave": shopping_score + local_news_score + (recency_score * 0.35),
             "tavily": research_score + (complexity["complexity_score"] if not complexity["is_complex"] else 0) + (0.2 * recency_score),
             "querit": (research_score * 0.65) + (rag_score * 0.35) + (recency_score * 0.45),
+            "linkup": linkup_source_score + (rag_score * 0.7) + (research_score * 0.45) + (recency_score * 0.35),
             "exa": discovery_score + (1.0 if re.search(r"\b(similar|alternatives?|examples?)\b", query, re.IGNORECASE) else 0.0) + (exa_deep_score * 0.5) + (exa_deep_reasoning_score * 0.5),
             "perplexity": direct_answer_score + (local_news_score * 0.4) + (recency_score * 0.55),
             "you": rag_score + (recency_score * 0.25),  # You.com good for real-time + RAG
             "searxng": privacy_score,  # SearXNG for privacy/multi-source queries
+            "firecrawl": discovery_score + (research_score * 0.35) + (recency_score * 0.25),
         }
         
         # Build match details per provider
         provider_matches = {
             "serper": shopping_matches + local_news_matches,
+            "brave": shopping_matches + local_news_matches,
             "tavily": research_matches,
             "querit": research_matches,
+            "linkup": linkup_source_matches + rag_matches + research_matches,
             "exa": discovery_matches + exa_deep_matches + exa_deep_reasoning_matches,
             "perplexity": direct_answer_matches,
             "you": rag_matches,
             "searxng": privacy_matches,
+            "firecrawl": discovery_matches + research_matches,
         }
         
         return {
@@ -1197,6 +1264,7 @@ class QueryAnalyzer:
             "complexity": complexity,
             "recency_focused": is_recency,
             "recency_score": recency_score,
+            "linkup_source_score": linkup_source_score,
             "exa_deep_score": exa_deep_score,
             "exa_deep_reasoning_score": exa_deep_reasoning_score,
         }
@@ -1230,20 +1298,13 @@ class QueryAnalyzer:
         
         # Find the winner
         max_score = max(available.values())
-        total_score = sum(available.values()) or 1.0
         
-        # Handle ties using priority
-        priority = self.auto_config.get("provider_priority", ["tavily", "querit", "exa", "perplexity", "serper", "you", "searxng"])
+        # Handle ties using deterministic per-query distribution
+        priority = self.auto_config.get("provider_priority", ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "brave", "serper", "you", "searxng"])
         winners = [p for p, s in available.items() if s == max_score]
         
         if len(winners) > 1:
-            # Use priority to break tie
-            for p in priority:
-                if p in winners:
-                    winner = p
-                    break
-            else:
-                winner = winners[0]
+            winner = _choose_tie_winner(query, winners, priority)
         else:
             winner = winners[0]
         
@@ -1348,12 +1409,16 @@ def explain_routing(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
         "top_signals": routing["top_signals"],
         "intent_breakdown": {
             "shopping_signals": len(analysis["provider_matches"]["serper"]),
+            "brave_signals": len(analysis["provider_matches"]["brave"]),
             "research_signals": len(analysis["provider_matches"]["tavily"]),
             "querit_signals": len(analysis["provider_matches"]["querit"]),
+            "linkup_signals": len(analysis["provider_matches"].get("linkup", [])),
+            "linkup_source_score": round(analysis.get("linkup_source_score", 0), 2),
             "discovery_signals": len(analysis["provider_matches"]["exa"]),
             "rag_signals": len(analysis["provider_matches"]["you"]),
             "exa_deep_score": round(analysis.get("exa_deep_score", 0), 2),
             "exa_deep_reasoning_score": round(analysis.get("exa_deep_reasoning_score", 0), 2),
+            "firecrawl_signals": len(analysis["provider_matches"].get("firecrawl", [])),
         },
         "query_analysis": {
             "word_count": analysis["complexity"]["word_count"],
@@ -1371,7 +1436,7 @@ def explain_routing(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
             if matches
         },
         "available_providers": [
-            p for p in ["serper", "tavily", "querit", "exa", "perplexity", "you", "searxng"]
+            p for p in ["serper", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "you", "searxng"]
             if get_api_key(p, config) and p not in config.get("auto_routing", {}).get("disabled_providers", [])
         ]
     }
@@ -1499,9 +1564,223 @@ def deduplicate_results_across_providers(results_by_provider: List[Tuple[str, Di
                 return deduped, dedup_count
     return deduped, dedup_count
 
+def _choose_tie_winner(query: str, winners: List[str], priority: List[str]) -> str:
+    """Break score ties deterministically per query.
+
+    Uses a stable hash of the query to distribute ties across providers while
+    keeping the same query reproducible across runs.
+    """
+    ordered_winners = [p for p in priority if p in winners]
+    if not ordered_winners:
+        ordered_winners = sorted(winners)
+    if len(ordered_winners) == 1:
+        return ordered_winners[0]
+    digest = hashlib.sha256(f"{query}|{'|'.join(ordered_winners)}".encode("utf-8")).hexdigest()
+    idx = int(digest[:8], 16) % len(ordered_winners)
+    return ordered_winners[idx]
+
+
+def _result_domain(url: str) -> str:
+    try:
+        netloc = urlparse(url or "").netloc.lower()
+        return netloc[4:] if netloc.startswith("www.") else netloc
+    except Exception:
+        return ""
+
+
+def _snippet_text(item: Dict[str, Any]) -> str:
+    return " ".join(
+        str(item.get(k) or "")
+        for k in ("description", "snippet", "content", "raw_content", "summary")
+    ).strip()
+
+
+def build_quality_report(
+    query: str,
+    result: Dict[str, Any],
+    routing_info: Dict[str, Any],
+    providers_considered: List[str],
+    eligible_providers: List[str],
+    cooldown_skips: List[Dict[str, Any]],
+    errors: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Build transparent search-quality diagnostics without changing results."""
+    results = result.get("results", []) or []
+    domains = [_result_domain(r.get("url", "")) for r in results]
+    domains = [d for d in domains if d]
+    unique_domains = sorted(set(domains))
+    duplicate_count = int(result.get("metadata", {}).get("dedup_count", 0) or 0)
+
+    short_snippets = 0
+    for item in results:
+        if len(_snippet_text(item)) < 40:
+            short_snippets += 1
+
+    extract_reasons: List[str] = []
+    confidence_level = routing_info.get("confidence_level") or "unknown"
+    confidence_score = routing_info.get("confidence")
+    if confidence_level == "low" or (confidence_score is not None and float(confidence_score or 0) < 0.4):
+        extract_reasons.append("low routing confidence")
+    if len(results) < 3:
+        extract_reasons.append("few search results")
+    if results and len(unique_domains) <= 1:
+        extract_reasons.append("low domain diversity")
+    if duplicate_count:
+        extract_reasons.append("duplicate results detected")
+    if results and short_snippets / max(len(results), 1) >= 0.5:
+        extract_reasons.append("thin snippets")
+
+    skipped = []
+    for item in cooldown_skips:
+        skipped.append({
+            "provider": item.get("provider"),
+            "reason": "cooldown",
+            "cooldown_remaining_seconds": item.get("cooldown_remaining_seconds"),
+        })
+    for err in errors:
+        skipped.append({
+            "provider": err.get("provider"),
+            "reason": "error",
+            "error": err.get("error"),
+        })
+
+    return {
+        "query": query,
+        "selected_provider": routing_info.get("provider") or result.get("provider"),
+        "routing_reason": routing_info.get("reason"),
+        "confidence": confidence_level,
+        "confidence_score": routing_info.get("confidence"),
+        "providers_considered": providers_considered,
+        "eligible_providers": eligible_providers,
+        "skipped_providers": skipped,
+        "result_count": len(results),
+        "domain_count": len(unique_domains),
+        "domains": unique_domains,
+        "domain_diversity": (len(unique_domains) / len(results)) if results else 0.0,
+        "duplicate_count": duplicate_count,
+        "thin_snippet_count": short_snippets,
+        "extract_recommended": bool(extract_reasons),
+        "extract_reasons": extract_reasons,
+        "scores": routing_info.get("scores", {}),
+    }
+
+
+def select_research_providers(
+    primary_provider: str,
+    provider_priority: List[str],
+    available_providers: set,
+    max_providers: int = 3,
+) -> List[str]:
+    """Pick a compact provider set for research mode."""
+    preferred = [primary_provider, "linkup", "tavily", "exa", "firecrawl", "brave", "serper", "you", "querit"]
+    ordered: List[str] = []
+    for provider in preferred + provider_priority:
+        if provider and provider in available_providers and provider not in ordered:
+            ordered.append(provider)
+        if len(ordered) >= max_providers:
+            break
+    return ordered
+
+
+def run_research_mode(
+    query: str,
+    research_providers: List[str],
+    execute_search,
+    extract_urls,
+    max_results: int,
+    max_extract_urls: int = 3,
+    time_budget_seconds: float | None = None,
+    now_fn=None,
+) -> Dict[str, Any]:
+    """Run broad search, deduplicate, then extract top sources for grounding.
+
+    Research mode is intentionally best-effort: provider/extraction failures should
+    produce diagnostics and partial search results instead of throwing away the
+    whole response. The optional time budget is checked between expensive calls so
+    the mode can degrade safely before starting more provider work or extraction.
+    """
+    provider_results: List[Tuple[str, Dict[str, Any]]] = []
+    provider_errors: List[Dict[str, Any]] = []
+    now = now_fn or time.monotonic
+    start = now()
+
+    def budget_exhausted() -> bool:
+        return time_budget_seconds is not None and (now() - start) >= time_budget_seconds
+
+    for provider in research_providers:
+        if budget_exhausted():
+            provider_errors.append({"provider": provider, "error": "skipped: research time budget exhausted"})
+            continue
+        try:
+            payload = execute_search(provider)
+            provider_results.append((provider, payload))
+        except Exception as e:
+            provider_errors.append({"provider": provider, "error": str(e)})
+
+    deduped, dedup_count = deduplicate_results_across_providers(provider_results, max_results)
+    urls = [r.get("url") for r in deduped if r.get("url")][:max(0, max_extract_urls)]
+    extracted = {"provider": None, "results": []}
+    extraction_error = None
+    if urls:
+        if budget_exhausted():
+            extraction_error = "skipped: research time budget exhausted"
+        else:
+            try:
+                extracted = extract_urls(urls) or {"provider": None, "results": []}
+            except Exception as e:
+                extraction_error = str(e)
+                extracted = {"provider": None, "results": []}
+
+    routing = {
+        "providers_queried": [p for p, _ in provider_results],
+        "provider_errors": provider_errors,
+        "extraction_provider": extracted.get("provider"),
+    }
+    if extraction_error:
+        routing["extraction_error"] = extraction_error
+
+    source_summaries = extracted.get("results", []) or []
+
+    return {
+        "mode": "research",
+        "provider": "research",
+        "query": query,
+        "results": deduped,
+        "source_summaries": source_summaries,
+        "routing": routing,
+        "metadata": {
+            "dedup_count": dedup_count,
+            "providers_merged": [p for p, _ in provider_results],
+            "extracted_url_count": len(source_summaries),
+        },
+    }
+
+
 # =============================================================================
 # HTTP Client
 # =============================================================================
+
+def execute_provider_with_retry(provider: str, operation, max_attempts: int = 3) -> Dict[str, Any]:
+    """Execute a provider operation with shared transient-error retry semantics."""
+    last_error = None
+    for attempt in range(0, max_attempts):
+        try:
+            return operation()
+        except ProviderRequestError as e:
+            last_error = e
+            if e.status_code in {401, 403}:
+                break
+            if not e.transient:
+                break
+            if attempt < max_attempts - 1:
+                time.sleep(RETRY_BACKOFF_SECONDS[min(attempt, len(RETRY_BACKOFF_SECONDS) - 1)])
+                continue
+            break
+        except Exception as e:
+            last_error = e
+            break
+    raise last_error if last_error else Exception(f"Unknown {provider} provider execution error")
+
 
 def make_request(url: str, headers: dict, body: dict, timeout: int = 30) -> dict:
     """Make HTTP POST request and return JSON response."""
@@ -1530,6 +1809,47 @@ def make_request(url: str, headers: dict, body: dict, timeout: int = 30) -> dict
             503: "Service unavailable. The search provider may be down."
         }
         
+        friendly_msg = error_messages.get(e.code, f"API error: {error_detail}")
+        raise ProviderRequestError(f"{friendly_msg} (HTTP {e.code})", status_code=e.code, transient=e.code in TRANSIENT_HTTP_CODES)
+    except URLError as e:
+        reason = str(getattr(e, "reason", e))
+        is_timeout = "timed out" in reason.lower()
+        raise ProviderRequestError(f"Network error: {reason}. Check your internet connection.", transient=is_timeout)
+    except IncompleteRead as e:
+        partial_len = len(getattr(e, "partial", b"") or b"")
+        raise ProviderRequestError(
+            f"Connection interrupted while reading response ({partial_len} bytes received). Please retry.",
+            transient=True,
+        )
+    except TimeoutError:
+        raise ProviderRequestError(f"Request timed out after {timeout}s. Try again or reduce max_results.", transient=True)
+
+
+def make_get_request(url: str, headers: dict, timeout: int = 30) -> dict:
+    """Make HTTP GET request and return JSON response."""
+    if "User-Agent" not in headers:
+        headers["User-Agent"] = "ClawdBot-WebSearchPlus/2.1"
+    req = Request(url, headers=headers, method="GET")
+
+    try:
+        with urlopen(req, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as e:
+        error_body = e.read().decode("utf-8") if e.fp else str(e)
+        try:
+            error_json = json.loads(error_body)
+            error_detail = error_json.get("error") or error_json.get("message") or error_body
+        except json.JSONDecodeError:
+            error_detail = error_body[:500]
+
+        error_messages = {
+            401: "Invalid or expired API key. Please check your credentials.",
+            403: "Access forbidden. Your API key may not have permission for this operation.",
+            429: "Rate limit exceeded. Please wait a moment and try again.",
+            500: "Server error. The search provider is experiencing issues.",
+            503: "Service unavailable. The search provider may be down."
+        }
+
         friendly_msg = error_messages.get(e.code, f"API error: {error_detail}")
         raise ProviderRequestError(f"{friendly_msg} (HTTP {e.code})", status_code=e.code, transient=e.code in TRANSIENT_HTTP_CODES)
     except URLError as e:
@@ -1629,6 +1949,83 @@ def search_serper(
         "answer": answer,
         "knowledge_graph": data.get("knowledgeGraph"),
         "related_searches": [r.get("query") for r in data.get("relatedSearches", [])]
+    }
+
+
+# =============================================================================
+# Brave Search
+# =============================================================================
+
+def search_brave(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    country: str = "US",
+    language: str = "en",
+    time_range: Optional[str] = None,
+    safesearch: str = "moderate",
+) -> dict:
+    """Search using Brave Search API."""
+    freshness_map = {
+        "hour": "pd",
+        "day": "pd",
+        "week": "pw",
+        "month": "pm",
+        "year": "py",
+    }
+    params = {
+        "q": query,
+        "count": max_results,
+        "country": country.upper(),
+        "search_lang": language,
+        "safesearch": safesearch,
+        "spellcheck": 1,
+    }
+    if time_range and time_range in freshness_map:
+        params["freshness"] = freshness_map[time_range]
+
+    url = f"https://api.search.brave.com/res/v1/web/search?{urlencode(params)}"
+    headers = {
+        "X-Subscription-Token": api_key,
+        "Accept": "application/json",
+        "Accept-Encoding": "gzip",
+    }
+
+    data = make_get_request(url, headers)
+
+    web_results = (data.get("web") or {}).get("results", [])[:max_results]
+    results = []
+    for i, item in enumerate(web_results):
+        snippet_parts = []
+        description = item.get("description") or item.get("snippet") or ""
+        if description:
+            snippet_parts.append(description)
+        extra_snippets = item.get("extra_snippets") or []
+        if extra_snippets:
+            snippet_parts.extend(extra_snippets[:2])
+        results.append({
+            "title": item.get("title", ""),
+            "url": item.get("url", ""),
+            "snippet": " ... ".join(part for part in snippet_parts if part),
+            "score": round(1.0 - i * 0.1, 2),
+            "age": item.get("age"),
+        })
+
+    answer = ""
+    if data.get("summary"):
+        answer = data.get("summary", "")
+    elif data.get("infobox", {}).get("description"):
+        answer = data["infobox"]["description"]
+    elif results:
+        answer = results[0]["snippet"]
+
+    return {
+        "provider": "brave",
+        "query": query,
+        "results": results,
+        "images": [],
+        "answer": answer,
+        "mixed": data.get("mixed"),
     }
 
 
@@ -1797,6 +2194,497 @@ def search_querit(
             "time_range": querit_time_range,
         }
     }
+
+
+# =============================================================================
+# Linkup Search
+# =============================================================================
+
+def search_linkup(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    depth: str = "standard",
+    output_type: str = "searchResults",
+    include_domains: Optional[List[str]] = None,
+    exclude_domains: Optional[List[str]] = None,
+    api_url: str = "https://api.linkup.so/v1/search",
+    timeout: int = 30,
+) -> dict:
+    """Search using Linkup's source-grounded web search API."""
+    body: Dict[str, Any] = {
+        "q": query,
+        "depth": depth,
+        "outputType": output_type,
+    }
+    if include_domains:
+        body["includeDomains"] = include_domains[:50]
+    if exclude_domains:
+        body["excludeDomains"] = exclude_domains[:50]
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    data = make_request(api_url, headers, body, timeout=timeout)
+    if data.get("error"):
+        raise ProviderRequestError(str(data.get("error")))
+
+    raw_results = data.get("results") or data.get("sources") or []
+    results = []
+    for i, item in enumerate(raw_results[:max_results]):
+        snippet = item.get("content") or item.get("snippet") or item.get("description") or ""
+        result = {
+            "title": item.get("name") or item.get("title") or _title_from_url(item.get("url", "")),
+            "url": item.get("url", ""),
+            "snippet": snippet,
+            "score": round(1.0 - i * 0.05, 3),
+        }
+        if item.get("type") is not None:
+            result["type"] = item["type"]
+        if item.get("favicon") is not None:
+            result["favicon"] = item["favicon"]
+        results.append(result)
+
+    return {
+        "provider": "linkup",
+        "query": query,
+        "results": results,
+        "images": data.get("images", []),
+        "answer": data.get("answer", ""),
+        "metadata": {
+            "depth": depth,
+            "output_type": output_type,
+        },
+    }
+
+
+# =============================================================================
+# Firecrawl Search
+# =============================================================================
+
+def _map_firecrawl_time_range(time_range: Optional[str]) -> Optional[str]:
+    """Map generic time ranges to Firecrawl/Google tbs values."""
+    if not time_range:
+        return None
+    return {
+        "hour": "qdr:h",
+        "day": "qdr:d",
+        "week": "qdr:w",
+        "month": "qdr:m",
+        "year": "qdr:y",
+    }.get(time_range, time_range)
+
+
+def search_firecrawl(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    country: str = "US",
+    time_range: Optional[str] = None,
+    sources: Optional[List[str]] = None,
+    include_domains: Optional[List[str]] = None,
+    exclude_domains: Optional[List[str]] = None,
+    scrape_markdown: bool = False,
+    ignore_invalid_urls: bool = False,
+    api_url: str = "https://api.firecrawl.dev/v2/search",
+    timeout_ms: int = 30000,
+) -> dict:
+    """Search using Firecrawl's v2 search endpoint."""
+    selected_sources = sources or ["web"]
+    body: Dict[str, Any] = {
+        "query": query,
+        "limit": max_results,
+        "sources": selected_sources,
+        "timeout": timeout_ms,
+        "ignoreInvalidURLs": ignore_invalid_urls,
+    }
+
+    if country:
+        body["country"] = country.upper()
+
+    tbs = _map_firecrawl_time_range(time_range)
+    if tbs:
+        body["tbs"] = tbs
+
+    if include_domains:
+        body["query"] += " " + " ".join(f"site:{domain}" for domain in include_domains)
+    if exclude_domains:
+        body["query"] += " " + " ".join(f"-site:{domain}" for domain in exclude_domains)
+
+    if scrape_markdown:
+        body["scrapeOptions"] = {"formats": ["markdown"]}
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    data = make_request(api_url, headers, body, timeout=max(1, int(timeout_ms / 1000)))
+    if data.get("success") is False:
+        raise ProviderRequestError(data.get("error") or data.get("warning") or "Firecrawl request failed")
+
+    response_data = data.get("data") or {}
+    raw_web = response_data.get("web") or []
+    results = []
+    for i, item in enumerate(raw_web[:max_results]):
+        snippet = item.get("description") or item.get("snippet") or ""
+        result = {
+            "title": item.get("title") or _title_from_url(item.get("url", "")),
+            "url": item.get("url", ""),
+            "snippet": snippet,
+            "score": round(1.0 - i * 0.05, 3),
+        }
+        if item.get("position") is not None:
+            result["position"] = item.get("position")
+        if item.get("category") is not None:
+            result["category"] = item.get("category")
+        if item.get("markdown"):
+            result["raw_content"] = item["markdown"]
+            if not result["snippet"]:
+                result["snippet"] = item["markdown"][:500]
+        metadata = item.get("metadata") or {}
+        if metadata.get("statusCode") is not None:
+            result["status_code"] = metadata.get("statusCode")
+        if metadata.get("error"):
+            result["error"] = metadata.get("error")
+        results.append(result)
+
+    images = []
+    for image in response_data.get("images") or []:
+        image_url = image.get("imageUrl")
+        if image_url:
+            images.append(image_url)
+
+    answer = results[0]["snippet"] if results else ""
+    return {
+        "provider": "firecrawl",
+        "query": query,
+        "results": results,
+        "images": images,
+        "answer": answer,
+        "warning": data.get("warning"),
+        "credits_used": data.get("creditsUsed"),
+        "metadata": {
+            "id": data.get("id"),
+            "sources": selected_sources,
+            "tbs": tbs,
+        },
+    }
+
+
+# =============================================================================
+# Extract Plus (URL Content Extraction)
+# =============================================================================
+
+def _normalize_extract_result(
+    provider: str,
+    url: str,
+    title: str = "",
+    content: str = "",
+    raw_content: Optional[str] = None,
+    **extra: Any,
+) -> Dict[str, Any]:
+    result = {
+        "url": url,
+        "title": title or _title_from_url(url),
+        "content": content or "",
+        "raw_content": raw_content if raw_content is not None else (content or ""),
+        "provider": provider,
+    }
+    for key, value in extra.items():
+        if value is not None:
+            result[key] = value
+    return result
+
+
+def extract_firecrawl(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://api.firecrawl.dev/v2/scrape",
+    timeout: int = 60,
+) -> dict:
+    """Extract URL content using Firecrawl scrape."""
+    formats = ["markdown"] if output_format != "html" else ["html"]
+    if include_raw_html and "html" not in formats:
+        formats.append("html")
+
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    results: List[Dict[str, Any]] = []
+    for url in urls:
+        body: Dict[str, Any] = {"url": url, "formats": formats}
+        if render_js:
+            body["waitFor"] = 1000
+        data = make_request(api_url, headers, body, timeout=timeout)
+        if data.get("success") is False:
+            results.append(_normalize_extract_result("firecrawl", url, error=data.get("error") or data.get("warning") or "Firecrawl scrape failed"))
+            continue
+        payload = data.get("data") if isinstance(data.get("data"), dict) else data
+        metadata = payload.get("metadata") or {}
+        final_url = metadata.get("sourceURL") or metadata.get("url") or url
+        title = metadata.get("title") or ""
+        markdown = payload.get("markdown") or ""
+        html = payload.get("html") or payload.get("rawHtml") or ""
+        content = html if output_format == "html" else markdown or html
+        images = None
+        if include_images:
+            md_images = []
+            seen_image_urls = set()
+            for alt, image_url in re.findall(r"!\[([^\]]*)\]\(([^)]+)\)", markdown):
+                if image_url not in seen_image_urls:
+                    md_images.append({"alt": alt, "url": image_url})
+                    seen_image_urls.add(image_url)
+            og_image = metadata.get("ogImage") or metadata.get("og:image")
+            if og_image and og_image not in seen_image_urls:
+                md_images.insert(0, {"alt": "og:image", "url": og_image})
+            images = md_images or None
+        results.append(_normalize_extract_result(
+            "firecrawl",
+            final_url,
+            title=title,
+            content=content,
+            raw_content=content,
+            raw_html=html if html else None,
+            images=images,
+            metadata=metadata,
+        ))
+    return {"provider": "firecrawl", "results": results}
+
+
+def extract_linkup(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://api.linkup.so/v1/fetch",
+    timeout: int = 30,
+) -> dict:
+    """Extract URL content using Linkup fetch."""
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    results: List[Dict[str, Any]] = []
+    for url in urls:
+        body = {
+            "url": url,
+            "extractImages": include_images,
+            "includeRawHtml": include_raw_html or output_format == "html",
+            "renderJs": render_js,
+        }
+        data = make_request(api_url, headers, body, timeout=timeout)
+        if data.get("error"):
+            results.append(_normalize_extract_result("linkup", url, error=str(data.get("error"))))
+            continue
+        markdown = data.get("markdown") or ""
+        raw_html = data.get("rawHtml") or data.get("raw_html") or ""
+        content = raw_html if output_format == "html" else markdown or raw_html
+        results.append(_normalize_extract_result(
+            "linkup",
+            url,
+            content=content,
+            raw_content=content,
+            raw_html=raw_html if raw_html else None,
+            images=data.get("images") if include_images else None,
+        ))
+    return {"provider": "linkup", "results": results}
+
+
+def extract_tavily(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://api.tavily.com/extract",
+    timeout: int = 30,
+) -> dict:
+    """Extract URL content using Tavily extract."""
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    body = {"urls": urls, "include_images": include_images}
+    data = make_request(api_url, headers, body, timeout=timeout)
+    results: List[Dict[str, Any]] = []
+    for item in data.get("results", []):
+        url = item.get("url", "")
+        content = item.get("raw_content") or item.get("content") or ""
+        results.append(_normalize_extract_result(
+            "tavily",
+            url,
+            title=item.get("title", ""),
+            content=content,
+            raw_content=content,
+            images=item.get("images") if include_images else None,
+        ))
+    for failed in data.get("failed_results", []) or []:
+        failed_url = failed.get("url", "")
+        results.append(_normalize_extract_result("tavily", failed_url, error=failed.get("error") or "Tavily extract failed"))
+    return {"provider": "tavily", "results": results}
+
+
+def extract_exa(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://api.exa.ai/contents",
+    timeout: int = 30,
+) -> dict:
+    """Extract URL content using Exa Contents API."""
+    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
+    body: Dict[str, Any] = {"urls": urls, "text": True}
+    data = make_request(api_url, headers, body, timeout=timeout)
+    results: List[Dict[str, Any]] = []
+    for item in data.get("results", []):
+        url = item.get("url") or item.get("id") or ""
+        content = item.get("text") or item.get("summary") or ""
+        results.append(_normalize_extract_result(
+            "exa",
+            url,
+            title=item.get("title", ""),
+            content=content,
+            raw_content=content,
+            summary=item.get("summary"),
+            highlights=item.get("highlights"),
+            published_date=item.get("publishedDate"),
+            author=item.get("author"),
+            image=item.get("image") if include_images else None,
+            favicon=item.get("favicon"),
+        ))
+    return {
+        "provider": "exa",
+        "results": results,
+        "request_id": data.get("requestId"),
+        "cost_dollars": data.get("costDollars"),
+        "statuses": data.get("statuses"),
+    }
+
+
+def extract_you(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://ydc-index.io/v1/contents",
+    timeout: int = 30,
+) -> dict:
+    """Extract URL content using You.com Contents API."""
+    formats = ["html" if output_format == "html" else "markdown"]
+    if include_raw_html and "html" not in formats:
+        formats.append("html")
+    if "metadata" not in formats:
+        formats.append("metadata")
+    headers = {"X-API-Key": api_key, "Content-Type": "application/json"}
+    body = {"urls": urls, "formats": formats, "crawl_timeout": max(1, min(timeout, 60))}
+    data = make_request(api_url, headers, body, timeout=timeout)
+    raw_items = data if isinstance(data, list) else data.get("results", []) or data.get("data", [])
+    results: List[Dict[str, Any]] = []
+    for item in raw_items:
+        url = item.get("url", "")
+        markdown = item.get("markdown") or ""
+        html = item.get("html") or ""
+        content = html if output_format == "html" else markdown or html
+        results.append(_normalize_extract_result(
+            "you",
+            url,
+            title=item.get("title", ""),
+            content=content,
+            raw_content=content,
+            raw_html=html if html else None,
+            metadata=item.get("metadata"),
+        ))
+    return {"provider": "you", "results": results}
+
+
+EXTRACT_PROVIDER_PRIORITY = ["firecrawl", "linkup", "tavily", "exa", "you"]
+
+
+def extract_plus(
+    urls: List[str],
+    provider: str = "auto",
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    config: Optional[Dict[str, Any]] = None,
+) -> dict:
+    """Extract URL content with provider fallback."""
+    config = config or load_config()
+    selected = provider or "auto"
+    if not urls:
+        return {"provider": selected, "results": [], "error": "No URLs provided", "requested_provider": selected}
+    invalid = [u for u in urls if not (isinstance(u, str) and u.startswith(("http://", "https://")))]
+    if invalid:
+        return {
+            "provider": selected,
+            "results": [],
+            "error": f"Invalid URL(s) — must start with http:// or https://: {invalid}",
+            "requested_provider": selected,
+        }
+    providers = EXTRACT_PROVIDER_PRIORITY if selected == "auto" else [selected] + [p for p in EXTRACT_PROVIDER_PRIORITY if p != selected]
+    errors = []
+    cooldown_skips = []
+    for prov in providers:
+        if prov not in EXTRACT_PROVIDER_PRIORITY:
+            errors.append({"provider": prov, "error": f"Provider {prov} does not support extraction"})
+            continue
+        key = get_api_key(prov, config)
+        if not key:
+            errors.append({"provider": prov, "error": "missing_api_key"})
+            continue
+        in_cooldown, remaining = provider_in_cooldown(prov)
+        if in_cooldown:
+            cooldown_skips.append({"provider": prov, "cooldown_remaining_seconds": remaining})
+            continue
+        try:
+            def execute_extract() -> Dict[str, Any]:
+                if prov == "firecrawl":
+                    fc = config.get("firecrawl", {})
+                    return extract_firecrawl(urls, key, output_format, include_images, include_raw_html, render_js, api_url=fc.get("scrape_url", "https://api.firecrawl.dev/v2/scrape"), timeout=int(fc.get("extract_timeout", 60)))
+                if prov == "linkup":
+                    lu = config.get("linkup", {})
+                    return extract_linkup(urls, key, output_format, include_images, include_raw_html, render_js, api_url=lu.get("fetch_url", "https://api.linkup.so/v1/fetch"), timeout=int(lu.get("timeout", 30)))
+                if prov == "tavily":
+                    tv = config.get("tavily", {})
+                    return extract_tavily(urls, key, output_format, include_images, include_raw_html, render_js, api_url=tv.get("extract_url", "https://api.tavily.com/extract"), timeout=int(tv.get("timeout", 30)))
+                if prov == "exa":
+                    exa = config.get("exa", {})
+                    return extract_exa(urls, key, output_format, include_images, include_raw_html, render_js, api_url=exa.get("contents_url", "https://api.exa.ai/contents"), timeout=int(exa.get("timeout", 30)))
+                you = config.get("you", {})
+                return extract_you(urls, key, output_format, include_images, include_raw_html, render_js, api_url=you.get("contents_url", "https://ydc-index.io/v1/contents"), timeout=int(you.get("timeout", 30)))
+
+            result = execute_provider_with_retry(prov, execute_extract)
+            res_list = result.get("results") or []
+            all_failed = bool(res_list) and all(r.get("error") for r in res_list)
+            if all_failed:
+                errors.append({
+                    "provider": prov,
+                    "error": "all_urls_failed",
+                    "details": [r.get("error") for r in res_list],
+                })
+                continue
+            reset_provider_health(prov)
+            result["routing"] = {"provider": prov, "requested_provider": selected, "fallback_used": bool(errors) or bool(cooldown_skips), "fallback_errors": errors}
+            if cooldown_skips:
+                result["routing"]["cooldown_skips"] = cooldown_skips
+            return result
+        except Exception as e:
+            error_msg = str(e)
+            cooldown_info = mark_provider_failure(prov, error_msg)
+            errors.append({"provider": prov, "error": error_msg, "cooldown_seconds": cooldown_info.get("cooldown_seconds")})
+            continue
+    error_result = {"provider": selected, "results": [], "error": "All extraction providers failed", "fallback_errors": errors}
+    if cooldown_skips:
+        error_result["cooldown_skips"] = cooldown_skips
+    return error_result
 
 
 # =============================================================================
@@ -2333,7 +3221,7 @@ def search_searxng(
         is_timeout = "timed out" in reason.lower()
         raise ProviderRequestError(f"Cannot reach SearXNG instance at {instance_url}. Error: {reason}", transient=is_timeout)
     except TimeoutError:
-        raise ProviderRequestError(f"SearXNG request timed out after 30s. Check instance health.", transient=True)
+        raise ProviderRequestError("SearXNG request timed out after 30s. Check instance health.", transient=True)
     
     # Parse results
     raw_results = data.get("results", [])
@@ -2423,13 +3311,28 @@ Full docs: See README.md and SKILL.md
     # Common arguments
     parser.add_argument(
         "--provider", "-p", 
-        choices=["serper", "tavily", "querit", "exa", "perplexity", "you", "searxng", "auto"],
+        choices=["serper", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "you", "searxng", "auto"],
         help="Search provider (auto=intelligent routing)"
     )
     parser.add_argument(
         "--query", "-q", 
         help="Search query"
     )
+    parser.add_argument(
+        "--extract-urls",
+        nargs="*",
+        help="Extract content from one or more URLs instead of running a search"
+    )
+    parser.add_argument(
+        "--format",
+        dest="output_format",
+        default="markdown",
+        choices=["markdown", "html"],
+        help="Extraction output format"
+    )
+    parser.add_argument("--extract-images", action="store_true", help="Extract image metadata when supported")
+    parser.add_argument("--include-raw-html", action="store_true", help="Include raw HTML when supported")
+    parser.add_argument("--render-js", action="store_true", help="Render JavaScript before extraction when supported")
     parser.add_argument(
         "--max-results", "-n", 
         type=int, 
@@ -2496,6 +3399,21 @@ Full docs: See README.md and SKILL.md
         help="Querit API path"
     )
 
+    # Linkup-specific
+    linkup_config = config.get("linkup", {})
+    parser.add_argument(
+        "--linkup-depth",
+        default=linkup_config.get("depth", "standard"),
+        choices=["fast", "standard", "deep"],
+        help="Linkup search depth: fast, standard, or deep"
+    )
+    parser.add_argument(
+        "--linkup-output-type",
+        default=linkup_config.get("output_type", "searchResults"),
+        choices=["searchResults", "sourcedAnswer"],
+        help="Linkup output type"
+    )
+
     # Exa-specific
     exa_config = config.get("exa", {})
     parser.add_argument(
@@ -2526,6 +3444,21 @@ Full docs: See README.md and SKILL.md
     parser.add_argument("--start-date")
     parser.add_argument("--end-date")
     parser.add_argument("--similar-url")
+
+    # Firecrawl-specific
+    firecrawl_config = config.get("firecrawl", {})
+    parser.add_argument(
+        "--firecrawl-scrape",
+        action="store_true",
+        help="Firecrawl: scrape result pages and include markdown as raw_content"
+    )
+    parser.add_argument(
+        "--firecrawl-sources",
+        nargs="+",
+        default=firecrawl_config.get("sources", ["web"]),
+        choices=["web", "news", "images"],
+        help="Firecrawl result sources"
+    )
     
     # You.com-specific
     you_config = config.get("you", {})
@@ -2583,6 +3516,34 @@ Full docs: See README.md and SKILL.md
     
     # Output
     parser.add_argument("--compact", action="store_true")
+    parser.add_argument(
+        "--quality-report",
+        action="store_true",
+        help="Attach transparent routing/result diagnostics to the JSON output"
+    )
+    parser.add_argument(
+        "--mode",
+        default="normal",
+        choices=["normal", "research"],
+        help="Search mode: normal single-provider route or research multi-provider + extraction"
+    )
+    parser.add_argument(
+        "--research-providers",
+        nargs="+",
+        help="Explicit provider list for --mode research"
+    )
+    parser.add_argument(
+        "--research-extract-count",
+        type=int,
+        default=3,
+        help="Number of top research-mode URLs to extract for grounding"
+    )
+    parser.add_argument(
+        "--research-time-budget",
+        type=float,
+        default=55.0,
+        help="Best-effort wall-clock budget for research mode; skips remaining providers/extraction between calls when exhausted"
+    )
     
     # Caching options
     parser.add_argument(
@@ -2618,6 +3579,20 @@ Full docs: See README.md and SKILL.md
     
     if args.cache_stats:
         result = cache_stats()
+        indent = None if args.compact else 2
+        print(json.dumps(result, indent=indent, ensure_ascii=False))
+        return
+
+    if args.extract_urls is not None:
+        result = extract_plus(
+            urls=args.extract_urls,
+            provider=args.provider or "auto",
+            output_format=args.output_format,
+            include_images=args.extract_images,
+            include_raw_html=args.include_raw_html,
+            render_js=args.render_js,
+            config=config,
+        )
         indent = None if args.compact else 2
         print(json.dumps(result, indent=indent, ensure_ascii=False))
         return
@@ -2663,7 +3638,7 @@ Full docs: See README.md and SKILL.md
     
     # Build provider fallback list
     auto_config = config.get("auto_routing", {})
-    provider_priority = auto_config.get("provider_priority", ["tavily", "querit", "exa", "perplexity", "serper", "you", "searxng"])
+    provider_priority = auto_config.get("provider_priority", ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "brave", "serper", "you", "searxng"])
     disabled_providers = auto_config.get("disabled_providers", [])
 
     # Start with the selected provider, then try others in priority order
@@ -2701,6 +3676,17 @@ Full docs: See README.md and SKILL.md
                 time_range=args.time_range,
                 include_images=args.images,
             )
+        elif prov == "brave":
+            brave_config = config.get("brave", {})
+            return search_brave(
+                query=args.query,
+                api_key=key,
+                max_results=args.max_results,
+                country=brave_config.get("country", args.country),
+                language=brave_config.get("search_lang", args.language),
+                time_range=args.time_range or args.freshness,
+                safesearch=brave_config.get("safesearch", "moderate"),
+            )
         elif prov == "tavily":
             return search_tavily(
                 query=args.query,
@@ -2712,6 +3698,19 @@ Full docs: See README.md and SKILL.md
                 exclude_domains=args.exclude_domains,
                 include_images=args.images,
                 include_raw_content=args.raw_content,
+            )
+        elif prov == "linkup":
+            linkup_config = config.get("linkup", {})
+            return search_linkup(
+                query=args.query,
+                api_key=key,
+                max_results=args.max_results,
+                depth=args.linkup_depth,
+                output_type=args.linkup_output_type,
+                include_domains=args.include_domains,
+                exclude_domains=args.exclude_domains,
+                api_url=linkup_config.get("api_url", "https://api.linkup.so/v1/search"),
+                timeout=int(linkup_config.get("timeout", 30)),
             )
         elif prov == "querit":
             return search_querit(
@@ -2745,6 +3744,22 @@ Full docs: See README.md and SKILL.md
                 include_domains=args.include_domains,
                 exclude_domains=args.exclude_domains,
                 text_verbosity=args.exa_verbosity,
+            )
+        elif prov == "firecrawl":
+            firecrawl_config = config.get("firecrawl", {})
+            return search_firecrawl(
+                query=args.query,
+                api_key=key,
+                max_results=args.max_results,
+                country=firecrawl_config.get("country", args.country),
+                time_range=args.time_range or args.freshness,
+                sources=args.firecrawl_sources,
+                include_domains=args.include_domains,
+                exclude_domains=args.exclude_domains,
+                scrape_markdown=args.firecrawl_scrape or args.raw_content,
+                ignore_invalid_urls=firecrawl_config.get("ignore_invalid_urls", False),
+                api_url=firecrawl_config.get("api_url", "https://api.firecrawl.dev/v2/search"),
+                timeout_ms=int(firecrawl_config.get("timeout", 30000)),
             )
         elif prov == "perplexity":
             perplexity_config = config.get("perplexity", {})
@@ -2787,24 +3802,7 @@ Full docs: See README.md and SKILL.md
             raise ValueError(f"Unknown provider: {prov}")
 
     def execute_with_retry(prov: str) -> Dict[str, Any]:
-        last_error = None
-        for attempt in range(0, 3):
-            try:
-                return execute_search(prov)
-            except ProviderRequestError as e:
-                last_error = e
-                if e.status_code in {401, 403}:
-                    break
-                if not e.transient:
-                    break
-                if attempt < 2:
-                    time.sleep(RETRY_BACKOFF_SECONDS[attempt])
-                    continue
-                break
-            except Exception as e:
-                last_error = e
-                break
-        raise last_error if last_error else Exception("Unknown provider execution error")
+        return execute_provider_with_retry(prov, lambda: execute_search(prov))
 
     cache_context = {
         "locale": f"{args.country}:{args.language}",
@@ -2821,7 +3819,72 @@ Full docs: See README.md and SKILL.md
         "exa_verbosity": args.exa_verbosity,
         "category": args.category,
         "similar_url": args.similar_url,
+        "mode": args.mode,
+        "quality_report": args.quality_report,
     }
+
+    providers_considered = providers_to_try.copy()
+
+    if args.mode == "research":
+        available_research_providers = {
+            p for p in providers_to_try
+            if p not in disabled_providers and get_api_key(p, config) and not provider_in_cooldown(p)[0]
+        }
+        if provider and get_api_key(provider, config) and not provider_in_cooldown(provider)[0]:
+            available_research_providers.add(provider)
+        if args.research_providers:
+            research_providers = [
+                p for p in args.research_providers
+                if p not in disabled_providers and get_api_key(p, config) and not provider_in_cooldown(p)[0]
+            ]
+        else:
+            research_providers = select_research_providers(
+                primary_provider=provider,
+                provider_priority=provider_priority,
+                available_providers=available_research_providers,
+                max_providers=3,
+            )
+
+        if not research_providers:
+            error_result = {
+                "error": "No configured providers available for research mode",
+                "provider": provider,
+                "query": args.query,
+                "routing": routing_info,
+                "cooldown_skips": cooldown_skips,
+            }
+            print(json.dumps(error_result, indent=2), file=sys.stderr)
+            sys.exit(1)
+
+        result = run_research_mode(
+            query=args.query,
+            research_providers=research_providers,
+            execute_search=execute_with_retry,
+            extract_urls=lambda urls: extract_plus(
+                urls=urls,
+                provider="linkup",
+                output_format="markdown",
+                config=config,
+            ),
+            max_results=args.max_results,
+            max_extract_urls=args.research_extract_count,
+            time_budget_seconds=args.research_time_budget,
+        )
+        routing_info["mode"] = "research"
+        routing_info["provider"] = "research"
+        result["routing"].update(routing_info)
+        result["quality_report"] = build_quality_report(
+            query=args.query,
+            result=result,
+            routing_info=routing_info,
+            providers_considered=providers_considered,
+            eligible_providers=research_providers,
+            cooldown_skips=cooldown_skips,
+            errors=result.get("routing", {}).get("provider_errors", []),
+        )
+        indent = None if args.compact else 2
+        print(json.dumps(result, indent=indent, ensure_ascii=False))
+        return
 
     # Check cache first (unless --no-cache is set)
     cached_result = None
@@ -2920,6 +3983,17 @@ Full docs: See README.md and SKILL.md
             result["deduplicated"] = False
             result.setdefault("metadata", {})
             result["metadata"].setdefault("dedup_count", 0)
+
+        if args.quality_report:
+            result["quality_report"] = build_quality_report(
+                query=args.query,
+                result=result,
+                routing_info=routing_info,
+                providers_considered=providers_considered,
+                eligible_providers=eligible_providers,
+                cooldown_skips=cooldown_skips,
+                errors=errors,
+            )
 
         indent = None if args.compact else 2
         print(json.dumps(result, indent=indent, ensure_ascii=False))
