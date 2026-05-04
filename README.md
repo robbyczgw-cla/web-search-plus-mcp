@@ -10,6 +10,8 @@
 
 `web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, NanoBot, Cursor, and other MCP-compatible hosts access to the same Python routing engine family used by the Hermes/OpenClaw Web Search Plus tools.
 
+Version note: `web-search-plus-mcp` uses its own MCP package version (`0.2.0`) while tracking the Web Search Plus engine family (`v1.7`). The Hermes plugin is versioned separately as `hermes-web-search-plus v1.7.0`.
+
 ## ✨ Features
 
 - **10 search providers** — Serper, Brave, Tavily, Exa, Querit, Linkup, Firecrawl, Perplexity, You.com, SearXNG
@@ -35,7 +37,11 @@ At least one provider credential is required for search. Extraction needs at lea
 
 ## ⚙️ Claude Desktop Config
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS or `%APPDATA%\\Claude\\claude_desktop_config.json` on Windows:
+Add this to Claude Desktop's config file:
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\\Claude\\claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
 
 ```json
 {
@@ -84,6 +90,8 @@ You can also place a `.env` file next to the package/project with the same varia
 - **You.com** — LLM-ready snippets/content where available
 
 ## 🛠 MCP Tool Reference
+
+This MCP server exposes `web_search` and `web_extract`. The Hermes plugin exposes the same capability as `web_search_plus` and `web_extract_plus`; the names differ because MCP and Hermes use different tool surfaces.
 
 ### `web_search`
 
