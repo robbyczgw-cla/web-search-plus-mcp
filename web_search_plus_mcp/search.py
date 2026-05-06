@@ -25,12 +25,14 @@ Examples:
 
 import argparse
 from http.client import IncompleteRead
+import gzip
 import hashlib
 import json
 import os
 import re
 import sys
 import time
+import zlib
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from urllib.request import Request, urlopen
@@ -1782,6 +1784,50 @@ def execute_provider_with_retry(provider: str, operation, max_attempts: int = 3)
     raise last_error if last_error else Exception(f"Unknown {provider} provider execution error")
 
 
+def _response_header(response, name: str) -> str:
+    """Return an HTTP response header from urllib response/error objects."""
+    if hasattr(response, "getheader"):
+        value = response.getheader(name)
+        if value is not None:
+            return str(value)
+    headers = getattr(response, "headers", None)
+    if headers is not None:
+        try:
+            value = headers.get(name)
+        except AttributeError:
+            value = None
+        if value is not None:
+            return str(value)
+    return ""
+
+
+def _read_response_body(response) -> bytes:
+    """Read a urllib response body and decode supported Content-Encoding values."""
+    raw = response.read()
+    encoding = _response_header(response, "Content-Encoding").strip().lower()
+
+    if encoding in {"gzip", "x-gzip"} or raw.startswith(b"\x1f\x8b"):
+        return gzip.decompress(raw)
+    if encoding == "deflate":
+        try:
+            return zlib.decompress(raw)
+        except zlib.error:
+            # Some servers send raw deflate without the zlib wrapper.
+            return zlib.decompress(raw, -zlib.MAX_WBITS)
+    if encoding == "br":
+        raise ProviderRequestError(
+            "Brotli-compressed response received, but web-search-plus-mcp does not bundle brotli support. "
+            "Disable brotli for this provider or install a brotli-capable transport.",
+            transient=False,
+        )
+    return raw
+
+
+def _read_json_response(response) -> dict:
+    """Read a urllib response as UTF-8 JSON with Content-Encoding handling."""
+    return json.loads(_read_response_body(response).decode("utf-8"))
+
+
 def make_request(url: str, headers: dict, body: dict, timeout: int = 30) -> dict:
     """Make HTTP POST request and return JSON response."""
     # Ensure User-Agent is set (required by some APIs like Exa/Cloudflare)
@@ -1792,9 +1838,9 @@ def make_request(url: str, headers: dict, body: dict, timeout: int = 30) -> dict
     
     try:
         with urlopen(req, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
+            return _read_json_response(response)
     except HTTPError as e:
-        error_body = e.read().decode("utf-8") if e.fp else str(e)
+        error_body = _read_response_body(e).decode("utf-8") if e.fp else str(e)
         try:
             error_json = json.loads(error_body)
             error_detail = error_json.get("error") or error_json.get("message") or error_body
@@ -1833,9 +1879,9 @@ def make_get_request(url: str, headers: dict, timeout: int = 30) -> dict:
 
     try:
         with urlopen(req, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
+            return _read_json_response(response)
     except HTTPError as e:
-        error_body = e.read().decode("utf-8") if e.fp else str(e)
+        error_body = _read_response_body(e).decode("utf-8") if e.fp else str(e)
         try:
             error_json = json.loads(error_body)
             error_detail = error_json.get("error") or error_json.get("message") or error_body
@@ -3034,9 +3080,9 @@ def search_you(
     
     try:
         with urlopen(req, timeout=30) as response:
-            data = json.loads(response.read().decode("utf-8"))
+            data = _read_json_response(response)
     except HTTPError as e:
-        error_body = e.read().decode("utf-8") if e.fp else str(e)
+        error_body = _read_response_body(e).decode("utf-8") if e.fp else str(e)
         try:
             error_json = json.loads(error_body)
             error_detail = error_json.get("error") or error_json.get("message") or error_body
@@ -3199,9 +3245,9 @@ def search_searxng(
     
     try:
         with urlopen(req, timeout=30) as response:
-            data = json.loads(response.read().decode("utf-8"))
+            data = _read_json_response(response)
     except HTTPError as e:
-        error_body = e.read().decode("utf-8") if e.fp else str(e)
+        error_body = _read_response_body(e).decode("utf-8") if e.fp else str(e)
         try:
             error_json = json.loads(error_body)
             error_detail = error_json.get("error") or error_json.get("message") or error_body
