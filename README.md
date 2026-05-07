@@ -10,7 +10,7 @@
 
 `web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, NanoBot, Cursor, and other MCP-compatible hosts access to the same Python routing engine family used by the Hermes/OpenClaw Web Search Plus tools.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`0.2.0`) while tracking the Web Search Plus engine family (`v1.7`). The Hermes plugin is versioned separately as `hermes-web-search-plus v1.7.0`.
+Version note: `web-search-plus-mcp` uses its own MCP package version (`0.2.1`) while tracking the Web Search Plus engine family (`v1.7`). The Hermes plugin is versioned separately as `hermes-web-search-plus v1.7.x`.
 
 ## ✨ Features
 
