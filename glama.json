@@ -4,7 +4,7 @@
     "robbyczgw-cla"
   ],
   "name": "web-search-plus-mcp",
-  "description": "Multi-provider web search and extraction MCP server with intelligent auto-routing, quality reports, and research mode.",
+  "description": "Multi-provider web search, extraction, optional cited answers, and onboarding for MCP server operators.",
   "repository": "https://github.com/robbyczgw-cla/web-search-plus-mcp",
   "homepage": "https://github.com/robbyczgw-cla/web-search-plus-mcp",
   "license": "MIT",
@@ -63,12 +63,31 @@
         },
         "required": ["urls"]
       }
+    },
+    {
+      "name": "web_answer",
+      "description": "Optional beta cited-answer synthesis. Enable with WSP_ENABLE_WEB_ANSWER=1; use web_search for source discovery/current facts.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"},
+          "mode": {"type": "string", "enum": ["quick", "deep"], "default": "quick"},
+          "sources": {"type": "integer", "default": 3},
+          "freshness": {"type": "string", "enum": ["none", "auto", "day", "week", "month", "year"], "default": "none"},
+          "max_extracts": {"type": "integer", "default": 2},
+          "output": {"type": "string", "enum": ["answer", "brief", "sources", "json"], "default": "answer"}
+        },
+        "required": ["query"]
+      },
+      "_meta": {"beta": true, "env_gate": "WSP_ENABLE_WEB_ANSWER=1"}
     }
   ],
   "features": {
     "autoRouting": true,
     "qualityReports": true,
     "researchMode": true,
+    "webAnswerBeta": true,
+    "onboardingCli": true,
     "providers": [
       "serper",
       "brave",
@@ -82,8 +101,8 @@
       "searxng"
     ],
     "extractProviders": [
-      "firecrawl",
       "linkup",
+      "firecrawl",
       "tavily",
       "exa",
       "you"

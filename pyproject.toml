@@ -4,15 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "web-search-plus-mcp"
-version = "0.2.1"
-description = "Multi-provider web search and extraction MCP server with intelligent auto-routing, quality reports, and research mode"
+version = "0.4.0"
+description = "Multi-provider web search, extraction, optional cited answers, and onboarding for MCP clients"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 dependencies = ["mcp>=1.0.0"]
 
 [project.scripts]
-web-search-plus-mcp = "web_search_plus_mcp.server:run"
+web-search-plus-mcp = "web_search_plus_mcp.server:cli_main"
 
 [project.urls]
 Homepage = "https://github.com/robbyczgw-cla/web-search-plus-mcp"

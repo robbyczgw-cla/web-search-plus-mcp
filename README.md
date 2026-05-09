@@ -6,26 +6,28 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Glama](https://glama.ai/mcp/servers/robbyczgw-cla/web-search-plus-mcp/badge)](https://glama.ai/mcp/servers/robbyczgw-cla/web-search-plus-mcp)
 
-**Multi-provider web search and extraction MCP server with intelligent auto-routing.**
+**Multi-provider web search, URL extraction, and optional cited answers for MCP clients.**
 
-`web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, NanoBot, Cursor, and other MCP-compatible hosts access to the same Python routing engine family used by the Hermes/OpenClaw Web Search Plus tools.
+`web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the same provider family used by the Hermes/OpenClaw Web Search Plus tools.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`0.2.1`) while tracking the Web Search Plus engine family (`v1.7`). The Hermes plugin is versioned separately as `hermes-web-search-plus v1.7.x`.
+Version note: `web-search-plus-mcp` uses its own MCP package version (`0.4.0`) while tracking the Web Search Plus engine family (`v1.8.x`). The Hermes plugin is versioned separately as `hermes-web-search-plus v1.8.x`.
 
 ## ✨ Features
 
 - **10 search providers** — Serper, Brave, Tavily, Exa, Querit, Linkup, Firecrawl, Perplexity, You.com, SearXNG
-- **5 extract providers** — Firecrawl, Linkup, Tavily, Exa, You.com
+- **5 extract providers** — Linkup, Firecrawl, Tavily, Exa, You.com
+- **Optional beta `web_answer`** — cited source-backed briefs when you explicitly want synthesis instead of raw results
 - **Intelligent auto-routing** — scores query intent and picks a provider automatically
 - **Quality reports** — optional routing/result diagnostics
 - **Research mode** — opt-in multi-provider search + top-source extraction with a time budget
+- **Onboarding CLI** — `status`, `list`, and `setup` helpers for MCP env/config wiring
 - **Zero-install run** — `uvx web-search-plus-mcp`
-- **MCP-native** — stdio server exposing `web_search` and `web_extract`
+- **MCP-native** — stdio server exposing `web_search`, `web_extract`, and opt-in `web_answer`
 
 ## 🚀 Quick Start
 
 ```bash
-# Run instantly with uvx
+# Run the MCP server instantly with uvx
 uvx web-search-plus-mcp
 
 # Or install globally
@@ -35,13 +37,47 @@ web-search-plus-mcp
 
 At least one provider credential is required for search. Extraction needs at least one extraction-capable provider key.
 
-## ⚙️ Claude Desktop Config
+## 🧭 Easier onboarding
 
-Add this to Claude Desktop's config file:
+Check configured providers:
 
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\\Claude\\claude_desktop_config.json`
-- Linux: `~/.config/Claude/claude_desktop_config.json`
+```bash
+web-search-plus-mcp status
+```
+
+List providers or presets:
+
+```bash
+web-search-plus-mcp list providers
+web-search-plus-mcp list presets
+```
+
+Write a starter `.env` template and print a canonical MCP stdio snippet:
+
+```bash
+web-search-plus-mcp setup --preset starter
+```
+
+The recommended starter preset is **Tavily + Linkup + Brave**. It gives a practical baseline for search, extraction, and cited-answer experiments without wiring every provider on day one.
+
+Add `--enable-answer` if you want the generated `.env` and snippet to opt into the beta `web_answer` tool:
+
+```bash
+web-search-plus-mcp setup --preset starter --enable-answer
+```
+
+`status` returns a non-zero exit code when no search provider is configured, which makes it usable as a config check in scripts.
+
+Other presets:
+
+- `minimal` — Brave only
+- `lean` — Tavily + Linkup
+- `starter` — Tavily + Linkup + Brave
+- `all` — every supported provider env var
+
+## ⚙️ MCP host config
+
+Canonical stdio snippet for Claude Desktop, Cursor, NanoBot, or Hermes native MCP:
 
 ```json
 {
@@ -52,19 +88,22 @@ Add this to Claude Desktop's config file:
       "env": {
         "LINKUP_API_KEY": "your_linkup_key",
         "TAVILY_API_KEY": "your_tavily_key",
-        "EXA_API_KEY": "your_exa_key",
-        "FIRECRAWL_API_KEY": "your_firecrawl_key",
-        "BRAVE_API_KEY": "your_brave_key",
-        "SERPER_API_KEY": "your_serper_key",
-        "QUERIT_API_KEY": "your_querit_key",
-        "PERPLEXITY_API_KEY": "your_perplexity_key",
-        "YOU_API_KEY": "your_you_key",
-        "SEARXNG_INSTANCE_URL": "https://your-searxng-instance.example.com"
+        "BRAVE_API_KEY": "your_brave_key"
       }
     }
   }
 }
 ```
+
+`WSP_ENABLE_WEB_ANSWER=1` is optional. Without it, the MCP server exposes only the stable `web_search` and `web_extract` tools.
+
+Common places to paste this snippet:
+
+- Claude Desktop macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Claude Desktop Windows: `%APPDATA%\\Claude\\claude_desktop_config.json`
+- Claude Desktop Linux: `~/.config/Claude/claude_desktop_config.json`
+- Cursor: project/user MCP config using the same `mcpServers` shape
+- Hermes native MCP: `~/.hermes/config.yaml` under `mcp_servers` with equivalent command/env fields
 
 You can also place a `.env` file next to the package/project with the same variables.
 
@@ -91,9 +130,13 @@ You can also place a `.env` file next to the package/project with the same varia
 
 ## 🛠 MCP Tool Reference
 
-This MCP server exposes `web_search` and `web_extract`. The Hermes plugin exposes the same capability as `web_search_plus` and `web_extract_plus`; the names differ because MCP and Hermes use different tool surfaces.
+This MCP server exposes `web_search` and `web_extract` by default. It exposes `web_answer` only when `WSP_ENABLE_WEB_ANSWER=1` is set.
+
+The Hermes plugin exposes the same capability as `web_search_plus`, `web_extract_plus`, and `web_answer_plus`; the names differ because MCP and Hermes use different tool surfaces.
 
 ### `web_search`
+
+Use for source discovery, current events, prices, weather, sports lineups, schedules, and whenever you want the raw search landscape first.
 
 Parameters:
 
@@ -136,6 +179,44 @@ Example MCP arguments:
   "urls": ["https://example.com"],
   "provider": "linkup",
   "format": "markdown"
+}
+```
+
+### `web_answer` optional beta
+
+Use when you specifically want a short cited synthesis. Do **not** use it as a default replacement for `web_search`.
+
+`web_answer` is slower than `web_search` because it searches, selects sources, and may extract top URLs. Its freshness default is `none` to avoid over-triggering recency filters on evergreen questions.
+
+Parameters:
+
+- `query` — required question/topic
+- `mode` — `quick` or `deep`, default `quick`
+- `sources` — citation-ready source target, default `3`, max `10`
+- `freshness` — `none`, `auto`, `day`, `week`, `month`, `year`, default `none`
+- `max_extracts` — top URLs to extract, default `2`, max `5`
+- `output` — `answer`, `brief`, `sources`, or `json`
+
+Enable it:
+
+```json
+{
+  "env": {
+    "WSP_ENABLE_WEB_ANSWER": "1",
+    "LINKUP_API_KEY": "your_linkup_key",
+    "TAVILY_API_KEY": "your_tavily_key"
+  }
+}
+```
+
+Example MCP arguments:
+
+```json
+{
+  "query": "What changed in Hermes Agent's latest release?",
+  "mode": "quick",
+  "sources": 3,
+  "freshness": "none"
 }
 ```
 
