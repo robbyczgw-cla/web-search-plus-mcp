@@ -2,26 +2,247 @@
 """
 web-search-plus-mcp: Multi-provider web search MCP server.
 
-MCP wrapper around the Web Search Plus v1.7 engine: 10 search providers,
-5 extraction providers, quality reports, and opt-in research mode.
+MCP wrapper around the Web Search Plus v1.8 family: 10 search providers,
+5 extraction providers, quality reports, opt-in research mode, and optional beta answers.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+from urllib.parse import urlsplit
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-__version__ = "0.2.1"
+__version__ = "0.4.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus")
+
+
+SEARCH_PROVIDERS = {
+    "serper": {"env": "SERPER_API_KEY", "capabilities": ["search"]},
+    "brave": {"env": "BRAVE_API_KEY", "capabilities": ["search"]},
+    "tavily": {"env": "TAVILY_API_KEY", "capabilities": ["search", "extract"]},
+    "exa": {"env": "EXA_API_KEY", "capabilities": ["search", "extract"]},
+    "querit": {"env": "QUERIT_API_KEY", "capabilities": ["search"]},
+    "linkup": {"env": "LINKUP_API_KEY", "capabilities": ["search", "extract"]},
+    "firecrawl": {"env": "FIRECRAWL_API_KEY", "capabilities": ["search", "extract"]},
+    "perplexity": {"env": "PERPLEXITY_API_KEY", "capabilities": ["search"]},
+    "you": {"env": "YOU_API_KEY", "capabilities": ["search", "extract"]},
+    "searxng": {"env": "SEARXNG_INSTANCE_URL", "capabilities": ["search"]},
+}
+EXTRACT_PROVIDERS = ["linkup", "firecrawl", "tavily", "exa", "you"]
+PRESETS = {
+    "starter": ["TAVILY_API_KEY", "LINKUP_API_KEY", "BRAVE_API_KEY"],
+    "minimal": ["BRAVE_API_KEY"],
+    "lean": ["TAVILY_API_KEY", "LINKUP_API_KEY"],
+    "all": [meta["env"] for meta in SEARCH_PROVIDERS.values()],
+}
+
+
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _web_answer_enabled() -> bool:
+    return _truthy(os.environ.get("WSP_ENABLE_WEB_ANSWER"))
+
+
+def _configured_env(env_name: str) -> bool:
+    return bool((os.environ.get(env_name) or "").strip())
+
+
+def _configured_providers() -> dict[str, bool]:
+    return {name: _configured_env(meta["env"]) for name, meta in SEARCH_PROVIDERS.items()}
+
+
+def _has_search_provider() -> bool:
+    return any(_configured_env(meta["env"]) for meta in SEARCH_PROVIDERS.values())
+
+
+def _has_extract_provider() -> bool:
+    return any(_configured_env(SEARCH_PROVIDERS[p]["env"]) for p in EXTRACT_PROVIDERS)
+
+
+def _detect_answer_freshness(query: str, requested: str = "none") -> Optional[str]:
+    requested = requested or "none"
+    if requested == "none":
+        return None
+    if requested != "auto":
+        return requested
+    q = query.lower()
+    if any(term in q for term in ("today", "right now", "breaking", "live")):
+        return "day"
+    if any(term in q for term in ("latest", "this week", "recent", "news", "updates")):
+        return "week"
+    if any(term in q for term in ("this month", "past month")):
+        return "month"
+    return None
+
+
+def _extract_json(stdout: str) -> dict[str, Any]:
+    text = (stdout or "").strip()
+    if not text:
+        return {}
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            return json.loads(text[start:end + 1])
+        raise
+
+
+def _run_json_cmd(cmd: list[str], timeout: int) -> dict[str, Any]:
+    result = subprocess.run(cmd, capture_output=True, text=True, env=os.environ.copy(), timeout=timeout)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"command failed: {cmd[0]}")
+    return _extract_json(result.stdout)
+
+
+def _source_type_for_url(url: str) -> str:
+    host = urlsplit(url).netloc.lower() or url.lower()
+    if any(part in host for part in ("docs.", "developer.", "github.com", "readthedocs", "developer.mozilla")):
+        return "docs"
+    if any(part in host for part in ("reddit.com", "forum", "community", "discourse")):
+        return "forum"
+    if any(part in host for part in ("news", "reuters", "apnews", "bbc", "orf.at", "nytimes")):
+        return "news"
+    if any(part in host for part in ("shop", "amazon", "geizhals", "idealo")):
+        return "shopping"
+    return "web"
+
+
+def _normalize_sources(results: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    seen = set()
+    for item in results:
+        url = item.get("url") or item.get("link") or ""
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        title = item.get("title") or url
+        domain = urlsplit(url).netloc.lower()
+        snippet = item.get("snippet") or item.get("description") or item.get("content") or ""
+        sources.append({
+            "title": title,
+            "domain": domain,
+            "url": url,
+            "source_type": _source_type_for_url(url),
+            "snippet": snippet,
+            "citation": f"[{title} ({domain})]({url})",
+            "used_in_answer": True,
+            "extracted_status": "not_requested",
+        })
+        if len(sources) >= limit:
+            break
+    return sources
+
+
+def _clean_evidence(text: str, max_chars: int = 380) -> str:
+    text = " ".join((text or "").replace("\n", " ").split())
+    for phrase in ("Skip to content", "Skip to main content", "You signed in with another tab or window"):
+        text = text.replace(phrase, " ")
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rsplit(" ", 1)[0].strip() + "…"
+
+
+def _compose_answer_payload(arguments: dict[str, Any]) -> dict[str, Any]:
+    if not _web_answer_enabled():
+        return {
+            "error": "web_answer is optional beta and disabled. Set WSP_ENABLE_WEB_ANSWER=1 in this MCP server's env to expose and use it.",
+            "enabled": False,
+        }
+    if not _has_search_provider():
+        return {
+            "error": "web_answer needs at least one search provider key configured.",
+            "required": "Set one of SERPER_API_KEY, BRAVE_API_KEY, TAVILY_API_KEY, EXA_API_KEY, QUERIT_API_KEY, LINKUP_API_KEY, FIRECRAWL_API_KEY, PERPLEXITY_API_KEY, YOU_API_KEY, or SEARXNG_INSTANCE_URL.",
+        }
+
+    query = arguments["query"]
+    mode = arguments.get("mode", "quick") if arguments.get("mode", "quick") in {"quick", "deep"} else "quick"
+    source_count = int(arguments.get("sources") or (6 if mode == "deep" else 3))
+    source_count = max(1, min(source_count, 10))
+    max_extracts = int(arguments.get("max_extracts") or (3 if mode == "deep" else 2))
+    max_extracts = max(0, min(max_extracts, 5, source_count))
+    freshness = arguments.get("freshness", "none")
+    applied_freshness = _detect_answer_freshness(query, freshness)
+
+    cmd = [sys.executable, str(SEARCH_SCRIPT), "--query", query, "--provider", "auto", "--max-results", str(source_count), "--compact", "--quality-report"]
+    if mode == "deep":
+        cmd.extend(["--mode", "research", "--research-time-budget", "30"])
+    if applied_freshness:
+        cmd.extend(["--time-range", applied_freshness])
+
+    try:
+        search_data = _run_json_cmd(cmd, timeout=45 if mode == "deep" else 30)
+    except Exception as exc:
+        return {"error": str(exc), "stage": "search", "query": query, "beta": True}
+    sources = _normalize_sources(search_data.get("results", [])[:source_count], source_count)
+    warnings: list[str] = []
+    extract_data: dict[str, Any] = {"results": []}
+    urls = [s["url"] for s in sources[:max_extracts]]
+    if urls and _has_extract_provider() and max_extracts > 0:
+        extract_cmd = [sys.executable, str(SEARCH_SCRIPT), "--extract-urls", *urls, "--provider", "linkup" if _configured_env("LINKUP_API_KEY") else "auto", "--format", "markdown", "--compact"]
+        try:
+            extract_data = _run_json_cmd(extract_cmd, timeout=35 if mode == "deep" else 20)
+        except Exception as exc:  # best-effort beta layer
+            warnings.append(f"Extraction failed: {exc}")
+            extract_data = {"results": [], "error": str(exc)}
+    elif urls and max_extracts > 0:
+        warnings.append("Extraction skipped: no extraction-capable provider configured. Add LINKUP_API_KEY, FIRECRAWL_API_KEY, TAVILY_API_KEY, EXA_API_KEY, or YOU_API_KEY for fuller citations.")
+
+    extracted_by_url = {r.get("url"): r for r in extract_data.get("results", []) if isinstance(r, dict)}
+    lines = [f"Source-backed brief for: {query}", ""]
+    for idx, src in enumerate(sources[:max(1, max_extracts or source_count)], 1):
+        extracted = extracted_by_url.get(src["url"], {})
+        raw = extracted.get("content") or extracted.get("raw_content") or src.get("snippet") or ""
+        if extracted:
+            src["extracted_status"] = "full" if (extracted.get("content") or extracted.get("raw_content")) else "partial"
+        evidence = _clean_evidence(raw) or "No readable snippet available."
+        lines.append(f"- [{idx}] {src['title']} — {evidence}")
+    answer = "\n".join(lines).strip()
+    extracted_count = sum(1 for s in sources if s.get("extracted_status") in {"full", "partial"})
+    confidence = "high" if len(sources) >= 4 and extracted_count >= 3 else "medium" if sources else "low"
+    return {
+        "query": query,
+        "mode": mode,
+        "beta": True,
+        "answer": answer,
+        "confidence": confidence,
+        "freshness": {"requested": freshness, "applied": applied_freshness or "none"},
+        "sources": sources,
+        "warnings": warnings,
+        "search": {"provider": search_data.get("provider"), "routing": search_data.get("routing", {})},
+        "extraction": {"provider": extract_data.get("provider"), "requested_urls": urls},
+    }
+
+
+def _format_answer_payload(payload: dict[str, Any], output: str = "answer") -> str:
+    if output == "json" or payload.get("error"):
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+    if output == "sources":
+        return "\n".join(f"- {s['citation']} — {s['source_type']}" for s in payload.get("sources", []))
+    answer = payload.get("answer", "")
+    if output == "brief":
+        answer = answer[:900]
+    lines = ["**Answer**", answer, "", "**Sources**"]
+    lines.extend(f"- {s['citation']} — {s['source_type']}" for s in payload.get("sources", []))
+    lines.append("")
+    lines.append(f"**Confidence:** {payload.get('confidence', 'unknown')}")
+    lines.append(f"**Freshness:** {payload.get('freshness', {}).get('applied', 'none')}")
+    if payload.get("warnings"):
+        lines.append("**Warnings:** " + "; ".join(payload["warnings"]))
+    return "\n".join(lines).strip()
 
 
 def _load_env_file() -> None:
@@ -65,7 +286,7 @@ def _as_bool(value: Any) -> bool:
 
 @app.list_tools()
 async def list_tools() -> list[Tool]:
-    return [
+    tools = [
         Tool(
             name="web_search",
             description=(
@@ -132,6 +353,30 @@ async def list_tools() -> list[Tool]:
             },
         ),
     ]
+    if _web_answer_enabled():
+        tools.append(
+            Tool(
+                name="web_answer",
+                description=(
+                    "Optional beta cited-answer synthesis. Use only when the user explicitly wants a written answer or cited summary. "
+                    "For source discovery, current events, prices, weather, sports lineups, schedules, and raw search landscape, use web_search. "
+                    "Usually slower than web_search."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Question or topic to answer from web sources"},
+                        "mode": {"type": "string", "enum": ["quick", "deep"], "default": "quick"},
+                        "sources": {"type": "integer", "default": 3, "minimum": 1, "maximum": 10},
+                        "freshness": {"type": "string", "enum": ["none", "auto", "day", "week", "month", "year"], "default": "none", "description": "Optional recency filter; default none avoids over-triggering stale/wrong current filters."},
+                        "max_extracts": {"type": "integer", "default": 2, "minimum": 0, "maximum": 5},
+                        "output": {"type": "string", "enum": ["answer", "brief", "sources", "json"], "default": "answer"},
+                    },
+                    "required": ["query"],
+                },
+            )
+        )
+    return tools
 
 
 async def _run_cmd(cmd: list[str], timeout: int) -> list[TextContent]:
@@ -198,6 +443,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             cmd.append("--render-js")
         return await _run_cmd(cmd, timeout=90)
 
+    if name == "web_answer":
+        payload = await asyncio.to_thread(_compose_answer_payload, arguments)
+        return [TextContent(type="text", text=_format_answer_payload(payload, arguments.get("output", "answer")))]
+
     raise ValueError(f"Unknown tool: {name}")
 
 
@@ -206,9 +455,117 @@ async def main():
         await app.run(read_stream, write_stream, app.create_initialization_options())
 
 
+def _status_payload() -> dict[str, Any]:
+    configured = _configured_providers()
+    return {
+        "version": __version__,
+        "server": "web-search-plus-mcp",
+        "web_answer_enabled": _web_answer_enabled(),
+        "search_configured": _has_search_provider(),
+        "extract_configured": _has_extract_provider(),
+        "tools_if_started_now": ["web_search", "web_extract"] + (["web_answer"] if _web_answer_enabled() else []),
+        "providers": {
+            name: {"env": SEARCH_PROVIDERS[name]["env"], "configured": ok, "capabilities": SEARCH_PROVIDERS[name]["capabilities"]}
+            for name, ok in configured.items()
+        },
+    }
+
+
+def _canonical_snippet(env_file: str = ".env", enable_answer: bool = False) -> dict[str, Any]:
+    env = {
+        "LINKUP_API_KEY": "your_linkup_key",
+        "TAVILY_API_KEY": "your_tavily_key",
+        "BRAVE_API_KEY": "your_brave_key",
+    }
+    if enable_answer:
+        env["WSP_ENABLE_WEB_ANSWER"] = "1"
+    return {
+        "mcpServers": {
+            "web-search-plus": {
+                "command": "uvx",
+                "args": ["web-search-plus-mcp"],
+                "env": env,
+            }
+        },
+        "note": f"You can also put provider keys in {env_file} next to the project/package.",
+    }
+
+
+def _write_env_template(path: Path, preset: str, enable_answer: bool, overwrite: bool) -> None:
+    keys = PRESETS[preset]
+    if path.exists() and not overwrite:
+        raise SystemExit(f"Refusing to overwrite existing {path}. Pass --force to replace it.")
+    lines = ["# web-search-plus-mcp provider config"]
+    if enable_answer:
+        lines.append("WSP_ENABLE_WEB_ANSWER=1")
+    for key in keys:
+        lines.append(f"{key}=")
+    path.write_text("\n".join(lines) + "\n")
+
+
+def cli_main(argv: Optional[list[str]] = None) -> int:
+    import argparse
+    parser = argparse.ArgumentParser(description="web-search-plus-mcp server and onboarding CLI")
+    sub = parser.add_subparsers(dest="command")
+    sub.add_parser("serve", help="Run the MCP stdio server")
+    status = sub.add_parser("status", help="Show configured providers and exposed tools")
+    status.add_argument("--json", action="store_true")
+    list_p = sub.add_parser("list", help="List providers or presets")
+    list_p.add_argument("what", choices=["providers", "presets"])
+    setup = sub.add_parser("setup", help="Write a provider .env template and print MCP config snippet")
+    setup.add_argument("--preset", choices=sorted(PRESETS), default="starter")
+    setup.add_argument("--env-file", default=".env")
+    setup.add_argument("--enable-answer", action="store_true", default=False, help="Include WSP_ENABLE_WEB_ANSWER=1 in the generated env/snippet")
+    setup.add_argument("--dry-run", action="store_true")
+    setup.add_argument("--force", action="store_true")
+    setup.add_argument("--json", action="store_true")
+    args = parser.parse_args(argv)
+
+    if args.command in (None, "serve"):
+        run()
+        return 0
+    if args.command == "status":
+        payload = _status_payload()
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            print(f"web-search-plus-mcp {__version__}")
+            print("Tools if started now: " + ", ".join(payload["tools_if_started_now"]))
+            print(f"Search configured: {'yes' if payload['search_configured'] else 'no'}")
+            print(f"Extraction configured: {'yes' if payload['extract_configured'] else 'no'}")
+            print(f"web_answer beta enabled: {'yes' if payload['web_answer_enabled'] else 'no'}")
+            for name, meta in payload["providers"].items():
+                mark = "✓" if meta["configured"] else "·"
+                print(f"  {mark} {name}: {meta['env']} ({', '.join(meta['capabilities'])})")
+        return 0 if payload["search_configured"] else 1
+    if args.command == "list":
+        if args.what == "providers":
+            for name, meta in SEARCH_PROVIDERS.items():
+                print(f"{name}: {meta['env']} ({', '.join(meta['capabilities'])})")
+        else:
+            for name, keys in PRESETS.items():
+                print(f"{name}: {', '.join(keys)}")
+        return 0
+    if args.command == "setup":
+        path = Path(args.env_file).expanduser()
+        payload = {"preset": args.preset, "env_file": str(path), "keys": PRESETS[args.preset], "web_answer_enabled": args.enable_answer, "snippet": _canonical_snippet(str(path), args.enable_answer)}
+        if not args.dry_run:
+            _write_env_template(path, args.preset, args.enable_answer, args.force)
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            action = "Would write" if args.dry_run else "Wrote"
+            print(f"{action} {path} with preset {args.preset}: {', '.join(PRESETS[args.preset])}")
+            print("\nCanonical MCP stdio snippet:")
+            print(json.dumps(payload["snippet"], indent=2))
+        return 0
+    parser.error("unknown command")
+    return 2
+
+
 def run():
     asyncio.run(main())
 
 
 if __name__ == "__main__":
-    run()
+    raise SystemExit(cli_main())

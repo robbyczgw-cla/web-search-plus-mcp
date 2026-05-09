@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-05-09
+
+### Added
+- Add optional beta `web_answer` MCP tool for source-backed cited briefs.
+- Gate `web_answer` behind `WSP_ENABLE_WEB_ANSWER=1` so the default tool surface stays stable and small.
+- Add MCP-native onboarding CLI: `status`, `list providers`, `list presets`, and `setup`.
+- Add setup presets: `minimal`, `lean`, `starter`, and `all`.
+- Add tests for beta tool gating, answer command mapping, and onboarding dry-run/status behavior.
+
+### Changed
+- Bump MCP package to `0.4.0` and align docs with the Web Search Plus v1.8.x engine family.
+- Keep `web_search` as the recommended default for source discovery, current events, prices, weather, sports lineups, and schedules.
+- Set `web_answer` freshness default to `none` to avoid over-triggering recency filters.
+- Update the console entrypoint so `web-search-plus-mcp` runs the server by default but also supports onboarding subcommands.
+- Prefer Linkup first in extraction provider docs/metadata.
+
+### Notes
+- `web_answer` is intentionally beta. Promote only after real MCP host dogfooding shows the contract is stable.
+- Hermes plugin users know this capability as `web_answer_plus`; the MCP-native tool name is `web_answer`.
+- Locale/language expansion and Routing v2 remain out of scope for this release.
+
 ## [0.2.1] - 2026-05-07
 
 ### Fixed
