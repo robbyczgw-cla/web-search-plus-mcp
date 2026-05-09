@@ -88,6 +88,7 @@
     "researchMode": true,
     "webAnswerBeta": true,
     "onboardingCli": true,
+    "routingConfigCli": true,
     "providers": [
       "serper",
       "brave",

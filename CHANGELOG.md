@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-05-09
+
+### Added
+- Add persistent routing preference CLI: `config show`, `set-default`, `set-routing`, `set-priority`, `set-fallback`, `disable`/`enable`, `set-threshold`, and `reset --yes`.
+- Add `WEB_SEARCH_PLUS_CONFIG` and `--config-path` support for isolated MCP host installs.
+- Add routing preference fields to `status --json` without exposing provider secrets.
+
+### Changed
+- Align MCP package with the Web Search Plus v1.9.x engine family.
+- Make fixed-provider mode strict when auto-routing is disabled: `provider="auto"` uses only the configured default provider.
+- Validate and quarantine malformed or semantically invalid config files at runtime.
+
+### Tests
+- Add coverage for config commands, alias normalization, strict fixed-provider routing, and invalid config quarantine.
+
 ## [0.4.0] - 2026-05-09
 
 ### Added

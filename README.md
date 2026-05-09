@@ -10,7 +10,7 @@
 
 `web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the same provider family used by the Hermes/OpenClaw Web Search Plus tools.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`0.4.0`) while tracking the Web Search Plus engine family (`v1.8.x`). The Hermes plugin is versioned separately as `hermes-web-search-plus v1.8.x`.
+Version note: `web-search-plus-mcp` uses its own MCP package version (`0.5.0`) while tracking the Web Search Plus engine family (`v1.9.x`). The Hermes plugin is versioned separately as `hermes-web-search-plus v1.9.x`.
 
 ## ✨ Features
 
@@ -20,7 +20,7 @@ Version note: `web-search-plus-mcp` uses its own MCP package version (`0.4.0`) w
 - **Intelligent auto-routing** — scores query intent and picks a provider automatically
 - **Quality reports** — optional routing/result diagnostics
 - **Research mode** — opt-in multi-provider search + top-source extraction with a time budget
-- **Onboarding CLI** — `status`, `list`, and `setup` helpers for MCP env/config wiring
+- **Onboarding CLI** — `status`, `list`, `setup`, and persistent routing `config` helpers for MCP env/config wiring
 - **Zero-install run** — `uvx web-search-plus-mcp`
 - **MCP-native** — stdio server exposing `web_search`, `web_extract`, and opt-in `web_answer`
 
@@ -67,6 +67,22 @@ web-search-plus-mcp setup --preset starter --enable-answer
 ```
 
 `status` returns a non-zero exit code when no search provider is configured, which makes it usable as a config check in scripts.
+
+Persistent routing preferences live in `config.json` rather than `.env`:
+
+```bash
+web-search-plus-mcp config show
+web-search-plus-mcp config set-default brave      # strict fixed-provider mode
+web-search-plus-mcp config set-routing on         # restore auto-routing
+web-search-plus-mcp config set-priority tavily,linkup,brave
+web-search-plus-mcp config set-fallback tavily
+web-search-plus-mcp config disable perplexity
+web-search-plus-mcp config enable perplexity
+web-search-plus-mcp config set-threshold 0.45
+web-search-plus-mcp config reset --yes
+```
+
+Use `--config-path /path/to/config.json` or `WEB_SEARCH_PLUS_CONFIG=/path/to/config.json` for isolated MCP host installs. Provider secrets stay in environment variables; routing behavior stays in `config.json`.
 
 Other presets:
 

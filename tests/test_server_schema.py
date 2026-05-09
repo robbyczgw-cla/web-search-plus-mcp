@@ -3,6 +3,7 @@ import json
 from types import SimpleNamespace
 
 import web_search_plus_mcp.server as server
+import web_search_plus_mcp.search as search
 
 
 def run(coro):
@@ -235,3 +236,122 @@ def test_cli_status_json_and_setup_dry_run(tmp_path, monkeypatch, capsys):
     setup = json.loads(capsys.readouterr().out)
     assert setup["web_answer_enabled"] is True
     assert setup["snippet"]["mcpServers"]["web-search-plus"]["env"]["WSP_ENABLE_WEB_ANSWER"] == "1"
+
+
+def test_cli_config_commands_persist_routing_preferences(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "config.json"
+    monkeypatch.setenv(server.CONFIG_ENV_VAR, str(config_path))
+
+    assert server.cli_main(["config", "show"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["routing_preferences"]["enabled"] is True
+
+    assert server.cli_main(["config", "set-default", "brave"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["default_provider"] == "brave"
+    assert payload["routing_preferences"]["enabled"] is False
+
+    assert server.cli_main(["config", "set-routing", "on"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["routing_preferences"]["enabled"] is True
+
+    assert server.cli_main(["config", "set-priority", "tavily,linkup,kilo-perplexity,brave"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["routing_preferences"]["provider_priority"] == ["tavily", "linkup", "perplexity", "brave"]
+
+    assert server.cli_main(["config", "disable", "perplexity"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert "perplexity" in payload["routing_preferences"]["disabled_providers"]
+
+    assert server.cli_main(["config", "enable", "perplexity"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert "perplexity" not in payload["routing_preferences"]["disabled_providers"]
+
+    assert server.cli_main(["config", "set-threshold", "0.45"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["routing_preferences"]["confidence_threshold"] == 0.45
+
+    assert server.cli_main(["config", "set-fallback", "tavily"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["routing_preferences"]["fallback_provider"] == "tavily"
+
+    assert server.cli_main(["config", "reset", "--yes"]) == 0
+    capsys.readouterr()
+    assert any(config_path.parent.glob("config.json.bak-*"))
+
+
+def test_status_json_includes_routing_preferences_without_secrets(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "config.json"
+    monkeypatch.setenv(server.CONFIG_ENV_VAR, str(config_path))
+    monkeypatch.setenv("BRAVE_API_KEY", "brv-super-secret")
+    assert server.cli_main(["config", "set-default", "brave"]) == 0
+    capsys.readouterr()
+
+    assert server.cli_main(["status", "--json"]) == 0
+    payload_text = capsys.readouterr().out
+    payload = json.loads(payload_text)
+    assert payload["default_provider"] == "brave"
+    assert payload["routing_preferences"]["enabled"] is False
+    assert "brv-super-secret" not in payload_text
+
+
+def test_invalid_config_is_quarantined_by_server_loader(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"auto_routing":{"confidence_threshold": 4}}')
+    monkeypatch.setenv(server.CONFIG_ENV_VAR, str(config_path))
+
+    config, warning = server._load_behavior_config()
+    assert config["auto_routing"]["confidence_threshold"] == 0.3
+    assert warning and "Invalid config moved" in warning
+    assert not config_path.exists()
+    assert list(tmp_path.glob("config.json.broken-*"))
+
+
+def test_search_runtime_honors_strict_fixed_provider_mode(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({
+        "defaults": {"provider": "brave"},
+        "auto_routing": {
+            "enabled": False,
+            "fallback_provider": "tavily",
+            "provider_priority": ["tavily", "brave"],
+            "disabled_providers": [],
+            "confidence_threshold": 0.3,
+        },
+    }))
+    monkeypatch.setenv(search.CONFIG_ENV_VAR, str(config_path))
+    monkeypatch.setenv("BRAVE_API_KEY", "brv-test")
+    monkeypatch.setenv("TAVILY_API_KEY", "tv-test")
+    monkeypatch.setattr(search.sys, "argv", ["search.py", "--query", "strict provider", "--provider", "auto", "--compact"])
+    calls = []
+
+    def fake_brave(**kwargs):
+        calls.append("brave")
+        return {"provider": "brave", "results": [{"title": "B", "url": "https://example.com", "snippet": "ok"}]}
+
+    def fake_tavily(**kwargs):
+        calls.append("tavily")
+        return {"provider": "tavily", "results": []}
+
+    monkeypatch.setattr(search, "search_brave", fake_brave)
+    monkeypatch.setattr(search, "search_tavily", fake_tavily)
+    monkeypatch.setattr(search, "validate_api_key", lambda prov, config=None: f"{prov}-key-long-enough-for-test")
+    search.main()
+    payload = json.loads(capsys.readouterr().out)
+
+    assert calls == ["brave"]
+    assert payload["provider"] == "brave"
+    assert payload["routing"]["reason"] == "auto_routing_disabled_default_provider"
+
+
+def test_search_runtime_quarantines_semantic_invalid_config(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"defaults": {"provider": "not-real"}}))
+    monkeypatch.setenv(search.CONFIG_ENV_VAR, str(config_path))
+
+    config = search.load_config()
+    stderr = capsys.readouterr().err
+    assert config["defaults"]["provider"] == "serper"
+    assert "Invalid config moved" in stderr
+    assert not config_path.exists()
+    assert list(tmp_path.glob("config.json.broken-*"))

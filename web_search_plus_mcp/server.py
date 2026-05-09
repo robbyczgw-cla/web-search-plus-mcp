@@ -2,7 +2,7 @@
 """
 web-search-plus-mcp: Multi-provider web search MCP server.
 
-MCP wrapper around the Web Search Plus v1.8 family: 10 search providers,
+MCP wrapper around the Web Search Plus v1.9 family: 10 search providers,
 5 extraction providers, quality reports, opt-in research mode, and optional beta answers.
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus")
@@ -45,6 +45,125 @@ PRESETS = {
     "lean": ["TAVILY_API_KEY", "LINKUP_API_KEY"],
     "all": [meta["env"] for meta in SEARCH_PROVIDERS.values()],
 }
+
+CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
+PROVIDER_ALIASES = {"kilo-perplexity": "perplexity", "kilo_perplexity": "perplexity"}
+ROUTING_PROVIDER_ORDER = ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "brave", "serper", "you", "searxng"]
+
+
+def _canonical_provider(provider: str) -> str:
+    value = (provider or "").strip().lower()
+    return PROVIDER_ALIASES.get(value, value)
+
+
+def _valid_provider(provider: str) -> bool:
+    return _canonical_provider(provider) in SEARCH_PROVIDERS
+
+
+def _default_config_path() -> Path:
+    return Path(os.environ.get(CONFIG_ENV_VAR, Path(__file__).parent.parent / "config.json")).expanduser()
+
+
+def _default_behavior_config() -> dict[str, Any]:
+    return {
+        "defaults": {"provider": "serper", "max_results": 5},
+        "auto_routing": {
+            "enabled": True,
+            "fallback_provider": "serper",
+            "provider_priority": ROUTING_PROVIDER_ORDER[:],
+            "disabled_providers": [],
+            "confidence_threshold": 0.3,
+        },
+    }
+
+
+def _merge_dict(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in incoming.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_dict(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _normalize_provider_list(value: Any, *, allow_empty: bool = True) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw = [part.strip() for part in value.split(",")]
+    elif isinstance(value, list):
+        raw = [str(part).strip() for part in value]
+    else:
+        raise ValueError("provider list must be a list or comma-separated string")
+    normalized: list[str] = []
+    for provider in raw:
+        if not provider:
+            continue
+        canonical = _canonical_provider(provider)
+        if canonical not in SEARCH_PROVIDERS:
+            raise ValueError(f"unknown provider: {provider}")
+        if canonical not in normalized:
+            normalized.append(canonical)
+    if not normalized and not allow_empty:
+        raise ValueError("provider list cannot be empty")
+    return normalized
+
+
+def _normalize_behavior_config(config: dict[str, Any]) -> dict[str, Any]:
+    normalized = _merge_dict(_default_behavior_config(), config or {})
+    defaults = normalized.setdefault("defaults", {})
+    default_provider = _canonical_provider(str(defaults.get("provider", "serper")))
+    if default_provider not in SEARCH_PROVIDERS:
+        raise ValueError(f"unknown default provider: {defaults.get('provider')}")
+    defaults["provider"] = default_provider
+    auto = normalized.setdefault("auto_routing", {})
+    auto["enabled"] = bool(auto.get("enabled", True))
+    fallback = _canonical_provider(str(auto.get("fallback_provider", "serper")))
+    if fallback not in SEARCH_PROVIDERS:
+        raise ValueError(f"unknown fallback provider: {auto.get('fallback_provider')}")
+    auto["fallback_provider"] = fallback
+    auto["provider_priority"] = _normalize_provider_list(auto.get("provider_priority", ROUTING_PROVIDER_ORDER), allow_empty=False)
+    auto["disabled_providers"] = _normalize_provider_list(auto.get("disabled_providers", []), allow_empty=True)
+    threshold = auto.get("confidence_threshold", 0.3)
+    try:
+        threshold = float(threshold)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("confidence_threshold must be a number from 0 to 1") from exc
+    if not 0 <= threshold <= 1:
+        raise ValueError("confidence_threshold must be between 0 and 1")
+    auto["confidence_threshold"] = threshold
+    return normalized
+
+
+def _load_behavior_config(path: Optional[Path] = None) -> tuple[dict[str, Any], Optional[str]]:
+    path = path or _default_config_path()
+    if not path.exists():
+        return _default_behavior_config(), None
+    try:
+        data = json.loads(path.read_text())
+        return _normalize_behavior_config(data), None
+    except Exception as exc:
+        broken = path.with_name(path.name + f".broken-{int(__import__('time').time())}")
+        try:
+            path.replace(broken)
+            detail = f"Invalid config moved to {broken}: {exc}"
+        except OSError:
+            detail = f"Invalid config ignored: {exc}"
+        return _default_behavior_config(), detail
+
+
+def _write_behavior_config(config: dict[str, Any], path: Optional[Path] = None, *, backup: bool = False) -> Path:
+    path = path or _default_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    normalized = _normalize_behavior_config(config)
+    if backup and path.exists():
+        backup_path = path.with_name(path.name + f".bak-{int(__import__('time').time())}")
+        backup_path.write_text(path.read_text())
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(normalized, indent=2, ensure_ascii=False) + "\n")
+    tmp.replace(path)
+    return path
 
 
 def _truthy(value: Any) -> bool:
@@ -290,7 +409,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="web_search",
             description=(
-                "Search the web using Web Search Plus v1.7 intelligent multi-provider routing. "
+                "Search the web using Web Search Plus v1.9 intelligent multi-provider routing. "
                 "Supports Serper, Brave, Tavily, Exa, Querit, Linkup, Firecrawl, "
                 "Perplexity, You.com, and SearXNG."
             ),
@@ -457,18 +576,25 @@ async def main():
 
 def _status_payload() -> dict[str, Any]:
     configured = _configured_providers()
-    return {
+    behavior_config, config_warning = _load_behavior_config()
+    payload = {
         "version": __version__,
         "server": "web-search-plus-mcp",
         "web_answer_enabled": _web_answer_enabled(),
         "search_configured": _has_search_provider(),
         "extract_configured": _has_extract_provider(),
         "tools_if_started_now": ["web_search", "web_extract"] + (["web_answer"] if _web_answer_enabled() else []),
+        "config_path": str(_default_config_path()),
+        "routing_preferences": behavior_config.get("auto_routing", {}),
+        "default_provider": behavior_config.get("defaults", {}).get("provider"),
         "providers": {
             name: {"env": SEARCH_PROVIDERS[name]["env"], "configured": ok, "capabilities": SEARCH_PROVIDERS[name]["capabilities"]}
             for name, ok in configured.items()
         },
     }
+    if config_warning:
+        payload["config_warning"] = config_warning
+    return payload
 
 
 def _canonical_snippet(env_file: str = ".env", enable_answer: bool = False) -> dict[str, Any]:
@@ -519,6 +645,26 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     setup.add_argument("--dry-run", action="store_true")
     setup.add_argument("--force", action="store_true")
     setup.add_argument("--json", action="store_true")
+    config_p = sub.add_parser("config", help="Inspect or change routing preferences in config.json")
+    config_p.add_argument("--config-path", help=f"Override config path instead of {CONFIG_ENV_VAR}/default")
+    config_sub = config_p.add_subparsers(dest="config_command", required=True)
+    config_sub.add_parser("show", help="Show current routing preferences")
+    set_default = config_sub.add_parser("set-default", help="Use one provider strictly when auto-routing is off")
+    set_default.add_argument("provider")
+    set_routing = config_sub.add_parser("set-routing", help="Turn auto-routing on or off")
+    set_routing.add_argument("state", choices=["on", "off"])
+    set_priority = config_sub.add_parser("set-priority", help="Set comma-separated provider priority")
+    set_priority.add_argument("providers")
+    set_fallback = config_sub.add_parser("set-fallback", help="Set fallback provider")
+    set_fallback.add_argument("provider")
+    disable_provider = config_sub.add_parser("disable", aliases=["disable-provider"], help="Disable a provider in auto-routing")
+    disable_provider.add_argument("provider")
+    enable_provider = config_sub.add_parser("enable", aliases=["enable-provider"], help="Re-enable a provider in auto-routing")
+    enable_provider.add_argument("provider")
+    set_threshold = config_sub.add_parser("set-threshold", help="Set confidence threshold from 0 to 1")
+    set_threshold.add_argument("threshold", type=float)
+    reset = config_sub.add_parser("reset", help="Reset routing preferences to defaults")
+    reset.add_argument("--yes", action="store_true", help="Confirm reset")
     args = parser.parse_args(argv)
 
     if args.command in (None, "serve"):
@@ -558,6 +704,58 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             print(f"{action} {path} with preset {args.preset}: {', '.join(PRESETS[args.preset])}")
             print("\nCanonical MCP stdio snippet:")
             print(json.dumps(payload["snippet"], indent=2))
+        return 0
+    if args.command == "config":
+        if args.config_path:
+            os.environ[CONFIG_ENV_VAR] = args.config_path
+        path = _default_config_path()
+        config, warning = _load_behavior_config(path)
+        if args.config_command == "show":
+            payload = {"config_path": str(path), "default_provider": config.get("defaults", {}).get("provider"), "routing_preferences": config.get("auto_routing", {})}
+            if warning:
+                payload["warning"] = warning
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+            return 0
+        if args.config_command == "reset":
+            if not args.yes:
+                raise SystemExit("Refusing to reset without --yes")
+            _write_behavior_config(_default_behavior_config(), path, backup=True)
+            print(f"Reset routing preferences in {path}")
+            return 0
+        if args.config_command == "set-default":
+            provider = _canonical_provider(args.provider)
+            if provider not in SEARCH_PROVIDERS:
+                raise SystemExit(f"Unknown provider: {args.provider}")
+            config.setdefault("defaults", {})["provider"] = provider
+            config.setdefault("auto_routing", {})["enabled"] = False
+        elif args.config_command == "set-routing":
+            config.setdefault("auto_routing", {})["enabled"] = args.state == "on"
+        elif args.config_command == "set-priority":
+            config.setdefault("auto_routing", {})["provider_priority"] = _normalize_provider_list(args.providers, allow_empty=False)
+        elif args.config_command == "set-fallback":
+            provider = _canonical_provider(args.provider)
+            if provider not in SEARCH_PROVIDERS:
+                raise SystemExit(f"Unknown provider: {args.provider}")
+            config.setdefault("auto_routing", {})["fallback_provider"] = provider
+        elif args.config_command in {"disable", "disable-provider"}:
+            provider = _canonical_provider(args.provider)
+            if provider not in SEARCH_PROVIDERS:
+                raise SystemExit(f"Unknown provider: {args.provider}")
+            disabled = _normalize_provider_list(config.setdefault("auto_routing", {}).get("disabled_providers", []))
+            if provider not in disabled:
+                disabled.append(provider)
+            config["auto_routing"]["disabled_providers"] = disabled
+        elif args.config_command in {"enable", "enable-provider"}:
+            provider = _canonical_provider(args.provider)
+            if provider not in SEARCH_PROVIDERS:
+                raise SystemExit(f"Unknown provider: {args.provider}")
+            disabled = _normalize_provider_list(config.setdefault("auto_routing", {}).get("disabled_providers", []))
+            config["auto_routing"]["disabled_providers"] = [p for p in disabled if p != provider]
+        elif args.config_command == "set-threshold":
+            config.setdefault("auto_routing", {})["confidence_threshold"] = args.threshold
+        _write_behavior_config(config, path)
+        updated, _ = _load_behavior_config(path)
+        print(json.dumps({"config_path": str(path), "default_provider": updated.get("defaults", {}).get("provider"), "routing_preferences": updated.get("auto_routing", {})}, indent=2, ensure_ascii=False))
         return 0
     parser.error("unknown command")
     return 2
