@@ -1,5 +1,9 @@
 # 🔍 web-search-plus-mcp
 
+<p align="center">
+  <img src="docs/assets/web-search-plus-logo.png" alt="web search plus logo" width="180">
+</p>
+
 [![PyPI version](https://img.shields.io/pypi/v/web-search-plus-mcp.svg)](https://pypi.org/project/web-search-plus-mcp/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![MCP](https://img.shields.io/badge/MCP-compatible-green.svg)](https://modelcontextprotocol.io/)
