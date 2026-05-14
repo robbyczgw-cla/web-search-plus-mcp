@@ -29,6 +29,7 @@ def test_web_search_schema_exposes_v17_providers_and_controls():
         "linkup",
         "firecrawl",
         "perplexity",
+        "kilo-perplexity",
         "you",
         "searxng",
     ]
@@ -257,7 +258,7 @@ def test_cli_config_commands_persist_routing_preferences(tmp_path, monkeypatch, 
 
     assert server.cli_main(["config", "set-priority", "tavily,linkup,kilo-perplexity,brave"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["routing_preferences"]["provider_priority"] == ["tavily", "linkup", "perplexity", "brave"]
+    assert payload["routing_preferences"]["provider_priority"] == ["tavily", "linkup", "kilo-perplexity", "brave"]
 
     assert server.cli_main(["config", "disable", "perplexity"]) == 0
     payload = json.loads(capsys.readouterr().out)
@@ -322,7 +323,7 @@ def test_search_runtime_honors_strict_fixed_provider_mode(tmp_path, monkeypatch,
     monkeypatch.setenv(search.CONFIG_ENV_VAR, str(config_path))
     monkeypatch.setenv("BRAVE_API_KEY", "brv-test")
     monkeypatch.setenv("TAVILY_API_KEY", "tv-test")
-    monkeypatch.setattr(search.sys, "argv", ["search.py", "--query", "strict provider", "--provider", "auto", "--compact"])
+    monkeypatch.setattr(search.sys, "argv", ["search.py", "--query", "strict provider", "--provider", "auto", "--compact", "--no-cache"])
     calls = []
 
     def fake_brave(**kwargs):

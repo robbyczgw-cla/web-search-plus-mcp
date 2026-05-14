@@ -2,7 +2,7 @@
 """
 web-search-plus-mcp: Multi-provider web search MCP server.
 
-MCP wrapper around the Web Search Plus v1.9 family: 10 search providers,
+MCP wrapper around the Web Search Plus v1.9 family: 11 search providers,
 5 extraction providers, quality reports, opt-in research mode, and optional beta answers.
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus")
@@ -35,6 +35,7 @@ SEARCH_PROVIDERS = {
     "linkup": {"env": "LINKUP_API_KEY", "capabilities": ["search", "extract"]},
     "firecrawl": {"env": "FIRECRAWL_API_KEY", "capabilities": ["search", "extract"]},
     "perplexity": {"env": "PERPLEXITY_API_KEY", "capabilities": ["search"]},
+    "kilo-perplexity": {"env": "KILOCODE_API_KEY", "capabilities": ["search"]},
     "you": {"env": "YOU_API_KEY", "capabilities": ["search", "extract"]},
     "searxng": {"env": "SEARXNG_INSTANCE_URL", "capabilities": ["search"]},
 }
@@ -47,8 +48,8 @@ PRESETS = {
 }
 
 CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
-PROVIDER_ALIASES = {"kilo-perplexity": "perplexity", "kilo_perplexity": "perplexity"}
-ROUTING_PROVIDER_ORDER = ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "brave", "serper", "you", "searxng"]
+PROVIDER_ALIASES = {"kilo_perplexity": "kilo-perplexity"}
+ROUTING_PROVIDER_ORDER = ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng"]
 
 
 def _canonical_provider(provider: str) -> str:
@@ -284,7 +285,7 @@ def _compose_answer_payload(arguments: dict[str, Any]) -> dict[str, Any]:
     if not _has_search_provider():
         return {
             "error": "web_answer needs at least one search provider key configured.",
-            "required": "Set one of SERPER_API_KEY, BRAVE_API_KEY, TAVILY_API_KEY, EXA_API_KEY, QUERIT_API_KEY, LINKUP_API_KEY, FIRECRAWL_API_KEY, PERPLEXITY_API_KEY, YOU_API_KEY, or SEARXNG_INSTANCE_URL.",
+            "required": "Set one of SERPER_API_KEY, BRAVE_API_KEY, TAVILY_API_KEY, EXA_API_KEY, QUERIT_API_KEY, LINKUP_API_KEY, FIRECRAWL_API_KEY, PERPLEXITY_API_KEY, KILOCODE_API_KEY, YOU_API_KEY, or SEARXNG_INSTANCE_URL.",
         }
 
     query = arguments["query"]
@@ -411,7 +412,7 @@ async def list_tools() -> list[Tool]:
             description=(
                 "Search the web using Web Search Plus v1.9 intelligent multi-provider routing. "
                 "Supports Serper, Brave, Tavily, Exa, Querit, Linkup, Firecrawl, "
-                "Perplexity, You.com, and SearXNG."
+                "native Perplexity, Kilo Perplexity, You.com, and SearXNG."
             ),
             inputSchema={
                 "type": "object",
@@ -429,6 +430,7 @@ async def list_tools() -> list[Tool]:
                             "linkup",
                             "firecrawl",
                             "perplexity",
+                            "kilo-perplexity",
                             "you",
                             "searxng",
                         ],
@@ -521,7 +523,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             "--query",
             query,
             "--provider",
-            arguments.get("provider", "auto"),
+            _canonical_provider(arguments.get("provider", "auto")),
             "--max-results",
             str(arguments.get("count", 5)),
             "--compact",
