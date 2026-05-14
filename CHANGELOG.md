@@ -15,8 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Migration
 - Existing Kilo gateway users who previously selected `perplexity` with only `KILOCODE_API_KEY` should switch explicit provider config to `kilo-perplexity` or set a native `PERPLEXITY_API_KEY`.
 
+### Docs
+- Add Web Search Plus logo assets used by the README and directory listings.
+
 ### Tests
-- Add regression coverage for provider defaults, env-key lookup, missing-key errors, aliases, and MCP server metadata.
+- Add regression coverage for provider defaults, env-key lookup, missing-key errors, aliases, auto-routing preference, cache separation, and MCP server metadata.
+
+### Contributors
+- Robby Czesany / robbyczgw-cla
 
 ## [0.5.0] - 2026-05-09
 
