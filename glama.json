@@ -33,7 +33,7 @@
           "provider": {
             "type": "string",
             "description": "Provider override",
-            "enum": ["auto", "serper", "brave", "tavily", "exa", "querit", "linkup", "firecrawl", "perplexity", "you", "searxng"],
+            "enum": ["auto", "serper", "brave", "tavily", "exa", "querit", "linkup", "firecrawl", "perplexity", "kilo-perplexity", "you", "searxng"],
             "default": "auto"
           },
           "count": {"type": "integer", "description": "Number of results", "default": 5},
@@ -98,6 +98,7 @@
       "linkup",
       "firecrawl",
       "perplexity",
+      "kilo-perplexity",
       "you",
       "searxng"
     ],

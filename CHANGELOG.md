@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-05-14
+
+### Fixed
+- Split native `perplexity` from `kilo-perplexity` so direct Perplexity uses `PERPLEXITY_API_KEY`, `https://api.perplexity.ai/chat/completions`, and `sonar-pro`.
+- Keep Kilo gateway routing under the distinct `kilo-perplexity` provider using `KILOCODE_API_KEY`, `https://api.kilo.ai/api/gateway/chat/completions`, and `perplexity/sonar-pro`.
+- Normalize `kilo_perplexity` to `kilo-perplexity` without aliasing it to native `perplexity`.
+
+### Migration
+- Existing Kilo gateway users who previously selected `perplexity` with only `KILOCODE_API_KEY` should switch explicit provider config to `kilo-perplexity` or set a native `PERPLEXITY_API_KEY`.
+
+### Tests
+- Add regression coverage for provider defaults, env-key lookup, missing-key errors, aliases, and MCP server metadata.
+
 ## [0.5.0] - 2026-05-09
 
 ### Added
