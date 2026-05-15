@@ -14,11 +14,11 @@
 
 `web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the same provider family used by the Hermes/OpenClaw Web Search Plus tools.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`0.5.1`) while tracking the Web Search Plus engine family (`v1.9.x`). The Hermes plugin is versioned separately as `hermes-web-search-plus v1.9.x`.
+Version note: `web-search-plus-mcp` uses its own MCP package version (`0.6.0`) while tracking the Web Search Plus engine family (`v1.10.x`). The Hermes plugin is versioned separately as `hermes-web-search-plus v1.10.x`.
 
 ## ✨ Features
 
-- **11 search providers** — Serper, Brave, Tavily, Exa, Querit, Linkup, Firecrawl, native Perplexity, Kilo Perplexity, You.com, SearXNG
+- **12 search providers** — Serper, Brave, Tavily, Exa, Linkup, Firecrawl, native Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, Querit
 - **5 extract providers** — Linkup, Firecrawl, Tavily, Exa, You.com
 - **Optional beta `web_answer`** — cited source-backed briefs when you explicitly want synthesis instead of raw results
 - **Intelligent auto-routing** — scores query intent and picks a provider automatically
@@ -134,13 +134,14 @@ You can also place a `.env` file next to the package/project with the same varia
 - **Brave** — general-purpose independent web index
 - **Tavily** — research and analysis
 - **Exa** — semantic discovery, similarity, deep/deep-reasoning synthesis
-- **Querit** — multilingual, real-time AI search
 - **Linkup** — source-backed grounding/citations
 - **Firecrawl** — web search plus scrape-ready content
 - **Perplexity** — native Perplexity API direct synthesized answers (`PERPLEXITY_API_KEY`, `sonar-pro`)
 - **Kilo Perplexity** — Perplexity via Kilo gateway (`KILOCODE_API_KEY`, `perplexity/sonar-pro`)
 - **You.com** — LLM-ready real-time snippets
 - **SearXNG** — privacy-first self-hosted meta-search
+- **SerpBase** — explicit-only Google SERP API (`SERPBASE_API_KEY`, `auto_allow=false`)
+- **Querit** — explicit-only multilingual, real-time AI search (`QUERIT_API_KEY`, `auto_allow=false`)
 
 ## 📄 Extract Providers
 
@@ -163,7 +164,7 @@ Use for source discovery, current events, prices, weather, sports lineups, sched
 Parameters:
 
 - `query` — required search query
-- `provider` — `auto`, `serper`, `brave`, `tavily`, `exa`, `querit`, `linkup`, `firecrawl`, `perplexity`, `kilo-perplexity`, `you`, `searxng`
+- `provider` — `auto`, `serper`, `brave`, `tavily`, `exa`, `linkup`, `firecrawl`, `perplexity`, `kilo-perplexity`, `you`, `searxng`, `serpbase`, `querit`
 - `count` — results to return, default `5`, max `20`
 - `depth` — Exa depth: `normal`, `deep`, `deep-reasoning`
 - `time_range` — `hour`, `day`, `week`, `month`, `year`
@@ -246,7 +247,7 @@ Example MCP arguments:
 
 - `iPhone 16 Pro price` → Serper/Brave shopping-style search
 - `how does TCP/IP work` → Tavily research-style search
-- `latest multilingual EV market updates` → Querit/Linkup real-time/source-backed search
+- `latest multilingual EV market updates` → Linkup real-time/source-backed search; use Querit explicitly if you have opted into it
 - `companies like Stripe` → Exa discovery search
 - `what is quantum computing` → Perplexity/You.com direct-answer style search
 - `privacy focused search results` → SearXNG when configured

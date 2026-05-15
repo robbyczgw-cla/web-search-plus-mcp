@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-05-15
+
+### Added
+- Sync SerpBase provider support from Hermes Web Search Plus v1.10.0, including explicit `serpbase` selection, `SERPBASE_API_KEY`, and SerpBase result normalization.
+
+### Changed
+- Add `auto_allow` routing gates so SerpBase and Querit stay explicit-only by default while remaining available for direct provider calls.
+- List explicit-only SerpBase and Querit last in general provider docs and MCP schemas.
+- Align MCP package with the Web Search Plus v1.10.x engine family.
+
+### Tests
+- Add regression coverage for explicit-only auto-routing gates, direct SerpBase calls, MCP schema ordering, and server auto-allow metadata.
+
 ## [0.5.1] - 2026-05-14
 
 ### Fixed

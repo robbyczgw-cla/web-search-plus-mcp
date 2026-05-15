@@ -2,7 +2,7 @@
 """
 web-search-plus-mcp: Multi-provider web search MCP server.
 
-MCP wrapper around the Web Search Plus v1.9 family: 11 search providers,
+MCP wrapper around the Web Search Plus v1.10 family: 12 search providers,
 5 extraction providers, quality reports, opt-in research mode, and optional beta answers.
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-__version__ = "0.5.1"
+__version__ = "0.6.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus")
@@ -31,13 +31,14 @@ SEARCH_PROVIDERS = {
     "brave": {"env": "BRAVE_API_KEY", "capabilities": ["search"]},
     "tavily": {"env": "TAVILY_API_KEY", "capabilities": ["search", "extract"]},
     "exa": {"env": "EXA_API_KEY", "capabilities": ["search", "extract"]},
-    "querit": {"env": "QUERIT_API_KEY", "capabilities": ["search"]},
     "linkup": {"env": "LINKUP_API_KEY", "capabilities": ["search", "extract"]},
     "firecrawl": {"env": "FIRECRAWL_API_KEY", "capabilities": ["search", "extract"]},
     "perplexity": {"env": "PERPLEXITY_API_KEY", "capabilities": ["search"]},
     "kilo-perplexity": {"env": "KILOCODE_API_KEY", "capabilities": ["search"]},
     "you": {"env": "YOU_API_KEY", "capabilities": ["search", "extract"]},
     "searxng": {"env": "SEARXNG_INSTANCE_URL", "capabilities": ["search"]},
+    "serpbase": {"env": "SERPBASE_API_KEY", "capabilities": ["search"], "auto_allow": False},
+    "querit": {"env": "QUERIT_API_KEY", "capabilities": ["search"], "auto_allow": False},
 }
 EXTRACT_PROVIDERS = ["linkup", "firecrawl", "tavily", "exa", "you"]
 PRESETS = {
@@ -49,7 +50,7 @@ PRESETS = {
 
 CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
 PROVIDER_ALIASES = {"kilo_perplexity": "kilo-perplexity"}
-ROUTING_PROVIDER_ORDER = ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng"]
+ROUTING_PROVIDER_ORDER = ["tavily", "linkup", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"]
 
 
 def _canonical_provider(provider: str) -> str:
@@ -73,6 +74,7 @@ def _default_behavior_config() -> dict[str, Any]:
             "fallback_provider": "serper",
             "provider_priority": ROUTING_PROVIDER_ORDER[:],
             "disabled_providers": [],
+            "auto_allow": {"serpbase": False, "querit": False},
             "confidence_threshold": 0.3,
         },
     }
@@ -126,6 +128,10 @@ def _normalize_behavior_config(config: dict[str, Any]) -> dict[str, Any]:
     auto["fallback_provider"] = fallback
     auto["provider_priority"] = _normalize_provider_list(auto.get("provider_priority", ROUTING_PROVIDER_ORDER), allow_empty=False)
     auto["disabled_providers"] = _normalize_provider_list(auto.get("disabled_providers", []), allow_empty=True)
+    raw_auto_allow = auto.get("auto_allow", {"serpbase": False, "querit": False})
+    if not isinstance(raw_auto_allow, dict):
+        raise ValueError("auto_allow must be an object mapping provider names to booleans")
+    auto["auto_allow"] = {_canonical_provider(str(provider)): bool(allowed) for provider, allowed in raw_auto_allow.items()}
     threshold = auto.get("confidence_threshold", 0.3)
     try:
         threshold = float(threshold)
@@ -285,7 +291,7 @@ def _compose_answer_payload(arguments: dict[str, Any]) -> dict[str, Any]:
     if not _has_search_provider():
         return {
             "error": "web_answer needs at least one search provider key configured.",
-            "required": "Set one of SERPER_API_KEY, BRAVE_API_KEY, TAVILY_API_KEY, EXA_API_KEY, QUERIT_API_KEY, LINKUP_API_KEY, FIRECRAWL_API_KEY, PERPLEXITY_API_KEY, KILOCODE_API_KEY, YOU_API_KEY, or SEARXNG_INSTANCE_URL.",
+            "required": "Set one of SERPER_API_KEY, BRAVE_API_KEY, TAVILY_API_KEY, EXA_API_KEY, LINKUP_API_KEY, FIRECRAWL_API_KEY, PERPLEXITY_API_KEY, KILOCODE_API_KEY, YOU_API_KEY, SEARXNG_INSTANCE_URL, SERPBASE_API_KEY, or QUERIT_API_KEY.",
         }
 
     query = arguments["query"]
@@ -410,9 +416,10 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="web_search",
             description=(
-                "Search the web using Web Search Plus v1.9 intelligent multi-provider routing. "
-                "Supports Serper, Brave, Tavily, Exa, Querit, Linkup, Firecrawl, "
-                "native Perplexity, Kilo Perplexity, You.com, and SearXNG."
+                "Search the web using Web Search Plus v1.10 intelligent multi-provider routing. "
+                "Supports Serper, Brave, Tavily, Exa, Linkup, Firecrawl, "
+                "native Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, and Querit. "
+                "SerpBase and Querit are explicit-only by default and are not auto-routed unless auto_allow is changed."
             ),
             inputSchema={
                 "type": "object",
@@ -426,13 +433,14 @@ async def list_tools() -> list[Tool]:
                             "brave",
                             "tavily",
                             "exa",
-                            "querit",
                             "linkup",
                             "firecrawl",
                             "perplexity",
                             "kilo-perplexity",
                             "you",
                             "searxng",
+                            "serpbase",
+                            "querit",
                         ],
                         "description": "Force a specific provider, or use auto-routing.",
                         "default": "auto",

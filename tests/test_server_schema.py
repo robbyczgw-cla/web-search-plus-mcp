@@ -25,13 +25,14 @@ def test_web_search_schema_exposes_v17_providers_and_controls():
         "brave",
         "tavily",
         "exa",
-        "querit",
         "linkup",
         "firecrawl",
         "perplexity",
         "kilo-perplexity",
         "you",
         "searxng",
+        "serpbase",
+        "querit",
     ]
     assert props["depth"]["enum"] == ["normal", "deep", "deep-reasoning"]
     assert props["mode"]["enum"] == ["normal", "research"]
