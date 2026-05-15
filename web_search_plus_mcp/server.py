@@ -2,8 +2,9 @@
 """
 web-search-plus-mcp: Multi-provider web search MCP server.
 
-MCP wrapper around the Web Search Plus v1.10 family: 12 search providers,
-5 extraction providers, quality reports, opt-in research mode, and optional beta answers.
+MCP wrapper around Web Search Plus Routing v2: 12 search providers,
+5 extraction providers, quality reports, guarded auto-routing, opt-in research mode,
+and optional beta answers.
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus")
@@ -28,13 +29,13 @@ app = Server("web-search-plus")
 
 SEARCH_PROVIDERS = {
     "serper": {"env": "SERPER_API_KEY", "capabilities": ["search"]},
-    "brave": {"env": "BRAVE_API_KEY", "capabilities": ["search"]},
+    "brave": {"env": "BRAVE_API_KEY", "capabilities": ["search"], "auto_allow": False},
     "tavily": {"env": "TAVILY_API_KEY", "capabilities": ["search", "extract"]},
     "exa": {"env": "EXA_API_KEY", "capabilities": ["search", "extract"]},
     "linkup": {"env": "LINKUP_API_KEY", "capabilities": ["search", "extract"]},
     "firecrawl": {"env": "FIRECRAWL_API_KEY", "capabilities": ["search", "extract"]},
-    "perplexity": {"env": "PERPLEXITY_API_KEY", "capabilities": ["search"]},
-    "kilo-perplexity": {"env": "KILOCODE_API_KEY", "capabilities": ["search"]},
+    "perplexity": {"env": "PERPLEXITY_API_KEY", "capabilities": ["search"], "auto_allow": False},
+    "kilo-perplexity": {"env": "KILOCODE_API_KEY", "capabilities": ["search"], "auto_allow": False},
     "you": {"env": "YOU_API_KEY", "capabilities": ["search", "extract"]},
     "searxng": {"env": "SEARXNG_INSTANCE_URL", "capabilities": ["search"]},
     "serpbase": {"env": "SERPBASE_API_KEY", "capabilities": ["search"], "auto_allow": False},
@@ -42,15 +43,15 @@ SEARCH_PROVIDERS = {
 }
 EXTRACT_PROVIDERS = ["linkup", "firecrawl", "tavily", "exa", "you"]
 PRESETS = {
-    "starter": ["TAVILY_API_KEY", "LINKUP_API_KEY", "BRAVE_API_KEY"],
-    "minimal": ["BRAVE_API_KEY"],
-    "lean": ["TAVILY_API_KEY", "LINKUP_API_KEY"],
+    "starter": ["YOU_API_KEY", "SERPER_API_KEY", "LINKUP_API_KEY"],
+    "minimal": ["YOU_API_KEY"],
+    "lean": ["YOU_API_KEY", "LINKUP_API_KEY"],
     "all": [meta["env"] for meta in SEARCH_PROVIDERS.values()],
 }
 
 CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
 PROVIDER_ALIASES = {"kilo_perplexity": "kilo-perplexity"}
-ROUTING_PROVIDER_ORDER = ["tavily", "linkup", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"]
+ROUTING_PROVIDER_ORDER = ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "kilo-perplexity", "perplexity", "searxng", "serpbase", "querit"]
 
 
 def _canonical_provider(provider: str) -> str:
@@ -74,7 +75,13 @@ def _default_behavior_config() -> dict[str, Any]:
             "fallback_provider": "serper",
             "provider_priority": ROUTING_PROVIDER_ORDER[:],
             "disabled_providers": [],
-            "auto_allow": {"serpbase": False, "querit": False},
+            "auto_allow": {
+                "serpbase": False,
+                "querit": False,
+                "brave": False,
+                "kilo-perplexity": False,
+                "perplexity": False,
+            },
             "confidence_threshold": 0.3,
         },
     }
@@ -128,10 +135,13 @@ def _normalize_behavior_config(config: dict[str, Any]) -> dict[str, Any]:
     auto["fallback_provider"] = fallback
     auto["provider_priority"] = _normalize_provider_list(auto.get("provider_priority", ROUTING_PROVIDER_ORDER), allow_empty=False)
     auto["disabled_providers"] = _normalize_provider_list(auto.get("disabled_providers", []), allow_empty=True)
-    raw_auto_allow = auto.get("auto_allow", {"serpbase": False, "querit": False})
+    raw_auto_allow = auto.get("auto_allow") or {}
     if not isinstance(raw_auto_allow, dict):
         raise ValueError("auto_allow must be an object mapping provider names to booleans")
-    auto["auto_allow"] = {_canonical_provider(str(provider)): bool(allowed) for provider, allowed in raw_auto_allow.items()}
+    normalized_auto_allow = dict(_default_behavior_config()["auto_routing"]["auto_allow"])
+    for provider, allowed in raw_auto_allow.items():
+        normalized_auto_allow[_canonical_provider(str(provider))] = bool(allowed)
+    auto["auto_allow"] = normalized_auto_allow
     threshold = auto.get("confidence_threshold", 0.3)
     try:
         threshold = float(threshold)
@@ -416,10 +426,11 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="web_search",
             description=(
-                "Search the web using Web Search Plus v1.10 intelligent multi-provider routing. "
-                "Supports Serper, Brave, Tavily, Exa, Linkup, Firecrawl, "
-                "native Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, and Querit. "
-                "SerpBase and Querit are explicit-only by default and are not auto-routed unless auto_allow is changed."
+                "Search the web using Web Search Plus Routing v2 multi-provider routing. "
+                "Supports You.com, Serper, Exa, Firecrawl, Tavily, Linkup, "
+                "Brave, native Perplexity, Kilo Perplexity, SearXNG, SerpBase, and Querit. "
+                "Brave, SerpBase, Querit, Perplexity, and Kilo Perplexity are explicit-only by default "
+                "and are not auto-routed unless auto_allow is changed."
             ),
             inputSchema={
                 "type": "object",

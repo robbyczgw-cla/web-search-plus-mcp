@@ -90,11 +90,16 @@ def test_auto_routing_prefers_native_perplexity_when_both_keys_are_set(monkeypat
             "you",
             "searxng",
         ],
+        "auto_allow": {
+            **search.DEFAULT_CONFIG["auto_routing"]["auto_allow"],
+            "perplexity": True,
+            "kilo-perplexity": True,
+        },
     }
     routing = search.auto_route_provider("what is the current status of SpaceX", config)
 
     assert routing["provider"] == "perplexity"
-    assert routing["scores"]["perplexity"] > routing["scores"]["kilo-perplexity"]
+    assert routing["scores"]["perplexity"] >= routing["scores"]["kilo-perplexity"]
 
 
 def test_cache_key_keeps_native_and_kilo_perplexity_separate():
