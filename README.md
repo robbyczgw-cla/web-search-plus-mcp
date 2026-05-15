@@ -14,14 +14,14 @@
 
 `web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the same provider family used by the Hermes/OpenClaw Web Search Plus tools.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`0.6.0`) while tracking the Web Search Plus engine family (`v1.10.x`). The Hermes plugin is versioned separately as `hermes-web-search-plus v1.10.x`.
+Version note: `web-search-plus-mcp` uses its own MCP package version (`0.7.0`) while tracking the Web Search Plus Routing v2 engine family (`v2.0.x`). The plugin package is versioned separately as `hermes-web-search-plus v2.0.x`.
 
 ## ✨ Features
 
 - **12 search providers** — Serper, Brave, Tavily, Exa, Linkup, Firecrawl, native Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, Querit
 - **5 extract providers** — Linkup, Firecrawl, Tavily, Exa, You.com
 - **Optional beta `web_answer`** — cited source-backed briefs when you explicitly want synthesis instead of raw results
-- **Intelligent auto-routing** — scores query intent and picks a provider automatically
+- **Routing v2 auto-routing** — class-aware routing for multilingual/current, docs/API, arXiv, CVE/security, local/shopping, OSS discovery, and answer/synthesis queries
 - **Quality reports** — optional routing/result diagnostics
 - **Research mode** — opt-in multi-provider search + top-source extraction with a time budget
 - **Onboarding CLI** — `status`, `list`, `setup`, and persistent routing `config` helpers for MCP env/config wiring
@@ -62,7 +62,7 @@ Write a starter `.env` template and print a canonical MCP stdio snippet:
 web-search-plus-mcp setup --preset starter
 ```
 
-The recommended starter preset is **Tavily + Linkup + Brave**. It gives a practical baseline for search, extraction, and cited-answer experiments without wiring every provider on day one.
+The recommended starter preset is **You.com + Serper + Linkup**. It gives a practical Routing v2 baseline for fast current search, Google-style discovery, and clean extraction/citation workflows without wiring every provider on day one.
 
 Add `--enable-answer` if you want the generated `.env` and snippet to opt into the beta `web_answer` tool:
 
@@ -76,10 +76,10 @@ Persistent routing preferences live in `config.json` rather than `.env`:
 
 ```bash
 web-search-plus-mcp config show
-web-search-plus-mcp config set-default brave      # strict fixed-provider mode
-web-search-plus-mcp config set-routing on         # restore auto-routing
-web-search-plus-mcp config set-priority tavily,linkup,brave
-web-search-plus-mcp config set-fallback tavily
+web-search-plus-mcp config set-default you        # strict fixed-provider mode
+web-search-plus-mcp config set-routing on         # restore Routing v2 auto-routing
+web-search-plus-mcp config set-priority you,serper,exa,firecrawl,tavily,linkup
+web-search-plus-mcp config set-fallback serper
 web-search-plus-mcp config disable perplexity
 web-search-plus-mcp config enable perplexity
 web-search-plus-mcp config disable kilo-perplexity
@@ -91,9 +91,9 @@ Use `--config-path /path/to/config.json` or `WEB_SEARCH_PLUS_CONFIG=/path/to/con
 
 Other presets:
 
-- `minimal` — Brave only
-- `lean` — Tavily + Linkup
-- `starter` — Tavily + Linkup + Brave
+- `minimal` — You.com only
+- `lean` — You.com + Linkup
+- `starter` — You.com + Serper + Linkup
 - `all` — every supported provider env var
 
 ## ⚙️ MCP host config
@@ -107,9 +107,9 @@ Canonical stdio snippet for Claude Desktop, Cursor, NanoBot, or Hermes native MC
       "command": "uvx",
       "args": ["web-search-plus-mcp"],
       "env": {
-        "LINKUP_API_KEY": "your_linkup_key",
-        "TAVILY_API_KEY": "your_tavily_key",
-        "BRAVE_API_KEY": "your_brave_key"
+        "YOU_API_KEY": "your_you_key",
+        "SERPER_API_KEY": "your_serper_key",
+        "LINKUP_API_KEY": "your_linkup_key"
       }
     }
   }
@@ -130,15 +130,15 @@ You can also place a `.env` file next to the package/project with the same varia
 
 ## 🔎 Search Providers
 
+- **You.com** — fast Routing v2 core provider for current, multilingual, and answer-shaped snippets
 - **Serper** — Google-style facts, news, shopping, local queries
-- **Brave** — general-purpose independent web index
-- **Tavily** — research and analysis
-- **Exa** — semantic discovery, similarity, deep/deep-reasoning synthesis
-- **Linkup** — source-backed grounding/citations
+- **Exa** — semantic discovery, GitHub/docs, arXiv/academic, and OSS discovery
 - **Firecrawl** — web search plus scrape-ready content
-- **Perplexity** — native Perplexity API direct synthesized answers (`PERPLEXITY_API_KEY`, `sonar-pro`)
-- **Kilo Perplexity** — Perplexity via Kilo gateway (`KILOCODE_API_KEY`, `perplexity/sonar-pro`)
-- **You.com** — LLM-ready real-time snippets
+- **Tavily** — research and analysis
+- **Linkup** — source-backed grounding/citations
+- **Brave** — explicit-only independent web index by default (`BRAVE_API_KEY`, `auto_allow=false`)
+- **Perplexity** — explicit-only native Perplexity API synthesized answers (`PERPLEXITY_API_KEY`, `sonar-pro`, `auto_allow=false`)
+- **Kilo Perplexity** — explicit-only Perplexity via Kilo gateway (`KILOCODE_API_KEY`, `perplexity/sonar-pro`, `auto_allow=false`)
 - **SearXNG** — privacy-first self-hosted meta-search
 - **SerpBase** — explicit-only Google SERP API (`SERPBASE_API_KEY`, `auto_allow=false`)
 - **Querit** — explicit-only multilingual, real-time AI search (`QUERIT_API_KEY`, `auto_allow=false`)
@@ -177,8 +177,8 @@ Example MCP arguments:
 
 ```json
 {
-  "query": "latest Hermes Agent release",
-  "provider": "linkup",
+  "query": "latest AI hardware news",
+  "provider": "auto",
   "count": 5,
   "quality_report": true
 }
@@ -226,8 +226,8 @@ Enable it:
 {
   "env": {
     "WSP_ENABLE_WEB_ANSWER": "1",
-    "LINKUP_API_KEY": "your_linkup_key",
-    "TAVILY_API_KEY": "your_tavily_key"
+    "YOU_API_KEY": "your_you_key",
+    "LINKUP_API_KEY": "your_linkup_key"
   }
 }
 ```
@@ -243,18 +243,25 @@ Example MCP arguments:
 }
 ```
 
-## 🧠 Auto-Routing Examples
+## 🧠 Routing v2 Examples
 
-- `iPhone 16 Pro price` → Serper/Brave shopping-style search
-- `how does TCP/IP work` → Tavily research-style search
-- `latest multilingual EV market updates` → Linkup real-time/source-backed search; use Querit explicitly if you have opted into it
-- `companies like Stripe` → Exa discovery search
-- `what is quantum computing` → Perplexity/You.com direct-answer style search
-- `privacy focused search results` → SearXNG when configured
+- `東京 AI ニュース 今日` → You.com multilingual/current search
+- `arXiv 2024 LLM scaling laws` → Exa academic discovery
+- `CVE-2025 openssl advisory` → Serper security/current search
+- `best bookshelf speakers under 1000 EUR Austria` → Serper/Firecrawl shopping/local search
+- `open source alternatives to Linear` → Exa/Firecrawl OSS discovery
+- `summarize the tradeoffs of RAG vs fine-tuning` → You.com with `answer_mode_recommended=true`
+
+Guarded providers can still be called explicitly. To let one participate in `provider="auto"`, opt in:
+
+```bash
+web-search-plus-mcp config set-auto-allow serpbase on
+web-search-plus-mcp config set-auto-allow serpbase off
+```
 
 ## Credits
 
-Built on the Web Search Plus routing logic originally developed for OpenClaw/Clawhub and later ported to Hermes as `hermes-web-search-plus`.
+Built on the Web Search Plus routing engine and packaged as a standalone MCP server.
 
 ## License
 

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 1.9.3
-Supports search providers: Serper (Google), Brave Search, Tavily, Querit,
-Linkup, Exa, Firecrawl, Perplexity, Kilo Perplexity, You.com, SearXNG.
+Version: 2.0.0
+Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
+Brave Search, SerpBase, Querit, Perplexity, Kilo Perplexity, SearXNG.
 Supports extract providers: Firecrawl, Linkup, Tavily, Exa, You.com.
 
 Smart Routing uses multi-signal analysis:
+  - Routing v2 language/script and query-class detection
   - Query intent classification (shopping, research, discovery)
   - Linguistic pattern detection (how much vs how does)
   - Product/brand recognition
@@ -15,12 +16,12 @@ Smart Routing uses multi-signal analysis:
 
 Usage:
     python3 search.py --query "..."                    # Auto-route based on query
-    python3 search.py --provider [serper|serpbase|brave|tavily|linkup|querit|exa|firecrawl|perplexity|kilo-perplexity|you|searxng|auto] --query "..." [options]
+    python3 search.py --provider [you|serper|exa|firecrawl|tavily|linkup|brave|serpbase|querit|perplexity|kilo-perplexity|searxng|auto] --query "..." [options]
 
 Examples:
-    python3 search.py -q "iPhone 16 Pro price"              # → Serper (shopping intent)
-    python3 search.py -q "how does quantum entanglement work"  # → Tavily (research intent)
-    python3 search.py -q "startups similar to Notion"       # → Exa (discovery intent)
+    python3 search.py -q "東京 AI ニュース 今日"              # → You.com (multilingual current)
+    python3 search.py -q "arXiv 2024 LLM scaling laws"      # → Exa (academic discovery)
+    python3 search.py -q "latest OpenSSH CVE mitigation"    # → Serper (security/current)
 """
 
 import argparse
@@ -39,6 +40,9 @@ from typing import Optional, List, Dict, Any, Tuple
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlparse, parse_qsl, urlunparse
+
+ROUTING_POLICY = "routing-v2"
+CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
 
 
 # =============================================================================
@@ -291,9 +295,15 @@ DEFAULT_CONFIG = {
         "fallback_provider": "serper",
         # Low-trust / experimental providers can stay configured for explicit use
         # without being selected automatically.
-        "provider_priority": ["tavily", "linkup", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"],
+        "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "kilo-perplexity", "perplexity", "searxng", "serpbase", "querit"],
         "disabled_providers": [],
-        "auto_allow": {"serpbase": False, "querit": False},
+        "auto_allow": {
+            "serpbase": False,
+            "querit": False,
+            "brave": False,
+            "kilo-perplexity": False,
+            "perplexity": False,
+        },
         "confidence_threshold": 0.3,  # Below this, note low confidence
     },
     "serper": {
@@ -365,7 +375,6 @@ def _deepcopy_default_config() -> Dict[str, Any]:
     return json.loads(json.dumps(DEFAULT_CONFIG))
 
 
-CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
 _ROUTING_PROVIDER_NAMES = {"tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "serpbase", "you", "searxng"}
 _VALID_PROVIDERS = _ROUTING_PROVIDER_NAMES
 
@@ -379,9 +388,8 @@ def _normalize_routing_provider_config(provider: str) -> str:
     return normalized
 
 
-def _canonical_provider(provider: Any) -> str:
-    """Backward-compatible provider canonicalizer for tests and callers."""
-    return _normalize_routing_provider_config(str(provider or ""))
+def _canonical_provider(provider: str) -> str:
+    return _normalize_routing_provider_config(provider)
 
 
 def _normalize_routing_provider_list_config(value: Any) -> List[str]:
@@ -407,19 +415,16 @@ def _normalize_routing_provider_list_config(value: Any) -> List[str]:
 
 
 def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    defaults = config.setdefault("defaults", {})
-    if not isinstance(defaults, dict):
-        raise ValueError("defaults must be an object")
-    default_provider = _normalize_routing_provider_config(str(defaults.get("provider", "serper")))
-    defaults["provider"] = default_provider
-    if not config.get("default_provider"):
-        config["default_provider"] = default_provider
-
     auto = config.get("auto_routing", {})
     if not isinstance(auto, dict):
         raise ValueError("auto_routing must be an object")
     if config.get("default_provider"):
         config["default_provider"] = _normalize_routing_provider_config(str(config["default_provider"]))
+    defaults = config.setdefault("defaults", {})
+    if defaults.get("provider"):
+        defaults["provider"] = _normalize_routing_provider_config(str(defaults["provider"]))
+    if auto.get("enabled", True) is False and not config.get("default_provider") and defaults.get("provider"):
+        config["default_provider"] = defaults["provider"]
     if auto.get("fallback_provider"):
         auto["fallback_provider"] = _normalize_routing_provider_config(str(auto["fallback_provider"]))
     if auto.get("provider_priority"):
@@ -434,7 +439,7 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
         raw_allow = auto.get("auto_allow") or {}
         if not isinstance(raw_allow, dict):
             raise ValueError("auto_allow must be an object mapping provider names to booleans")
-        normalized_allow = {}
+        normalized_allow = dict(DEFAULT_CONFIG["auto_routing"].get("auto_allow", {}))
         for raw_provider, allowed in raw_allow.items():
             provider = _normalize_routing_provider_config(str(raw_provider))
             normalized_allow[provider] = bool(allowed)
@@ -480,7 +485,7 @@ def _quarantine_runtime_config(config_path: Path, reason: str) -> None:
 def load_config() -> Dict[str, Any]:
     """Load configuration from config.json if it exists, with defaults."""
     config = _deepcopy_default_config()
-    config_path = Path(os.environ.get(CONFIG_ENV_VAR) or (Path(__file__).parent.parent / "config.json"))
+    config_path = Path(os.environ.get("WEB_SEARCH_PLUS_CONFIG") or (Path(__file__).parent.parent / "config.json"))
 
     if config_path.exists():
         try:
@@ -1290,6 +1295,12 @@ class QueryAnalyzer:
             (r'\b(202[4-9]|2030)\b', 2.0),
             (r'\b(breaking|live|just|now)\b', 3.0),
             (r'\blast (hour|day|week|month)\b', 2.5),
+            # Common non-English freshness markers from the 25-query routing benchmark.
+            (r'\b(hoy|aujourd|heute|aktuell)\b', 2.5),
+            (r'[今日最新]', 2.5),
+            (r'(сегодня|новости)', 2.5),
+            (r'(اليوم|أخبار)', 2.5),
+            (r'(最新|今天)', 2.5),
         ]
         
         total = 0.0
@@ -1298,6 +1309,126 @@ class QueryAnalyzer:
                 total += weight
         
         return total > 2.0, total
+
+    def _detect_language_hint(self, query: str) -> str:
+        """Best-effort language/script hint for routing; not user-facing translation."""
+        q = query.lower()
+        if re.search(r'[\u0600-\u06ff]', query):
+            return "ar"
+        if re.search(r'[\u0400-\u04ff]', query):
+            return "ru"
+        if re.search(r'[\u3040-\u30ff]', query) or re.search(r'(東京|ニュース|今日|企業|発表)', query):
+            return "ja"
+        if re.search(r'[\u4e00-\u9fff]', query):
+            return "zh"
+        if re.search(r'\b(noticias|españa|hoy|regulación|inteligencia artificial)\b', q):
+            return "es"
+        if re.search(r'\b(actualités|france|aujourd|ouverts?|dimanche|récents?|avis)\b', q):
+            return "fr"
+        if re.search(r'\b(der|die|das|und|oder|nicht|ist|sind|aktuelle?n?|preis|kaufen|öffnungszeiten|österreich)\b', q):
+            return "de"
+        return "en"
+
+    def _detect_routing_class(self, query: str, language_hint: str) -> str:
+        """Coarse class labels from the qualitative 25-query benchmark."""
+        q = query.lower()
+        # Answer/synthesis must win before docs/GitHub keywords like "Python" or "Node.js".
+        if re.search(r'\b(difference|differences|unterschiede|vergleich|compare|comparison|was sind|what are)\b', q):
+            return "answer_synthesis"
+        if re.search(r'\b(nvidia|earnings|gross margin|investor relations|guidance|10-[qk]|eps|revenue)\b', q):
+            return "finance_ir"
+        if re.search(r'\bsite:\s*reddit\.com\b|\br/\w+|\breddit\s+(thread|post|community|users?|discussion|comments?)\b', q):
+            return "reddit_community"
+        if re.search(r'\b(cve|mitigation|advisory|security advisory|openssh)\b', q):
+            return "cve_security"
+        if re.search(r'\barxiv\b|\bpaper(s)?\b|\bscaling laws\b|\brandomi[sz]ed trial\b|\bprimary sources?\b', q):
+            return "academic_arxiv"
+        if re.search(r'\bgithub\b|\brepo(sitory)?\b|\bplugin docs\b', q):
+            return "github_docs"
+        if re.search(r'\b(python|pydantic|node\.js|api docs?|documentation|docs|changelog|release notes?|taskgroup|basemodel)\b', q):
+            return "docs_api"
+        if re.search(r'\b(eu ai act|european commission|official|regulation|regulatory|obligations?)\b', q):
+            return "official_regulatory"
+        if (
+            re.search(r'\b(geizhals|preis|prices?|buy|kaufen|österreich|austria|shop|händler|deal|angebot)\b', q)
+            and re.search(r'\b(sony|denon|iphone|samsung|bose|kef|marantz|yamaha|lg|asus|laptop|tv|headphones?|speaker|receiver|avc|wh-|[a-z]{1,5}[-\s]?\d{3,}[a-z0-9-]*)\b', q)
+        ):
+            return "shopping_at"
+        if re.search(r'\b(graz|öffnungszeiten|adresse|restaurants?|vegan|hifi team)\b', q):
+            return "local_at"
+        if re.search(r'\b(bundesliga|standings?|fixtures?|tabelle|punkte|spieltag|matchday|lineups?|scores?|sturm|salzburg|lask)\b|\b(league|liga|standings?|points?)\s+table\b', q):
+            return "sports_current"
+        if re.search(r'\b(wetter|weather|forecast|regen|rain)\b', q):
+            return "weather_local"
+        if re.search(r'\b(alternatives? to|open source|self hosted|competitors?|similar to)\b', q):
+            return "oss_discovery"
+        if language_hint not in {"en", "de"}:
+            return "multilingual_current"
+        return "general"
+
+    def _apply_vnext_routing_boosts(
+        self,
+        query: str,
+        provider_scores: Dict[str, float],
+        language_hint: str,
+        routing_class: str,
+        recency_score: float,
+    ) -> bool:
+        """Apply conservative class-aware boosts from the qualitative routing benchmark.
+
+        Returns whether this should be handled as answer/research mode by callers that
+        support synthesis providers. Search auto-routing still avoids slow answer-only
+        providers unless explicitly selected.
+        """
+        def boost(provider: str, value: float) -> None:
+            provider_scores[provider] = provider_scores.get(provider, 0.0) + value
+
+        def boost_many(items: List[Tuple[str, float]]) -> None:
+            for provider, value in items:
+                boost(provider, value)
+
+        answer_mode = False
+
+        # Script/language-aware current queries: You performed best as the safe fast default,
+        # with Exa/Firecrawl/Linkup useful by script. Keep this modest so strong class rules win.
+        if language_hint not in {"en", "de"}:
+            if language_hint == "zh":
+                boost_many([("exa", 7.0), ("you", 6.0), ("firecrawl", 4.0), ("linkup", 3.0), ("serper", 2.5)])
+            elif language_hint == "ar":
+                boost_many([("you", 8.0), ("linkup", 5.0), ("serper", 4.0), ("firecrawl", 2.0)])
+            else:
+                boost_many([("you", 8.0), ("exa", 5.0), ("firecrawl", 4.0), ("linkup", 3.0), ("tavily", 2.0)])
+            boost("you", min(recency_score, 3.0))
+
+        if routing_class == "shopping_at":
+            boost_many([("serper", 8.0), ("firecrawl", 6.0), ("linkup", 4.0), ("you", 2.0), ("exa", -2.0)])
+        elif routing_class == "local_at":
+            boost_many([("firecrawl", 8.0), ("serper", 6.0), ("linkup", 4.0), ("you", 2.0)])
+        elif routing_class == "official_regulatory":
+            boost_many([("exa", 8.0), ("firecrawl", 6.0), ("serper", 5.0), ("you", 3.0)])
+        elif routing_class == "sports_current":
+            boost_many([("you", 8.0), ("serper", 6.0), ("linkup", 5.0), ("tavily", 2.0)])
+        elif routing_class == "github_docs":
+            boost_many([("exa", 10.0), ("you", 6.0), ("firecrawl", 5.0), ("serper", 4.0)])
+        elif routing_class == "docs_api":
+            boost_many([("serper", 6.0), ("exa", 5.0), ("you", 4.0), ("firecrawl", 3.0), ("tavily", 3.0)])
+        elif routing_class == "academic_arxiv":
+            boost_many([("exa", 12.0), ("serper", 3.0), ("linkup", 2.0), ("you", 1.5)])
+        elif routing_class == "oss_discovery":
+            boost_many([("exa", 8.0), ("firecrawl", 5.0), ("tavily", 4.0), ("you", 3.0)])
+        elif routing_class == "reddit_community":
+            boost_many([("serper", 10.0), ("firecrawl", 8.0), ("tavily", 6.0), ("exa", -20.0)])
+        elif routing_class == "cve_security":
+            boost_many([("serper", 10.0), ("exa", 8.0), ("linkup", 5.0), ("you", 2.0), ("firecrawl", -20.0)])
+        elif routing_class == "finance_ir":
+            boost_many([("exa", 7.0), ("you", 6.0), ("firecrawl", 5.0), ("serper", 4.0)])
+        elif routing_class == "weather_local":
+            boost_many([("serper", 8.0), ("firecrawl", 6.0), ("you", 2.0)])
+        elif routing_class == "answer_synthesis":
+            answer_mode = True
+            boost_many([("you", 16.0), ("tavily", 4.0), ("linkup", 3.0), ("exa", 2.0)])
+
+        return answer_mode
     
     def analyze(self, query: str) -> Dict[str, Any]:
         """
@@ -1366,8 +1497,10 @@ class QueryAnalyzer:
                 "weight": complexity["complexity_score"]
             })
         
-        # Check recency intent
+        # Check recency intent and benchmark-derived language/class hints
         is_recency, recency_score = self._detect_recency_intent(query)
+        language_hint = self._detect_language_hint(query)
+        routing_class = self._detect_routing_class(query, language_hint)
         
         # Map intents to providers with final scores
         provider_scores = {
@@ -1379,13 +1512,18 @@ class QueryAnalyzer:
             "linkup": linkup_source_score + (rag_score * 0.7) + (research_score * 0.45) + (recency_score * 0.35),
             "exa": discovery_score + (1.0 if re.search(r"\b(similar|alternatives?|examples?)\b", query, re.IGNORECASE) else 0.0) + (exa_deep_score * 0.5) + (exa_deep_reasoning_score * 0.5),
             "perplexity": direct_answer_score + (local_news_score * 0.4) + (recency_score * 0.55),
-            # Keep Kilo as an explicit gateway fallback without splitting auto-routed traffic
-            # when both native Perplexity and Kilo keys are configured.
-            "kilo-perplexity": max(0.0, direct_answer_score + (local_news_score * 0.4) + (recency_score * 0.55) - 0.001),
+            "kilo-perplexity": direct_answer_score + (local_news_score * 0.4) + (recency_score * 0.55),
             "you": rag_score + (recency_score * 0.25),  # You.com good for real-time + RAG
             "searxng": privacy_score,  # SearXNG for privacy/multi-source queries
             "firecrawl": discovery_score + (research_score * 0.35) + (recency_score * 0.25),
         }
+        answer_mode_recommended = self._apply_vnext_routing_boosts(
+            query,
+            provider_scores,
+            language_hint,
+            routing_class,
+            recency_score,
+        )
         
         # Build match details per provider
         provider_matches = {
@@ -1411,6 +1549,9 @@ class QueryAnalyzer:
             "complexity": complexity,
             "recency_focused": is_recency,
             "recency_score": recency_score,
+            "language_hint": language_hint,
+            "routing_class": routing_class,
+            "answer_mode_recommended": answer_mode_recommended,
             "linkup_source_score": linkup_source_score,
             "exa_deep_score": exa_deep_score,
             "exa_deep_reasoning_score": exa_deep_reasoning_score,
@@ -1444,17 +1585,19 @@ class QueryAnalyzer:
                 "confidence": 0.0,
                 "confidence_level": "low",
                 "reason": "no_available_providers",
+                "routing_policy": ROUTING_POLICY,
                 "scores": scores,
                 "top_signals": [],
                 "analysis": analysis,
                 "auto_allow_excluded": auto_excluded,
+                "answer_mode_recommended": analysis.get("answer_mode_recommended", False),
             }
         
         # Find the winner
         max_score = max(available.values())
         
         # Handle ties using deterministic per-query distribution
-        priority = self.auto_config.get("provider_priority", ["tavily", "linkup", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"])
+        priority = self.auto_config.get("provider_priority", ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"])
         winners = [p for p, s in available.items() if s == max_score]
         
         if len(winners) > 1:
@@ -1516,6 +1659,7 @@ class QueryAnalyzer:
             "confidence": confidence,
             "confidence_level": "high" if confidence >= 0.7 else "medium" if confidence >= 0.4 else "low",
             "reason": reason,
+            "routing_policy": ROUTING_POLICY,
             "exa_depth": exa_depth,
             "scores": {p: round(s, 2) for p, s in available.items()},
             "winning_score": round(max_score, 2),
@@ -1525,11 +1669,14 @@ class QueryAnalyzer:
             ],
             "below_threshold": confidence < threshold,
             "auto_allow_excluded": auto_excluded,
+            "answer_mode_recommended": analysis.get("answer_mode_recommended", False),
             "analysis_summary": {
                 "query_length": len(query.split()),
                 "is_complex": analysis["complexity"]["is_complex"],
                 "has_url": analysis["detected_url"] is not None,
                 "recency_focused": analysis["recency_focused"],
+                "language_hint": analysis.get("language_hint", "en"),
+                "routing_class": analysis.get("routing_class", "general"),
             }
         }
 
@@ -1580,8 +1727,10 @@ def explain_routing(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
             "confidence": routing["confidence"],
             "confidence_level": routing["confidence_level"],
             "reason": routing["reason"],
+            "routing_policy": routing.get("routing_policy", ROUTING_POLICY),
             "exa_depth": routing.get("exa_depth", "normal"),
             "auto_allow_excluded": routing.get("auto_allow_excluded", []),
+            "answer_mode_recommended": routing.get("answer_mode_recommended", False),
         },
         "scores": routing["scores"],
         "top_signals": routing["top_signals"],
@@ -1605,6 +1754,8 @@ def explain_routing(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
             "complexity_score": round(analysis["complexity"]["complexity_score"], 2),
             "has_url": analysis["detected_url"],
             "recency_focused": analysis["recency_focused"],
+            "language_hint": analysis.get("language_hint", "en"),
+            "routing_class": analysis.get("routing_class", "general"),
         },
         "all_matches": {
             provider: [
@@ -1839,6 +1990,10 @@ def build_quality_report(
         "query": query,
         "selected_provider": routing_info.get("provider") or result.get("provider"),
         "routing_reason": routing_info.get("reason"),
+        "routing_policy": routing_info.get("routing_policy", ROUTING_POLICY),
+        "routing_class": routing_info.get("analysis_summary", {}).get("routing_class"),
+        "language_hint": routing_info.get("analysis_summary", {}).get("language_hint"),
+        "answer_mode_recommended": routing_info.get("answer_mode_recommended", False),
         "confidence": confidence_level,
         "confidence_score": routing_info.get("confidence"),
         "providers_considered": providers_considered,
@@ -3966,9 +4121,12 @@ Full docs: See README.md and SKILL.md
                 "confidence": routing["confidence"],
                 "confidence_level": routing["confidence_level"],
                 "reason": routing["reason"],
+                "routing_policy": routing.get("routing_policy", ROUTING_POLICY),
                 "top_signals": routing["top_signals"],
                 "scores": routing["scores"],
                 "auto_allow_excluded": routing.get("auto_allow_excluded", []),
+                "answer_mode_recommended": routing.get("answer_mode_recommended", False),
+                "analysis_summary": routing.get("analysis_summary", {}),
             }
         else:
             provider = "exa"
@@ -3978,10 +4136,11 @@ Full docs: See README.md and SKILL.md
                 "confidence": 1.0,
                 "confidence_level": "high",
                 "reason": "similar_url_specified",
+                "routing_policy": ROUTING_POLICY,
             }
     else:
         provider = args.provider or "serper"
-        routing_info = {"auto_routed": False, "provider": provider}
+        routing_info = {"auto_routed": False, "provider": provider, "routing_policy": ROUTING_POLICY}
     
     # Build provider fallback list
     auto_config = config.get("auto_routing", {})

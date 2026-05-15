@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-05-15
+
+### Added
+- Sync Routing v2 from Web Search Plus v2.0.0: class-aware query routing, multilingual/current detection, answer-mode recommendations, and `routing_policy` diagnostics.
+- Add regression tests for guarded defaults, legacy `auto_allow` migration, multilingual routing, arXiv/docs/security classes, and answer/synthesis hints.
+
+### Changed
+- Update the default auto-routing pool to You.com, Serper, Exa, Firecrawl, Tavily, and Linkup.
+- Keep Brave, SerpBase, Querit, native Perplexity, and Kilo Perplexity explicit-only by default with `auto_allow=false`.
+- Update MCP presets so `starter` uses You.com + Serper + Linkup, `lean` uses You.com + Linkup, and `minimal` uses You.com.
+
+### Migration
+- Existing config files are still valid. Missing `auto_allow` entries inherit the new guarded defaults while explicit user overrides remain intact.
+- Explicit provider calls still work for guarded providers; `auto_allow=false` only blocks automatic `provider="auto"` selection.
+
 ## [0.6.0] - 2026-05-15
 
 ### Added

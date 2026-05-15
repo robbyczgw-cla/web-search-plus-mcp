@@ -1,5 +1,4 @@
 import asyncio
-import json
 
 import web_search_plus_mcp.search as search
 import web_search_plus_mcp.server as server
@@ -79,7 +78,13 @@ def test_server_schema_exposes_serpbase_last_and_auto_allow_metadata():
     assert server.ROUTING_PROVIDER_ORDER[-2:] == ["serpbase", "querit"]
 
     config = server._default_behavior_config()
-    assert config["auto_routing"]["auto_allow"] == {"serpbase": False, "querit": False}
+    assert config["auto_routing"]["auto_allow"] == {
+        "serpbase": False,
+        "querit": False,
+        "brave": False,
+        "kilo-perplexity": False,
+        "perplexity": False,
+    }
 
 
 def test_server_normalizes_auto_allow_provider_aliases():
@@ -91,4 +96,10 @@ def test_server_normalizes_auto_allow_provider_aliases():
     })
 
     assert config["auto_routing"]["provider_priority"] == ["kilo-perplexity", "serpbase", "querit"]
-    assert config["auto_routing"]["auto_allow"] == {"serpbase": True, "querit": False}
+    assert config["auto_routing"]["auto_allow"] == {
+        "serpbase": True,
+        "querit": False,
+        "brave": False,
+        "kilo-perplexity": False,
+        "perplexity": False,
+    }
