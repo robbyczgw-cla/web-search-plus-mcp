@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-05-16
+
+### Changed
+- Sync MCP surface with Web Search Plus v2.1: remove the beta `web_answer` tool and keep the stable MCP surface to `web_search` + `web_extract`.
+- Switch extraction auto fallback order to Tavily → Exa → Linkup → Firecrawl → You.com based on the v2.1 extraction benchmark.
+- Update package metadata, README, and Glama manifest for the v2.1 engine family.
+
+### Migration
+- Remove `WSP_ENABLE_WEB_ANSWER`; it is ignored because `web_answer` is no longer exposed. Use `web_search` for source discovery and synthesize in the MCP host.
+
 ## [0.7.0] - 2026-05-15
 
 ### Added
