@@ -84,6 +84,7 @@ def test_server_schema_exposes_serpbase_last_and_auto_allow_metadata():
         "brave": False,
         "kilo-perplexity": False,
         "perplexity": False,
+        "parallel": False,
     }
 
 
@@ -95,11 +96,13 @@ def test_server_normalizes_auto_allow_provider_aliases():
         }
     })
 
-    assert config["auto_routing"]["provider_priority"] == ["kilo-perplexity", "serpbase", "querit"]
+    assert config["auto_routing"]["provider_priority"][:3] == ["kilo-perplexity", "serpbase", "querit"]
+    assert set(config["auto_routing"]["provider_priority"]) == set(server.ROUTING_PROVIDER_ORDER)
     assert config["auto_routing"]["auto_allow"] == {
         "serpbase": True,
         "querit": False,
         "brave": False,
         "kilo-perplexity": False,
         "perplexity": False,
+        "parallel": False,
     }

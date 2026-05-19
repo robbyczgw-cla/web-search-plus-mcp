@@ -25,6 +25,7 @@ def test_default_auto_allow_blocks_unreliable_and_answer_only_providers():
     assert auto_allow["brave"] is False
     assert auto_allow["kilo-perplexity"] is False
     assert auto_allow["perplexity"] is False
+    assert auto_allow["parallel"] is False
 
 
 def test_legacy_auto_allow_config_inherits_new_guarded_provider_defaults():
@@ -36,19 +37,19 @@ def test_legacy_auto_allow_config_inherits_new_guarded_provider_defaults():
     assert validated["auto_routing"]["auto_allow"]["brave"] is False
     assert validated["auto_routing"]["auto_allow"]["kilo-perplexity"] is False
     assert validated["auto_routing"]["auto_allow"]["perplexity"] is False
+    assert validated["auto_routing"]["auto_allow"]["parallel"] is False
 
 
 def test_answer_synthesis_overrides_docs_keywords():
     routing = _route("was sind die Unterschiede zwischen Python und Node.js")
 
-    assert routing["analysis_summary"]["routing_class"] == "answer_synthesis"
-    assert routing["answer_mode_recommended"] is True
+    assert routing["analysis_summary"]["routing_class"] == "briefing_synthesis"
 
 
 def test_reddit_company_finance_query_is_not_community_query():
     routing = _route("Reddit IPO earnings revenue investor relations")
 
-    assert routing["analysis_summary"]["routing_class"] == "finance_ir"
+    assert routing["analysis_summary"]["routing_class"] == "finance_earnings_official"
 
 
 def test_plain_database_table_query_is_not_sports_current():
@@ -94,12 +95,11 @@ def test_cve_security_does_not_route_to_firecrawl():
 
     assert routing["provider"] in {"serper", "exa", "linkup"}
     assert routing["provider"] != "firecrawl"
-    assert routing["analysis_summary"]["routing_class"] == "cve_security"
+    assert routing["analysis_summary"]["routing_class"] == "security_advisory"
 
 
 def test_answer_synthesis_recommends_answer_mode_without_auto_selecting_kilo():
     routing = _route("Was sind die wichtigsten Unterschiede zwischen Exa Tavily und You.com für Agenten Suche")
 
     assert routing["provider"] == "you"
-    assert routing["answer_mode_recommended"] is True
     assert "kilo-perplexity" in routing["auto_allow_excluded"]

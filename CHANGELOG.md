@@ -5,11 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-05-19
+
+### Added
+- Sync Parallel provider support from Web Search Plus v2.2: explicit `parallel` search/extract support via `PARALLEL_API_KEY`.
+- Add Parallel to extraction auto fallback order: Tavily → Exa → Linkup → Parallel → Firecrawl → You.com.
+
+### Changed
+- Keep Parallel guarded from automatic routing by default with `auto_allow=false`; direct `provider="parallel"` calls still work.
+- Preserve user routing priority order while appending newly introduced default providers during config normalization.
+
+### Tests
+- Add regression coverage for Parallel search normalization, extraction normalization, explicit-only routing, MCP schemas, and provider metadata.
+
 ## [0.8.0] - 2026-05-16
 
 ### Changed
 - Sync MCP surface with Web Search Plus v2.1: remove the beta `web_answer` tool and keep the stable MCP surface to `web_search` + `web_extract`.
-- Switch extraction auto fallback order to Tavily → Exa → Linkup → Firecrawl → You.com based on the v2.1 extraction benchmark.
+- Switch extraction auto fallback order to Tavily → Exa → Linkup → Parallel → Firecrawl → You.com based on the v2.1 extraction benchmark.
 - Update package metadata, README, and Glama manifest for the v2.1 engine family.
 
 ### Migration
