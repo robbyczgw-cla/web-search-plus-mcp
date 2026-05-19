@@ -27,6 +27,7 @@ def test_web_search_schema_exposes_v17_providers_and_controls():
         "exa",
         "linkup",
         "firecrawl",
+        "parallel",
         "perplexity",
         "kilo-perplexity",
         "you",
@@ -45,7 +46,7 @@ def test_web_extract_tool_is_exposed_with_tavily_first_capable_schema():
     props = tool.inputSchema["properties"]
 
     assert tool.inputSchema["required"] == ["urls"]
-    assert props["provider"]["enum"] == ["auto", "tavily", "exa", "linkup", "firecrawl", "you"]
+    assert props["provider"]["enum"] == ["auto", "tavily", "exa", "linkup", "parallel", "firecrawl", "you"]
     assert props["render_js"]["type"] == "boolean"
     assert props["format"]["enum"] == ["markdown", "html"]
 
@@ -123,9 +124,9 @@ def test_web_extract_call_maps_mcp_args_to_cli(monkeypatch):
     assert result[0].text == '{"results": []}'
 
 
-def test_extract_auto_priority_is_tavily_exa_linkup_firecrawl_you():
-    assert search.EXTRACT_PROVIDER_PRIORITY == ["tavily", "exa", "linkup", "firecrawl", "you"]
-    assert server.EXTRACT_PROVIDERS == ["tavily", "exa", "linkup", "firecrawl", "you"]
+def test_extract_auto_priority_is_tavily_exa_linkup_parallel_firecrawl_you():
+    assert search.EXTRACT_PROVIDER_PRIORITY == ["tavily", "exa", "linkup", "parallel", "firecrawl", "you"]
+    assert server.EXTRACT_PROVIDERS == ["tavily", "exa", "linkup", "parallel", "firecrawl", "you"]
 
 
 def test_cli_status_json_and_setup_dry_run(tmp_path, monkeypatch, capsys):
@@ -166,7 +167,8 @@ def test_cli_config_commands_persist_routing_preferences(tmp_path, monkeypatch, 
 
     assert server.cli_main(["config", "set-priority", "tavily,linkup,kilo-perplexity,brave"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["routing_preferences"]["provider_priority"] == ["tavily", "linkup", "kilo-perplexity", "brave"]
+    assert payload["routing_preferences"]["provider_priority"][:4] == ["tavily", "linkup", "kilo-perplexity", "brave"]
+    assert set(payload["routing_preferences"]["provider_priority"]) == set(server.ROUTING_PROVIDER_ORDER)
 
     assert server.cli_main(["config", "disable", "perplexity"]) == 0
     payload = json.loads(capsys.readouterr().out)

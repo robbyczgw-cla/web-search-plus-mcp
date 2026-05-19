@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 2.1.0
+Version: 2.2.0-mcp
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
-Brave Search, SerpBase, Querit, Perplexity, Kilo Perplexity, SearXNG.
-Supports extract providers: Tavily, Exa, Linkup, Firecrawl, You.com.
+Brave Search, SerpBase, Querit, Parallel, Perplexity, Kilo Perplexity, SearXNG.
+Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com.
 
 Smart Routing uses multi-signal analysis:
   - Routing v2 language/script and query-class detection
@@ -295,7 +295,7 @@ DEFAULT_CONFIG = {
         "fallback_provider": "serper",
         # Low-trust / experimental providers can stay configured for explicit use
         # without being selected automatically.
-        "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "kilo-perplexity", "perplexity", "searxng", "serpbase", "querit"],
+        "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"],
         "disabled_providers": [],
         "auto_allow": {
             "serpbase": False,
@@ -303,6 +303,7 @@ DEFAULT_CONFIG = {
             "brave": False,
             "kilo-perplexity": False,
             "perplexity": False,
+            "parallel": False,
         },
         "confidence_threshold": 0.3,  # Below this, note low confidence
     },
@@ -340,6 +341,15 @@ DEFAULT_CONFIG = {
         "api_url": "https://api.perplexity.ai/chat/completions",
         "model": "sonar-pro"
     },
+    "parallel": {
+        "api_url": "https://api.parallel.ai/v1/search",
+        "extract_url": "https://api.parallel.ai/v1/extract",
+        "timeout": 45,
+        "extract_timeout": 60,
+        "client_model": None,
+        "max_chars_total": 12000,
+        "max_chars_per_result": 6000
+    },
     "kilo-perplexity": {
         "api_url": "https://api.kilo.ai/api/gateway/chat/completions",
         "model": "perplexity/sonar-pro"
@@ -375,7 +385,7 @@ def _deepcopy_default_config() -> Dict[str, Any]:
     return json.loads(json.dumps(DEFAULT_CONFIG))
 
 
-_ROUTING_PROVIDER_NAMES = {"tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "serpbase", "you", "searxng"}
+_ROUTING_PROVIDER_NAMES = {"tavily", "linkup", "querit", "exa", "firecrawl", "parallel", "perplexity", "kilo-perplexity", "brave", "serper", "serpbase", "you", "searxng"}
 _VALID_PROVIDERS = _ROUTING_PROVIDER_NAMES
 
 
@@ -414,6 +424,23 @@ def _normalize_routing_provider_list_config(value: Any) -> List[str]:
     return providers
 
 
+def _append_missing_default_providers(providers: List[str]) -> List[str]:
+    """Preserve user ordering while adding newly introduced default providers.
+
+    Existing config.json files often pin provider_priority from an older plugin
+    version. Without this migration, newly added explicit/guarded providers can
+    be valid but invisible to fallback/auto-allow configuration until users
+    manually reset config.
+    """
+    seen = set(providers)
+    merged = list(providers)
+    for provider in DEFAULT_CONFIG["auto_routing"].get("provider_priority", []):
+        if provider not in seen:
+            seen.add(provider)
+            merged.append(provider)
+    return merged
+
+
 def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     auto = config.get("auto_routing", {})
     if not isinstance(auto, dict):
@@ -428,7 +455,8 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     if auto.get("fallback_provider"):
         auto["fallback_provider"] = _normalize_routing_provider_config(str(auto["fallback_provider"]))
     if auto.get("provider_priority"):
-        auto["provider_priority"] = _normalize_routing_provider_list_config(auto["provider_priority"])
+        priority = _normalize_routing_provider_list_config(auto["provider_priority"])
+        auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
     if "disabled_providers" in auto:
         disabled = auto.get("disabled_providers") or []
         if disabled:
@@ -485,7 +513,7 @@ def _quarantine_runtime_config(config_path: Path, reason: str) -> None:
 def load_config() -> Dict[str, Any]:
     """Load configuration from config.json if it exists, with defaults."""
     config = _deepcopy_default_config()
-    config_path = Path(os.environ.get("WEB_SEARCH_PLUS_CONFIG") or (Path(__file__).parent.parent / "config.json"))
+    config_path = Path(os.environ.get(CONFIG_ENV_VAR) or (Path(__file__).parent.parent / "config.json"))
 
     if config_path.exists():
         try:
@@ -537,6 +565,7 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
         "linkup": "LINKUP_API_KEY",
         "exa": "EXA_API_KEY",
         "you": "YOU_API_KEY",
+        "parallel": "PARALLEL_API_KEY",
         "firecrawl": "FIRECRAWL_API_KEY",
     }
     return os.environ.get(key_map.get(provider, ""))
@@ -673,6 +702,7 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
             "linkup": "https://app.linkup.so",
             "exa": "https://exa.ai",
             "you": "https://api.you.com",
+            "parallel": "https://platform.parallel.ai",
             "perplexity": "https://www.perplexity.ai/settings/api",
             "kilo-perplexity": "https://api.kilo.ai",
             "firecrawl": "https://www.firecrawl.dev/app/api-keys"
@@ -1332,28 +1362,45 @@ class QueryAnalyzer:
     def _detect_routing_class(self, query: str, language_hint: str) -> str:
         """Coarse class labels from the qualitative 25-query benchmark."""
         q = query.lower()
-        # Answer/synthesis must win before docs/GitHub keywords like "Python" or "Node.js".
-        if re.search(r'\b(difference|differences|unterschiede|vergleich|compare|comparison|was sind|what are)\b', q):
-            return "answer_synthesis"
-        if re.search(r'\b(nvidia|earnings|gross margin|investor relations|guidance|10-[qk]|eps|revenue)\b', q):
-            return "finance_ir"
+        # Synthesis/briefing queries should prefer broad real-time/search providers,
+        # but Web Search Plus no longer exposes a separate answer tool.
+        if re.search(r'\b(difference|differences|unterschiede|vergleich|compare|comparison|brief(?:ing)?|summari[sz]e|zusammenfass(?:en|ung)|was sind|what are)\b', q):
+            return "briefing_synthesis"
+        if re.search(r'\b(advisory|security advisory|cve|mitigation|openssl|openssh|vulnerability|zero[-\s]?day)\b', q):
+            return "security_advisory"
+        if re.search(r'\b(patent|patents|patentscope|espacenet|uspto|google patents)\b', q):
+            return "patents"
+        if re.search(r'\b(pdf|whitepaper|code of practice)\b', q) and re.search(r'\b(nist|eu ai act|regulation|regulatory|policy|commission|government|official|rmf)\b', q):
+            return "policy_pdf"
+        if re.search(r'\b(eu ai act|european commission|regulation|regulatory|obligations?)\b', q):
+            return "official_regulatory"
+        if re.search(r'\b(nvidia|earnings|gross margin|investor relations|guidance|10-[qk]|eps|revenue|quarterly results?)\b', q):
+            return "finance_earnings_official"
+        if re.search(r'\b(investor monthly|monthly factsheet|monthly report|aum|fund flows?)\b', q):
+            return "finance_investor_monthly"
         if re.search(r'\bsite:\s*reddit\.com\b|\br/\w+|\breddit\s+(thread|post|community|users?|discussion|comments?)\b', q):
             return "reddit_community"
-        if re.search(r'\b(cve|mitigation|advisory|security advisory|openssh)\b', q):
-            return "cve_security"
-        if re.search(r'\barxiv\b|\bpaper(s)?\b|\bscaling laws\b|\brandomi[sz]ed trial\b|\bprimary sources?\b', q):
-            return "academic_arxiv"
-        if re.search(r'\bgithub\b|\brepo(sitory)?\b|\bplugin docs\b', q):
-            return "github_docs"
-        if re.search(r'\b(python|pydantic|node\.js|api docs?|documentation|docs|changelog|release notes?|taskgroup|basemodel)\b', q):
-            return "docs_api"
-        if re.search(r'\b(eu ai act|european commission|official|regulation|regulatory|obligations?)\b', q):
-            return "official_regulatory"
         if (
             re.search(r'\b(geizhals|preis|prices?|buy|kaufen|österreich|austria|shop|händler|deal|angebot)\b', q)
             and re.search(r'\b(sony|denon|iphone|samsung|bose|kef|marantz|yamaha|lg|asus|laptop|tv|headphones?|speaker|receiver|avc|wh-|[a-z]{1,5}[-\s]?\d{3,}[a-z0-9-]*)\b', q)
         ):
-            return "shopping_at"
+            if re.search(r'\b(review(s)?|test|tests?|vergleich|best|beste|under|unter|erfahrungen)\b', q):
+                return "shopping_reviews_local"
+            return "shopping_specs"
+        if re.search(r'\b(forum|forums|community|discussion|comments?|erfahrungen|review(s)?|measurements?|head-fi|audiosciencereview|hifi-forum)\b', q):
+            return "community_forum"
+        if re.search(r'\barxiv\b|\bpaper(s)?\b|\bscaling laws\b|\brandomi[sz]ed trial\b|\bprimary sources?\b', q):
+            return "academic_arxiv"
+        if re.search(r'\b(github\b|repo(sitory)?\b|plugin docs\b)', q):
+            return "github_docs"
+        if re.search(r'\b(official docs?|official documentation|api reference|developer docs?|official manual)\b', q):
+            return "official_docs"
+        if re.search(r'\b(official|release|announcement|launch|changelog|release notes?)\b', q) and re.search(r'\b(mistral|anthropic|openai|google|meta|nvidia|apple|microsoft|claude|gemini|llama)\b', q):
+            return "official_vendor_release"
+        if re.search(r'\b(python|pydantic|node\.js|api docs?|documentation|docs|changelog|release notes?|taskgroup|basemodel)\b', q):
+            return "docs_api"
+        if re.search(r'\b(official|regulatory filing|public authority)\b', q):
+            return "official_regulatory"
         if re.search(r'\b(graz|öffnungszeiten|adresse|restaurants?|vegan|hifi team)\b', q):
             return "local_at"
         if re.search(r'\b(bundesliga|standings?|fixtures?|tabelle|punkte|spieltag|matchday|lineups?|scores?|sturm|salzburg|lask)\b|\b(league|liga|standings?|points?)\s+table\b', q):
@@ -1373,12 +1420,10 @@ class QueryAnalyzer:
         language_hint: str,
         routing_class: str,
         recency_score: float,
-    ) -> bool:
+    ) -> None:
         """Apply conservative class-aware boosts from the qualitative routing benchmark.
 
-        Returns whether this should be handled as answer/research mode by callers that
-        support synthesis providers. Search auto-routing still avoids slow answer-only
-        providers unless explicitly selected.
+        Search auto-routing still avoids slow answer-only providers unless explicitly selected.
         """
         def boost(provider: str, value: float) -> None:
             provider_scores[provider] = provider_scores.get(provider, 0.0) + value
@@ -1386,8 +1431,6 @@ class QueryAnalyzer:
         def boost_many(items: List[Tuple[str, float]]) -> None:
             for provider, value in items:
                 boost(provider, value)
-
-        answer_mode = False
 
         # Script/language-aware current queries: You performed best as the safe fast default,
         # with Exa/Firecrawl/Linkup useful by script. Keep this modest so strong class rules win.
@@ -1404,6 +1447,12 @@ class QueryAnalyzer:
             boost_many([("serper", 8.0), ("firecrawl", 6.0), ("linkup", 4.0), ("you", 2.0), ("exa", -2.0)])
         elif routing_class == "local_at":
             boost_many([("firecrawl", 8.0), ("serper", 6.0), ("linkup", 4.0), ("you", 2.0)])
+        elif routing_class == "official_vendor_release":
+            boost_many([("you", 14.0), ("linkup", 10.0), ("exa", 7.0), ("serper", 4.0), ("firecrawl", 3.0)])
+        elif routing_class == "official_docs":
+            boost_many([("exa", 12.0), ("you", 7.0), ("firecrawl", 5.0), ("serper", 3.0), ("tavily", 2.0)])
+        elif routing_class == "policy_pdf":
+            boost_many([("linkup", 10.0), ("exa", 8.0), ("serper", 7.0), ("firecrawl", 6.0), ("you", 4.0)])
         elif routing_class == "official_regulatory":
             boost_many([("exa", 8.0), ("firecrawl", 6.0), ("serper", 5.0), ("you", 3.0)])
         elif routing_class == "sports_current":
@@ -1418,17 +1467,24 @@ class QueryAnalyzer:
             boost_many([("exa", 8.0), ("firecrawl", 5.0), ("tavily", 4.0), ("you", 3.0)])
         elif routing_class == "reddit_community":
             boost_many([("serper", 10.0), ("firecrawl", 8.0), ("tavily", 6.0), ("exa", -20.0)])
-        elif routing_class == "cve_security":
+        elif routing_class == "security_advisory":
             boost_many([("serper", 10.0), ("exa", 8.0), ("linkup", 5.0), ("you", 2.0), ("firecrawl", -20.0)])
-        elif routing_class == "finance_ir":
-            boost_many([("exa", 7.0), ("you", 6.0), ("firecrawl", 5.0), ("serper", 4.0)])
+        elif routing_class == "finance_earnings_official":
+            boost_many([("linkup", 14.0), ("you", 9.0), ("exa", 7.0), ("serper", 6.0), ("firecrawl", 4.0)])
+        elif routing_class == "finance_investor_monthly":
+            boost_many([("linkup", 12.0), ("serper", 7.0), ("you", 5.0), ("exa", 4.0)])
+        elif routing_class == "community_forum":
+            boost_many([("firecrawl", 10.0), ("serper", 8.0), ("tavily", 5.0), ("you", 4.0), ("exa", -18.0)])
+        elif routing_class == "shopping_specs":
+            boost_many([("serper", 9.0), ("firecrawl", 6.0), ("linkup", 4.0), ("you", 2.0), ("exa", -2.0)])
+        elif routing_class == "shopping_reviews_local":
+            boost_many([("serper", 9.0), ("firecrawl", 7.0), ("you", 4.0), ("tavily", 3.0), ("exa", -4.0)])
+        elif routing_class == "patents":
+            boost_many([("exa", 10.0), ("serper", 7.0), ("linkup", 4.0), ("you", 3.0)])
         elif routing_class == "weather_local":
             boost_many([("serper", 8.0), ("firecrawl", 6.0), ("you", 2.0)])
-        elif routing_class == "answer_synthesis":
-            answer_mode = True
+        elif routing_class == "briefing_synthesis":
             boost_many([("you", 16.0), ("tavily", 4.0), ("linkup", 3.0), ("exa", 2.0)])
-
-        return answer_mode
     
     def analyze(self, query: str) -> Dict[str, Any]:
         """
@@ -1517,7 +1573,7 @@ class QueryAnalyzer:
             "searxng": privacy_score,  # SearXNG for privacy/multi-source queries
             "firecrawl": discovery_score + (research_score * 0.35) + (recency_score * 0.25),
         }
-        answer_mode_recommended = self._apply_vnext_routing_boosts(
+        self._apply_vnext_routing_boosts(
             query,
             provider_scores,
             language_hint,
@@ -1551,7 +1607,6 @@ class QueryAnalyzer:
             "recency_score": recency_score,
             "language_hint": language_hint,
             "routing_class": routing_class,
-            "answer_mode_recommended": answer_mode_recommended,
             "linkup_source_score": linkup_source_score,
             "exa_deep_score": exa_deep_score,
             "exa_deep_reasoning_score": exa_deep_reasoning_score,
@@ -1590,7 +1645,6 @@ class QueryAnalyzer:
                 "top_signals": [],
                 "analysis": analysis,
                 "auto_allow_excluded": auto_excluded,
-                "answer_mode_recommended": analysis.get("answer_mode_recommended", False),
             }
         
         # Find the winner
@@ -1669,7 +1723,6 @@ class QueryAnalyzer:
             ],
             "below_threshold": confidence < threshold,
             "auto_allow_excluded": auto_excluded,
-            "answer_mode_recommended": analysis.get("answer_mode_recommended", False),
             "analysis_summary": {
                 "query_length": len(query.split()),
                 "is_complex": analysis["complexity"]["is_complex"],
@@ -1730,7 +1783,6 @@ def explain_routing(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
             "routing_policy": routing.get("routing_policy", ROUTING_POLICY),
             "exa_depth": routing.get("exa_depth", "normal"),
             "auto_allow_excluded": routing.get("auto_allow_excluded", []),
-            "answer_mode_recommended": routing.get("answer_mode_recommended", False),
         },
         "scores": routing["scores"],
         "top_signals": routing["top_signals"],
@@ -1930,6 +1982,79 @@ def _result_domain(url: str) -> str:
         return ""
 
 
+CANONICAL_DOMAIN_RULES: Dict[str, Dict[str, List[str]]] = {
+    "official_vendor_release": {
+        "boost": [
+            "mistral.ai", "anthropic.com", "openai.com", "googleblog.com",
+            "blog.google", "ai.google.dev", "meta.com", "ai.meta.com",
+            "nvidia.com", "developer.nvidia.com", "apple.com", "microsoft.com",
+        ],
+        "demote": ["youtube.com", "youtu.be", "medium.com", "aizolo.com", "reddit.com"],
+    },
+    "official_docs": {
+        "boost": ["docs.", "developer.", "github.com", "readthedocs.io", "modelcontextprotocol.io"],
+        "demote": ["medium.com", "dev.to", "reddit.com", "stackoverflow.com", "youtube.com"],
+    },
+    "policy_pdf": {
+        "boost": ["europa.eu", "ec.europa.eu", "nist.gov", "nvlpubs.nist.gov", "oecd.org", "who.int", "gov.uk", "federalregister.gov"],
+        "demote": ["scribd.com", "researchgate.net", "universityofcalifornia.edu", "slideshare.net"],
+    },
+    "finance_earnings_official": {
+        "boost": ["investor.", "ir.", "nvidia.com", "sec.gov", "nasdaq.com"],
+        "demote": ["reddit.com", "fool.com", "seekingalpha.com", "youtube.com"],
+    },
+    "security_advisory": {
+        "boost": ["nvd.nist.gov", "cve.org", "github.com/advisories", "security.", "cert.europa.eu", "kb.cert.org"],
+        "demote": ["youtube.com", "medium.com", "reddit.com"],
+    },
+}
+
+
+def _domain_matches_rule(domain: str, rule: str) -> bool:
+    return domain == rule or domain.endswith(f".{rule}") or domain.startswith(rule)
+
+
+def rerank_results_for_intent(
+    query: str,
+    routing_class: str,
+    results: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Small authority reranker for classes where source authority beats snippet luck."""
+    rules = CANONICAL_DOMAIN_RULES.get(routing_class, {})
+    if not results or not rules:
+        return results, {"reranked": False, "routing_class": routing_class}
+
+    q = query.lower()
+    scored: List[Tuple[float, int, Dict[str, Any]]] = []
+    for idx, item in enumerate(results):
+        domain = _result_domain(item.get("url", ""))
+        title = (item.get("title") or "").lower()
+        snippet = (item.get("snippet") or item.get("description") or "").lower()
+        score = float(len(results) - idx) * 0.01
+        if any(_domain_matches_rule(domain, rule) for rule in rules.get("boost", [])):
+            score += 10.0
+        if any(_domain_matches_rule(domain, rule) for rule in rules.get("demote", [])):
+            score -= 6.0
+        if routing_class == "official_vendor_release" and any(term in domain for term in ("mistral", "anthropic", "openai", "nvidia", "google", "meta")):
+            score += 3.0
+        if routing_class == "policy_pdf" and (item.get("url", "").lower().endswith(".pdf") or "pdf" in title):
+            score += 2.0
+        if "official" in q and ("official" in title or "official" in snippet):
+            score += 1.0
+        scored.append((score, idx, item))
+
+    reranked = [item.copy() for _, _, item in sorted(scored, key=lambda row: (-row[0], row[1]))]
+    before_urls = [item.get("url", "") for item in results]
+    after_urls = [item.get("url", "") for item in reranked]
+    changed = before_urls != after_urls
+    return reranked, {
+        "reranked": changed,
+        "routing_class": routing_class,
+        "top_domain_before": _result_domain(results[0].get("url", "")) if results else None,
+        "top_domain_after": _result_domain(reranked[0].get("url", "")) if reranked else None,
+    }
+
+
 def _snippet_text(item: Dict[str, Any]) -> str:
     return " ".join(
         str(item.get(k) or "")
@@ -1993,7 +2118,7 @@ def build_quality_report(
         "routing_policy": routing_info.get("routing_policy", ROUTING_POLICY),
         "routing_class": routing_info.get("analysis_summary", {}).get("routing_class"),
         "language_hint": routing_info.get("analysis_summary", {}).get("language_hint"),
-        "answer_mode_recommended": routing_info.get("answer_mode_recommended", False),
+
         "confidence": confidence_level,
         "confidence_score": routing_info.get("confidence"),
         "providers_considered": providers_considered,
@@ -3098,7 +3223,69 @@ def extract_you(
     return {"provider": "you", "results": results}
 
 
-EXTRACT_PROVIDER_PRIORITY = ["tavily", "exa", "linkup", "firecrawl", "you"]
+def extract_parallel(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://api.parallel.ai/v1/extract",
+    timeout: int = 60,
+    client_model: Optional[str] = None,
+    max_chars_total: int = 12000,
+    max_chars_per_result: int = 6000,
+) -> dict:
+    """Extract URL content using Parallel Extract.
+
+    Parallel returns excerpts by default; request full_content explicitly and
+    normalize it into the common markdown/content shape. HTML/raw-image options
+    are accepted for tool compatibility but ignored when unsupported upstream.
+    """
+    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
+    body: Dict[str, Any] = {
+        "urls": urls,
+        "max_chars_total": max_chars_total,
+        "advanced_settings": {
+            "full_content": {"max_chars_per_result": max_chars_per_result}
+        },
+    }
+    if client_model:
+        body["client_model"] = client_model
+
+    data = make_request(api_url, headers, body, timeout=timeout)
+    results: List[Dict[str, Any]] = []
+    for item in data.get("results", []) or []:
+        url = item.get("url") or ""
+        excerpts = item.get("excerpts") or []
+        excerpt_text = "\n\n".join(
+            (ex.get("text") or ex.get("content") or "") if isinstance(ex, dict) else str(ex)
+            for ex in excerpts
+        ).strip()
+        content = item.get("full_content") or item.get("markdown") or item.get("content") or excerpt_text
+        results.append(_normalize_extract_result(
+            "parallel",
+            url,
+            title=item.get("title", ""),
+            content=content,
+            raw_content=content,
+            excerpts=excerpts or None,
+            metadata={k: v for k, v in item.items() if k not in {"url", "title", "full_content", "markdown", "content", "excerpts"}},
+        ))
+    for failed in data.get("errors", []) or []:
+        failed_url = failed.get("url", "") if isinstance(failed, dict) else ""
+        results.append(_normalize_extract_result("parallel", failed_url, error=str(failed)))
+    return {
+        "provider": "parallel",
+        "results": results,
+        "metadata": {
+            "search_id": data.get("search_id"),
+            "session_id": data.get("session_id"),
+        },
+    }
+
+
+EXTRACT_PROVIDER_PRIORITY = ["tavily", "exa", "linkup", "parallel", "firecrawl", "you"]
 
 
 def extract_plus(
@@ -3135,7 +3322,7 @@ def extract_plus(
             errors.append({"provider": prov, "error": "missing_api_key"})
             continue
         in_cooldown, remaining = provider_in_cooldown(prov)
-        if in_cooldown:
+        if in_cooldown and not (selected != "auto" and prov == selected):
             cooldown_skips.append({"provider": prov, "cooldown_remaining_seconds": remaining})
             continue
         try:
@@ -3152,6 +3339,16 @@ def extract_plus(
                 if prov == "exa":
                     exa = config.get("exa", {})
                     return extract_exa(urls, key, output_format, include_images, include_raw_html, render_js, api_url=exa.get("contents_url", "https://api.exa.ai/contents"), timeout=int(exa.get("timeout", 30)))
+                if prov == "parallel":
+                    parallel = config.get("parallel", {})
+                    return extract_parallel(
+                        urls, key, output_format, include_images, include_raw_html, render_js,
+                        api_url=parallel.get("extract_url", "https://api.parallel.ai/v1/extract"),
+                        timeout=int(parallel.get("extract_timeout", parallel.get("timeout", 60))),
+                        client_model=parallel.get("client_model"),
+                        max_chars_total=int(parallel.get("max_chars_total", 12000)),
+                        max_chars_per_result=int(parallel.get("max_chars_per_result", 6000)),
+                    )
                 you = config.get("you", {})
                 return extract_you(urls, key, output_format, include_images, include_raw_html, render_js, api_url=you.get("contents_url", "https://ydc-index.io/v1/contents"), timeout=int(you.get("timeout", 30)))
 
@@ -3353,6 +3550,77 @@ def search_exa(
         "results": results,
         "images": [],
         "answer": answer,
+    }
+
+
+# =============================================================================
+# Parallel (LLM-ready web search)
+# =============================================================================
+
+def search_parallel(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    include_domains: Optional[List[str]] = None,
+    exclude_domains: Optional[List[str]] = None,
+    api_url: str = "https://api.parallel.ai/v1/search",
+    timeout: int = 45,
+    client_model: Optional[str] = None,
+) -> dict:
+    """Search using Parallel's web search API.
+
+    Parallel returns source URLs plus long LLM-ready excerpts. Its API does not
+    currently accept a generic max_results parameter, so results are trimmed
+    locally to the requested count.
+    """
+    search_query = query
+    if include_domains:
+        search_query += " " + " ".join(f"site:{domain}" for domain in include_domains)
+    if exclude_domains:
+        search_query += " " + " ".join(f"-site:{domain}" for domain in exclude_domains)
+
+    body: Dict[str, Any] = {
+        "objective": query,
+        "search_queries": [search_query],
+    }
+    if client_model:
+        body["client_model"] = client_model
+
+    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
+    data = make_request(api_url, headers, body, timeout=timeout)
+
+    raw_results = data.get("results") or []
+    results = []
+    for i, item in enumerate(raw_results[:max_results]):
+        excerpts = item.get("excerpts") or []
+        snippet_parts = []
+        for excerpt in excerpts:
+            if isinstance(excerpt, dict):
+                snippet_parts.append(excerpt.get("text") or excerpt.get("content") or "")
+            elif isinstance(excerpt, str):
+                snippet_parts.append(excerpt)
+        snippet = "\n\n".join(part for part in snippet_parts if part).strip()
+        results.append({
+            "title": item.get("title") or _title_from_url(item.get("url", "")),
+            "url": item.get("url", ""),
+            "snippet": snippet,
+            "score": round(1.0 - i * 0.05, 3),
+            "publish_date": item.get("publish_date"),
+            "excerpts": excerpts,
+        })
+
+    answer = " ".join(r.get("snippet", "") for r in results[:3])[:1200]
+    return {
+        "provider": "parallel",
+        "query": query,
+        "results": results,
+        "images": [],
+        "answer": answer,
+        "metadata": {
+            "search_id": data.get("search_id"),
+            "session_id": data.get("session_id"),
+            "result_count_raw": len(raw_results),
+        },
     }
 
 
@@ -3807,7 +4075,7 @@ Full docs: See README.md and SKILL.md
     # Common arguments
     parser.add_argument(
         "--provider", "-p", 
-        choices=["serper", "serpbase", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "you", "searxng", "auto"],
+        choices=["serper", "serpbase", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "parallel", "perplexity", "kilo-perplexity", "you", "searxng", "auto"],
         help="Search provider (auto=intelligent routing)"
     )
     parser.add_argument(
@@ -4125,7 +4393,6 @@ Full docs: See README.md and SKILL.md
                 "top_signals": routing["top_signals"],
                 "scores": routing["scores"],
                 "auto_allow_excluded": routing.get("auto_allow_excluded", []),
-                "answer_mode_recommended": routing.get("answer_mode_recommended", False),
                 "analysis_summary": routing.get("analysis_summary", {}),
             }
         else:
@@ -4144,7 +4411,7 @@ Full docs: See README.md and SKILL.md
     
     # Build provider fallback list
     auto_config = config.get("auto_routing", {})
-    provider_priority = auto_config.get("provider_priority", ["tavily", "linkup", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"])
+    provider_priority = auto_config.get("provider_priority", ["tavily", "linkup", "parallel", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"])
     disabled_providers = auto_config.get("disabled_providers", [])
 
     # Start with the selected provider, then try others in priority order.
@@ -4291,6 +4558,18 @@ Full docs: See README.md and SKILL.md
                 api_url=firecrawl_config.get("api_url", "https://api.firecrawl.dev/v2/search"),
                 timeout_ms=int(firecrawl_config.get("timeout", 30000)),
             )
+        elif prov == "parallel":
+            parallel_config = config.get("parallel", {})
+            return search_parallel(
+                query=args.query,
+                api_key=key,
+                max_results=args.max_results,
+                include_domains=args.include_domains,
+                exclude_domains=args.exclude_domains,
+                api_url=parallel_config.get("api_url", "https://api.parallel.ai/v1/search"),
+                timeout=int(parallel_config.get("timeout", 45)),
+                client_model=parallel_config.get("client_model"),
+            )
         elif prov in {"perplexity", "kilo-perplexity"}:
             perplexity_config = config.get(prov, {})
             defaults = DEFAULT_CONFIG.get(prov, {})
@@ -4394,7 +4673,7 @@ Full docs: See README.md and SKILL.md
             execute_search=execute_with_retry,
             extract_urls=lambda urls: extract_plus(
                 urls=urls,
-                provider="linkup",
+                provider="auto",
                 output_format="markdown",
                 config=config,
             ),
@@ -4498,6 +4777,13 @@ Full docs: See README.md and SKILL.md
 
         if cooldown_skips:
             routing_info["cooldown_skips"] = cooldown_skips
+
+        routing_class = routing_info.get("analysis_summary", {}).get("routing_class", "general")
+        if not cache_hit and isinstance(result.get("results"), list):
+            reranked, rerank_metadata = rerank_results_for_intent(args.query or "", routing_class, result.get("results", []))
+            result["results"] = reranked
+            if rerank_metadata.get("reranked"):
+                result.setdefault("metadata", {})["intent_rerank"] = rerank_metadata
 
         result["routing"] = routing_info
 

@@ -2,8 +2,8 @@
 """
 web-search-plus-mcp: Multi-provider web search MCP server.
 
-MCP wrapper around Web Search Plus Routing v2: 12 search providers,
-5 extraction providers, quality reports, guarded auto-routing, opt-in research mode,
+MCP wrapper around Web Search Plus Routing v2: 13 search providers,
+6 extraction providers, quality reports, guarded auto-routing, opt-in research mode,
 and Tavily-first extraction defaults.
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus")
@@ -33,6 +33,7 @@ SEARCH_PROVIDERS = {
     "exa": {"env": "EXA_API_KEY", "capabilities": ["search", "extract"]},
     "linkup": {"env": "LINKUP_API_KEY", "capabilities": ["search", "extract"]},
     "firecrawl": {"env": "FIRECRAWL_API_KEY", "capabilities": ["search", "extract"]},
+    "parallel": {"env": "PARALLEL_API_KEY", "capabilities": ["search", "extract"], "auto_allow": False},
     "perplexity": {"env": "PERPLEXITY_API_KEY", "capabilities": ["search"], "auto_allow": False},
     "kilo-perplexity": {"env": "KILOCODE_API_KEY", "capabilities": ["search"], "auto_allow": False},
     "you": {"env": "YOU_API_KEY", "capabilities": ["search", "extract"]},
@@ -40,7 +41,7 @@ SEARCH_PROVIDERS = {
     "serpbase": {"env": "SERPBASE_API_KEY", "capabilities": ["search"], "auto_allow": False},
     "querit": {"env": "QUERIT_API_KEY", "capabilities": ["search"], "auto_allow": False},
 }
-EXTRACT_PROVIDERS = ["tavily", "exa", "linkup", "firecrawl", "you"]
+EXTRACT_PROVIDERS = ["tavily", "exa", "linkup", "parallel", "firecrawl", "you"]
 PRESETS = {
     "starter": ["YOU_API_KEY", "SERPER_API_KEY", "LINKUP_API_KEY"],
     "minimal": ["YOU_API_KEY"],
@@ -50,7 +51,7 @@ PRESETS = {
 
 CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
 PROVIDER_ALIASES = {"kilo_perplexity": "kilo-perplexity"}
-ROUTING_PROVIDER_ORDER = ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "kilo-perplexity", "perplexity", "searxng", "serpbase", "querit"]
+ROUTING_PROVIDER_ORDER = ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "kilo-perplexity", "perplexity", "searxng", "serpbase", "querit"]
 
 
 def _canonical_provider(provider: str) -> str:
@@ -80,6 +81,7 @@ def _default_behavior_config() -> dict[str, Any]:
                 "brave": False,
                 "kilo-perplexity": False,
                 "perplexity": False,
+                "parallel": False,
             },
             "confidence_threshold": 0.3,
         },
@@ -119,6 +121,15 @@ def _normalize_provider_list(value: Any, *, allow_empty: bool = True) -> list[st
     return normalized
 
 
+def _append_missing_default_providers(providers: list[str]) -> list[str]:
+    """Preserve user order while adding newly introduced default providers."""
+    merged = list(providers)
+    for provider in ROUTING_PROVIDER_ORDER:
+        if provider not in merged:
+            merged.append(provider)
+    return merged
+
+
 def _normalize_behavior_config(config: dict[str, Any]) -> dict[str, Any]:
     normalized = _merge_dict(_default_behavior_config(), config or {})
     defaults = normalized.setdefault("defaults", {})
@@ -132,7 +143,8 @@ def _normalize_behavior_config(config: dict[str, Any]) -> dict[str, Any]:
     if fallback not in SEARCH_PROVIDERS:
         raise ValueError(f"unknown fallback provider: {auto.get('fallback_provider')}")
     auto["fallback_provider"] = fallback
-    auto["provider_priority"] = _normalize_provider_list(auto.get("provider_priority", ROUTING_PROVIDER_ORDER), allow_empty=False)
+    priority = _normalize_provider_list(auto.get("provider_priority", ROUTING_PROVIDER_ORDER), allow_empty=False)
+    auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
     auto["disabled_providers"] = _normalize_provider_list(auto.get("disabled_providers", []), allow_empty=True)
     raw_auto_allow = auto.get("auto_allow") or {}
     if not isinstance(raw_auto_allow, dict):
@@ -248,9 +260,9 @@ async def list_tools() -> list[Tool]:
             name="web_search",
             description=(
                 "Search the web using Web Search Plus Routing v2 multi-provider routing. "
-                "Supports You.com, Serper, Exa, Firecrawl, Tavily, Linkup, "
+                "Supports You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, "
                 "Brave, native Perplexity, Kilo Perplexity, SearXNG, SerpBase, and Querit. "
-                "Brave, SerpBase, Querit, Perplexity, and Kilo Perplexity are explicit-only by default "
+                "Brave, Parallel, SerpBase, Querit, Perplexity, and Kilo Perplexity are explicit-only by default "
                 "and are not auto-routed unless auto_allow is changed."
             ),
             inputSchema={
@@ -267,6 +279,7 @@ async def list_tools() -> list[Tool]:
                             "exa",
                             "linkup",
                             "firecrawl",
+                            "parallel",
                             "perplexity",
                             "kilo-perplexity",
                             "you",
@@ -298,13 +311,13 @@ async def list_tools() -> list[Tool]:
             name="web_extract",
             description=(
                 "Extract markdown or HTML from URLs using Web Search Plus extraction providers. "
-                "Supports Tavily, Exa, Linkup, Firecrawl, and You.com. Auto mode tries Tavily first, then Exa, Linkup, Firecrawl, and You.com."
+                "Supports Tavily, Exa, Linkup, Parallel, Firecrawl, and You.com. Auto mode tries Tavily first, then Exa, Linkup, Parallel, Firecrawl, and You.com."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "urls": {"type": "array", "items": {"type": "string"}, "description": "URLs to extract"},
-                    "provider": {"type": "string", "enum": ["auto", "tavily", "exa", "linkup", "firecrawl", "you"], "default": "auto"},
+                    "provider": {"type": "string", "enum": ["auto", "tavily", "exa", "linkup", "parallel", "firecrawl", "you"], "default": "auto"},
                     "format": {"type": "string", "enum": ["markdown", "html"], "default": "markdown"},
                     "include_images": {"type": "boolean", "default": False},
                     "include_raw_html": {"type": "boolean", "default": False},

@@ -10,16 +10,16 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Glama](https://glama.ai/mcp/servers/robbyczgw-cla/web-search-plus-mcp/badge)](https://glama.ai/mcp/servers/robbyczgw-cla/web-search-plus-mcp)
 
-**Multi-provider web search and Tavily-first URL extraction for MCP clients.**
+**Multi-provider web search and Parallel-aware URL extraction for MCP clients.**
 
 `web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the same provider family used by the Hermes/OpenClaw Web Search Plus tools.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`0.8.0`) while tracking the Web Search Plus v2.1 engine family. The plugin package is versioned separately as `hermes-web-search-plus v2.1.x`.
+Version note: `web-search-plus-mcp` uses its own MCP package version (`0.9.0`) while tracking the Web Search Plus v2.2 engine family. The plugin package is versioned separately as `hermes-web-search-plus v2.2.x`.
 
 ## ✨ Features
 
-- **12 search providers** — Serper, Brave, Tavily, Exa, Linkup, Firecrawl, native Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, Querit
-- **5 extract providers** — Tavily, Exa, Linkup, Firecrawl, You.com
+- **13 search providers** — Serper, Brave, Tavily, Exa, Linkup, Firecrawl, Parallel, native Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, Querit
+- **6 extract providers** — Tavily, Exa, Linkup, Parallel, Firecrawl, You.com
 - **Routing v2 auto-routing** — class-aware routing for multilingual/current, docs/API, arXiv, CVE/security, local/shopping, OSS discovery, and answer/synthesis queries
 - **Quality reports** — optional routing/result diagnostics
 - **Research mode** — opt-in multi-provider search + top-source extraction with a time budget
@@ -72,7 +72,7 @@ Persistent routing preferences live in `config.json` rather than `.env`:
 web-search-plus-mcp config show
 web-search-plus-mcp config set-default you        # strict fixed-provider mode
 web-search-plus-mcp config set-routing on         # restore Routing v2 auto-routing
-web-search-plus-mcp config set-priority you,serper,exa,firecrawl,tavily,linkup
+web-search-plus-mcp config set-priority you,serper,exa,firecrawl,tavily,linkup,parallel
 web-search-plus-mcp config set-fallback serper
 web-search-plus-mcp config disable perplexity
 web-search-plus-mcp config enable perplexity
@@ -126,6 +126,7 @@ You can also place a `.env` file next to the package/project with the same varia
 - **Serper** — Google-style facts, news, shopping, local queries
 - **Exa** — semantic discovery, GitHub/docs, arXiv/academic, and OSS discovery
 - **Firecrawl** — web search plus scrape-ready content
+- **Parallel** — explicit-only LLM-ready web search with long excerpts (`PARALLEL_API_KEY`, `auto_allow=false`)
 - **Tavily** — research and analysis
 - **Linkup** — source-backed grounding/citations
 - **Brave** — explicit-only independent web index by default (`BRAVE_API_KEY`, `auto_allow=false`)
@@ -140,6 +141,7 @@ You can also place a `.env` file next to the package/project with the same varia
 - **Tavily** — default first choice; fastest reliable extraction in the v2.1 benchmark
 - **Exa** — fast contents API, strong for docs/academic pages
 - **Linkup** — clean markdown and source-grounded fetches
+- **Parallel** — fast excerpt-rich docs fallback with optional full-content extraction
 - **Firecrawl** — robust scrape fallback, useful for JS-heavy/blocked pages
 - **You.com** — LLM-ready snippets/content where available
 
@@ -156,7 +158,7 @@ Use for source discovery, current events, prices, weather, sports lineups, sched
 Parameters:
 
 - `query` — required search query
-- `provider` — `auto`, `serper`, `brave`, `tavily`, `exa`, `linkup`, `firecrawl`, `perplexity`, `kilo-perplexity`, `you`, `searxng`, `serpbase`, `querit`
+- `provider` — `auto`, `serper`, `brave`, `tavily`, `exa`, `linkup`, `firecrawl`, `parallel`, `perplexity`, `kilo-perplexity`, `you`, `searxng`, `serpbase`, `querit`
 - `count` — results to return, default `5`, max `20`
 - `depth` — Exa depth: `normal`, `deep`, `deep-reasoning`
 - `time_range` — `hour`, `day`, `week`, `month`, `year`
@@ -181,7 +183,7 @@ Example MCP arguments:
 Parameters:
 
 - `urls` — required list of URLs
-- `provider` — `auto`, `tavily`, `exa`, `linkup`, `firecrawl`, `you`
+- `provider` — `auto`, `tavily`, `exa`, `linkup`, `parallel`, `firecrawl`, `you`
 - `format` — `markdown` or `html`
 - `include_images` — include image metadata when supported
 - `include_raw_html` — include raw HTML when supported
@@ -209,8 +211,8 @@ Example MCP arguments:
 Guarded providers can still be called explicitly. To let one participate in `provider="auto"`, opt in:
 
 ```bash
-web-search-plus-mcp config set-auto-allow serpbase on
-web-search-plus-mcp config set-auto-allow serpbase off
+web-search-plus-mcp config set-auto-allow parallel on
+web-search-plus-mcp config set-auto-allow parallel off
 ```
 
 ## Credits
