@@ -25,16 +25,12 @@ Examples:
 """
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
-import re
 import sys
 import time
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from urllib.request import Request, urlopen
-from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode, urlparse, parse_qsl, urlunparse
 
 ROUTING_POLICY = "routing-v2"
 CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
@@ -196,11 +192,74 @@ except ImportError:  # pragma: no cover
     from routing import ROUTING_POLICY, _choose_tie_winner, _provider_auto_allowed  # type: ignore
 
 try:  # pragma: no cover - import style depends on CLI/package execution
+    from . import extract as _extract
+    from .providers import core as _core_provider
     from .providers import parallel as _parallel_provider
     from .providers import perplexity as _perplexity_provider
+    from .provider_health import (
+        COOLDOWN_STEPS_SECONDS,
+        RETRY_BACKOFF_SECONDS,
+        _ensure_parent,
+        _load_provider_health,
+        _save_provider_health,
+        mark_provider_failure,
+        provider_in_cooldown,
+        reset_provider_health,
+    )
+    from .quality import (
+        CANONICAL_DOMAIN_RULES,
+        _domain_matches_rule,
+        _result_domain,
+        _snippet_text,
+        _title_from_url,
+        build_quality_report,
+        deduplicate_results_across_providers,
+        normalize_result_url,
+        rerank_results_for_intent,
+        select_research_providers,
+    )
+    from .research import run_research_mode
 except ImportError:  # pragma: no cover
+    import extract as _extract  # type: ignore
+    from providers import core as _core_provider  # type: ignore
     from providers import parallel as _parallel_provider  # type: ignore
     from providers import perplexity as _perplexity_provider  # type: ignore
+    from provider_health import (  # type: ignore
+        COOLDOWN_STEPS_SECONDS,
+        RETRY_BACKOFF_SECONDS,
+        _ensure_parent,
+        _load_provider_health,
+        _save_provider_health,
+        mark_provider_failure,
+        provider_in_cooldown,
+        reset_provider_health,
+    )
+    from quality import (  # type: ignore
+        CANONICAL_DOMAIN_RULES,
+        _domain_matches_rule,
+        _result_domain,
+        _snippet_text,
+        _title_from_url,
+        build_quality_report,
+        deduplicate_results_across_providers,
+        normalize_result_url,
+        rerank_results_for_intent,
+        select_research_providers,
+    )
+    from research import run_research_mode  # type: ignore
+
+_COMPAT_REEXPORTS = (
+    COOLDOWN_STEPS_SECONDS,
+    RETRY_BACKOFF_SECONDS,
+    _ensure_parent,
+    _load_provider_health,
+    _save_provider_health,
+    CANONICAL_DOMAIN_RULES,
+    _domain_matches_rule,
+    _result_domain,
+    _snippet_text,
+    normalize_result_url,
+)
 
 
 class QueryAnalyzer(_routing.QueryAnalyzer):
@@ -247,362 +306,35 @@ def explain_routing(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
     finally:
         _routing.get_api_key = original_get_api_key
 
-COOLDOWN_STEPS_SECONDS = [60, 300, 1500, 3600]  # 1m -> 5m -> 25m -> 1h cap
-RETRY_BACKOFF_SECONDS = [1, 3, 9]
+# Provider health, result-quality, and research-mode helpers live in dedicated
+# modules and are imported above for backward-compatible access through search.py.
 
 
-def _ensure_parent(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+def _sync_core_provider_dependencies() -> None:
+    """Keep provider modules compatible with search.py monkeypatches."""
+    _core_provider.make_request = make_request
+    _core_provider.make_get_request = make_get_request
+    _core_provider.urlopen = urlopen
+    _core_provider.Request = Request
+    _core_provider._read_json_response = _read_json_response
+    _core_provider._read_response_body = _read_response_body
+    _core_provider._title_from_url = _title_from_url
 
 
-def _load_provider_health() -> Dict[str, Any]:
-    if not PROVIDER_HEALTH_FILE.exists():
-        return {}
-    try:
-        with open(PROVIDER_HEALTH_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data if isinstance(data, dict) else {}
-    except (json.JSONDecodeError, IOError):
-        return {}
-
-
-def _save_provider_health(state: Dict[str, Any]) -> None:
-    _ensure_parent(PROVIDER_HEALTH_FILE)
-    with open(PROVIDER_HEALTH_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
-
-
-def provider_in_cooldown(provider: str) -> Tuple[bool, int]:
-    state = _load_provider_health()
-    pstate = state.get(provider, {})
-    cooldown_until = int(pstate.get("cooldown_until", 0) or 0)
-    remaining = cooldown_until - int(time.time())
-    return (remaining > 0, max(0, remaining))
-
-
-def mark_provider_failure(provider: str, error_message: str) -> Dict[str, Any]:
-    state = _load_provider_health()
-    now = int(time.time())
-    pstate = state.get(provider, {})
-    fail_count = int(pstate.get("failure_count", 0)) + 1
-    cooldown_seconds = COOLDOWN_STEPS_SECONDS[min(fail_count - 1, len(COOLDOWN_STEPS_SECONDS) - 1)]
-    state[provider] = {
-        "failure_count": fail_count,
-        "cooldown_until": now + cooldown_seconds,
-        "cooldown_seconds": cooldown_seconds,
-        "last_error": error_message,
-        "last_failure_at": now,
-    }
-    _save_provider_health(state)
-    return state[provider]
-
-
-def reset_provider_health(provider: str) -> None:
-    state = _load_provider_health()
-    if provider in state:
-        state.pop(provider, None)
-        _save_provider_health(state)
-
-
-def _title_from_url(url: str) -> str:
-    """Derive a readable title from a URL when none is provided."""
-    try:
-        parsed = urlparse(url)
-        domain = parsed.netloc.replace("www.", "")
-        # Use last meaningful path segment as context
-        segments = [s for s in parsed.path.strip("/").split("/") if s]
-        if segments:
-            last = segments[-1].replace("-", " ").replace("_", " ")
-            # Strip file extensions
-            last = re.sub(r'\.\w{2,4}$', '', last)
-            if last:
-                return f"{domain} — {last[:80]}"
-        return domain
-    except Exception:
-        return url[:60]
-
-
-def normalize_result_url(url: str) -> str:
-    if not url:
-        return ""
-    parsed = urlparse(url.strip())
-    netloc = (parsed.netloc or "").lower()
-    if netloc.startswith("www."):
-        netloc = netloc[4:]
-    path = parsed.path.rstrip("/")
-    return f"{netloc}{path}"
-
-
-def deduplicate_results_across_providers(results_by_provider: List[Tuple[str, Dict[str, Any]]], max_results: int) -> Tuple[List[Dict[str, Any]], int]:
-    deduped = []
-    seen = set()
-    dedup_count = 0
-    for provider_name, data in results_by_provider:
-        for item in data.get("results", []):
-            norm = normalize_result_url(item.get("url", ""))
-            if norm and norm in seen:
-                dedup_count += 1
-                continue
-            if norm:
-                seen.add(norm)
-            item = item.copy()
-            item.setdefault("provider", provider_name)
-            deduped.append(item)
-            if len(deduped) >= max_results:
-                return deduped, dedup_count
-    return deduped, dedup_count
-
-def _result_domain(url: str) -> str:
-    try:
-        netloc = urlparse(url or "").netloc.lower()
-        return netloc[4:] if netloc.startswith("www.") else netloc
-    except Exception:
-        return ""
-
-
-CANONICAL_DOMAIN_RULES: Dict[str, Dict[str, List[str]]] = {
-    "official_vendor_release": {
-        "boost": [
-            "mistral.ai", "anthropic.com", "openai.com", "googleblog.com",
-            "blog.google", "ai.google.dev", "meta.com", "ai.meta.com",
-            "nvidia.com", "developer.nvidia.com", "apple.com", "microsoft.com",
-        ],
-        "demote": ["youtube.com", "youtu.be", "medium.com", "aizolo.com", "reddit.com"],
-    },
-    "official_docs": {
-        "boost": ["docs.", "developer.", "github.com", "readthedocs.io", "modelcontextprotocol.io"],
-        "demote": ["medium.com", "dev.to", "reddit.com", "stackoverflow.com", "youtube.com"],
-    },
-    "policy_pdf": {
-        "boost": ["europa.eu", "ec.europa.eu", "nist.gov", "nvlpubs.nist.gov", "oecd.org", "who.int", "gov.uk", "federalregister.gov"],
-        "demote": ["scribd.com", "researchgate.net", "universityofcalifornia.edu", "slideshare.net"],
-    },
-    "finance_earnings_official": {
-        "boost": ["investor.", "ir.", "nvidia.com", "sec.gov", "nasdaq.com"],
-        "demote": ["reddit.com", "fool.com", "seekingalpha.com", "youtube.com"],
-    },
-    "security_advisory": {
-        "boost": ["nvd.nist.gov", "cve.org", "github.com/advisories", "security.", "cert.europa.eu", "kb.cert.org"],
-        "demote": ["youtube.com", "medium.com", "reddit.com"],
-    },
-}
-
-
-def _domain_matches_rule(domain: str, rule: str) -> bool:
-    return domain == rule or domain.endswith(f".{rule}") or domain.startswith(rule)
-
-
-def rerank_results_for_intent(
-    query: str,
-    routing_class: str,
-    results: List[Dict[str, Any]],
-) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """Small authority reranker for classes where source authority beats snippet luck."""
-    rules = CANONICAL_DOMAIN_RULES.get(routing_class, {})
-    if not results or not rules:
-        return results, {"reranked": False, "routing_class": routing_class}
-
-    q = query.lower()
-    scored: List[Tuple[float, int, Dict[str, Any]]] = []
-    for idx, item in enumerate(results):
-        domain = _result_domain(item.get("url", ""))
-        title = (item.get("title") or "").lower()
-        snippet = (item.get("snippet") or item.get("description") or "").lower()
-        score = float(len(results) - idx) * 0.01
-        if any(_domain_matches_rule(domain, rule) for rule in rules.get("boost", [])):
-            score += 10.0
-        if any(_domain_matches_rule(domain, rule) for rule in rules.get("demote", [])):
-            score -= 6.0
-        if routing_class == "official_vendor_release" and any(term in domain for term in ("mistral", "anthropic", "openai", "nvidia", "google", "meta")):
-            score += 3.0
-        if routing_class == "policy_pdf" and (item.get("url", "").lower().endswith(".pdf") or "pdf" in title):
-            score += 2.0
-        if "official" in q and ("official" in title or "official" in snippet):
-            score += 1.0
-        scored.append((score, idx, item))
-
-    reranked = [item.copy() for _, _, item in sorted(scored, key=lambda row: (-row[0], row[1]))]
-    before_urls = [item.get("url", "") for item in results]
-    after_urls = [item.get("url", "") for item in reranked]
-    changed = before_urls != after_urls
-    return reranked, {
-        "reranked": changed,
-        "routing_class": routing_class,
-        "top_domain_before": _result_domain(results[0].get("url", "")) if results else None,
-        "top_domain_after": _result_domain(reranked[0].get("url", "")) if reranked else None,
-    }
-
-
-def _snippet_text(item: Dict[str, Any]) -> str:
-    return " ".join(
-        str(item.get(k) or "")
-        for k in ("description", "snippet", "content", "raw_content", "summary")
-    ).strip()
-
-
-def build_quality_report(
-    query: str,
-    result: Dict[str, Any],
-    routing_info: Dict[str, Any],
-    providers_considered: List[str],
-    eligible_providers: List[str],
-    cooldown_skips: List[Dict[str, Any]],
-    errors: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    """Build transparent search-quality diagnostics without changing results."""
-    results = result.get("results", []) or []
-    domains = [_result_domain(r.get("url", "")) for r in results]
-    domains = [d for d in domains if d]
-    unique_domains = sorted(set(domains))
-    duplicate_count = int(result.get("metadata", {}).get("dedup_count", 0) or 0)
-
-    short_snippets = 0
-    for item in results:
-        if len(_snippet_text(item)) < 40:
-            short_snippets += 1
-
-    extract_reasons: List[str] = []
-    confidence_level = routing_info.get("confidence_level") or "unknown"
-    confidence_score = routing_info.get("confidence")
-    if confidence_level == "low" or (confidence_score is not None and float(confidence_score or 0) < 0.4):
-        extract_reasons.append("low routing confidence")
-    if len(results) < 3:
-        extract_reasons.append("few search results")
-    if results and len(unique_domains) <= 1:
-        extract_reasons.append("low domain diversity")
-    if duplicate_count:
-        extract_reasons.append("duplicate results detected")
-    if results and short_snippets / max(len(results), 1) >= 0.5:
-        extract_reasons.append("thin snippets")
-
-    skipped = []
-    for item in cooldown_skips:
-        skipped.append({
-            "provider": item.get("provider"),
-            "reason": "cooldown",
-            "cooldown_remaining_seconds": item.get("cooldown_remaining_seconds"),
-        })
-    for err in errors:
-        skipped.append({
-            "provider": err.get("provider"),
-            "reason": "error",
-            "error": err.get("error"),
-        })
-
-    return {
-        "query": query,
-        "selected_provider": routing_info.get("provider") or result.get("provider"),
-        "routing_reason": routing_info.get("reason"),
-        "routing_policy": routing_info.get("routing_policy", ROUTING_POLICY),
-        "routing_class": routing_info.get("analysis_summary", {}).get("routing_class"),
-        "language_hint": routing_info.get("analysis_summary", {}).get("language_hint"),
-
-        "confidence": confidence_level,
-        "confidence_score": routing_info.get("confidence"),
-        "providers_considered": providers_considered,
-        "eligible_providers": eligible_providers,
-        "skipped_providers": skipped,
-        "result_count": len(results),
-        "domain_count": len(unique_domains),
-        "domains": unique_domains,
-        "domain_diversity": (len(unique_domains) / len(results)) if results else 0.0,
-        "duplicate_count": duplicate_count,
-        "thin_snippet_count": short_snippets,
-        "extract_recommended": bool(extract_reasons),
-        "extract_reasons": extract_reasons,
-        "scores": routing_info.get("scores", {}),
-    }
-
-
-def select_research_providers(
-    primary_provider: str,
-    provider_priority: List[str],
-    available_providers: set,
-    max_providers: int = 3,
-) -> List[str]:
-    """Pick a compact provider set for research mode."""
-    preferred = [primary_provider, "linkup", "tavily", "exa", "firecrawl", "brave", "serper", "you", "querit"]
-    ordered: List[str] = []
-    for provider in preferred + provider_priority:
-        if provider and provider in available_providers and provider not in ordered:
-            ordered.append(provider)
-        if len(ordered) >= max_providers:
-            break
-    return ordered
-
-
-def run_research_mode(
-    query: str,
-    research_providers: List[str],
-    execute_search,
-    extract_urls,
-    max_results: int,
-    max_extract_urls: int = 3,
-    time_budget_seconds: float | None = None,
-    now_fn=None,
-) -> Dict[str, Any]:
-    """Run broad search, deduplicate, then extract top sources for grounding.
-
-    Research mode is intentionally best-effort: provider/extraction failures should
-    produce diagnostics and partial search results instead of throwing away the
-    whole response. The optional time budget is checked between expensive calls so
-    the mode can degrade safely before starting more provider work or extraction.
-    """
-    provider_results: List[Tuple[str, Dict[str, Any]]] = []
-    provider_errors: List[Dict[str, Any]] = []
-    now = now_fn or time.monotonic
-    start = now()
-
-    def budget_exhausted() -> bool:
-        return time_budget_seconds is not None and (now() - start) >= time_budget_seconds
-
-    for provider in research_providers:
-        if budget_exhausted():
-            provider_errors.append({"provider": provider, "error": "skipped: research time budget exhausted"})
-            continue
-        try:
-            payload = execute_search(provider)
-            provider_results.append((provider, payload))
-        except Exception as e:
-            provider_errors.append({"provider": provider, "error": str(e)})
-
-    deduped, dedup_count = deduplicate_results_across_providers(provider_results, max_results)
-    urls = [r.get("url") for r in deduped if r.get("url")][:max(0, max_extract_urls)]
-    extracted = {"provider": None, "results": []}
-    extraction_error = None
-    if urls:
-        if budget_exhausted():
-            extraction_error = "skipped: research time budget exhausted"
-        else:
-            try:
-                extracted = extract_urls(urls) or {"provider": None, "results": []}
-            except Exception as e:
-                extraction_error = str(e)
-                extracted = {"provider": None, "results": []}
-
-    routing = {
-        "providers_queried": [p for p, _ in provider_results],
-        "provider_errors": provider_errors,
-        "extraction_provider": extracted.get("provider"),
-    }
-    if extraction_error:
-        routing["extraction_error"] = extraction_error
-
-    source_summaries = extracted.get("results", []) or []
-
-    return {
-        "mode": "research",
-        "provider": "research",
-        "query": query,
-        "results": deduped,
-        "source_summaries": source_summaries,
-        "routing": routing,
-        "metadata": {
-            "dedup_count": dedup_count,
-            "providers_merged": [p for p, _ in provider_results],
-            "extracted_url_count": len(source_summaries),
-        },
-    }
+def _sync_extract_dependencies() -> None:
+    """Keep extract orchestration compatible with search.py monkeypatches."""
+    _extract.get_api_key = get_api_key
+    _extract.load_config = load_config
+    _extract.provider_in_cooldown = provider_in_cooldown
+    _extract.mark_provider_failure = mark_provider_failure
+    _extract.reset_provider_health = reset_provider_health
+    _extract.execute_provider_with_retry = execute_provider_with_retry
+    _extract.extract_firecrawl = extract_firecrawl
+    _extract.extract_linkup = extract_linkup
+    _extract.extract_tavily = extract_tavily
+    _extract.extract_exa = extract_exa
+    _extract.extract_you = extract_you
+    _extract.extract_parallel = extract_parallel
 
 
 # =============================================================================
@@ -612,842 +344,87 @@ def run_research_mode(
 # Serper (Google Search API)
 # =============================================================================
 
-def search_serper(
-    query: str,
-    api_key: str,
-    max_results: int = 5,
-    country: str = "us",
-    language: str = "en",
-    search_type: str = "search",
-    time_range: Optional[str] = None,
-    include_images: bool = False,
-) -> dict:
-    """Search using Serper (Google Search API)."""
-    endpoint = f"https://google.serper.dev/{search_type}"
-    
-    body = {
-        "q": query,
-        "gl": country,
-        "hl": language,
-        "num": max_results,
-        "autocorrect": True,
-    }
-    
-    if time_range and time_range != "none":
-        tbs_map = {
-            "hour": "qdr:h",
-            "day": "qdr:d",
-            "week": "qdr:w",
-            "month": "qdr:m",
-            "year": "qdr:y",
-        }
-        if time_range in tbs_map:
-            body["tbs"] = tbs_map[time_range]
-    
-    headers = {
-        "X-API-KEY": api_key,
-        "Content-Type": "application/json",
-    }
-    
-    data = make_request(endpoint, headers, body)
-    
-    results = []
-    for i, item in enumerate(data.get("organic", [])[:max_results]):
-        results.append({
-            "title": item.get("title", ""),
-            "url": item.get("link", ""),
-            "snippet": item.get("snippet", ""),
-            "score": round(1.0 - i * 0.1, 2),
-            "date": item.get("date"),
-        })
-    
-    answer = ""
-    if data.get("answerBox", {}).get("answer"):
-        answer = data["answerBox"]["answer"]
-    elif data.get("answerBox", {}).get("snippet"):
-        answer = data["answerBox"]["snippet"]
-    elif data.get("knowledgeGraph", {}).get("description"):
-        answer = data["knowledgeGraph"]["description"]
-    elif results:
-        answer = results[0]["snippet"]
-    
-    images = []
-    if include_images:
-        try:
-            img_data = make_request(
-                "https://google.serper.dev/images",
-                headers,
-                {"q": query, "gl": country, "hl": language, "num": 5},
-            )
-            images = [img.get("imageUrl", "") for img in img_data.get("images", [])[:5] if img.get("imageUrl")]
-        except Exception:
-            pass
-    
-    return {
-        "provider": "serper",
-        "query": query,
-        "results": results,
-        "images": images,
-        "answer": answer,
-        "knowledge_graph": data.get("knowledgeGraph"),
-        "related_searches": [r.get("query") for r in data.get("relatedSearches", [])]
-    }
-
-
-# =============================================================================
-# SerpBase (Google SERP API)
-# =============================================================================
-
-def _strip_tracking_params(url: str) -> str:
-    """Remove common SERP tracking params while preserving the canonical target URL."""
-    if not url:
-        return ""
-    parsed = urlparse(url)
-    tracking_prefixes = ("utm_",)
-    tracking_names = {"srsltid", "gclid", "fbclid", "mc_cid", "mc_eid"}
-    query = [
-        (key, value)
-        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        if key.lower() not in tracking_names and not key.lower().startswith(tracking_prefixes)
-    ]
-    return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
-
-
-def _serpbase_related_search_query(item: Any) -> Optional[str]:
-    if isinstance(item, dict):
-        return item.get("query") or item.get("title")
-    if isinstance(item, str):
-        return item
-    return None
-
-
-def search_serpbase(
-    query: str,
-    api_key: str,
-    max_results: int = 5,
-    country: str = "us",
-    language: str = "en",
-    page: int = 1,
-    api_url: str = "https://api.serpbase.dev/google/search",
-    timeout: int = 30,
-) -> dict:
-    """Search using SerpBase's Google Search endpoint.
-
-    SerpBase returns HTTP 200 for some business failures, so `status == 0` is
-    required before parsing results.
-    """
-    body = {
-        "q": query,
-        "hl": language,
-        "gl": country,
-        "page": page,
-    }
-    headers = {
-        "X-API-Key": api_key,
-        "Content-Type": "application/json",
-    }
-
-    data = make_request(api_url, headers, body, timeout=timeout)
-    status = data.get("status", 0)
-    if status != 0:
-        message = data.get("message") or data.get("error") or data.get("msg") or "business status failure"
-        transient = status in {1029, 1502, 1503, 1504}
-        raise ProviderRequestError(f"SerpBase error {status}: {message}", transient=transient)
-
-    results = []
-    for i, item in enumerate(data.get("organic", [])[:max_results]):
-        results.append({
-            "title": item.get("title", ""),
-            "url": _strip_tracking_params(item.get("link", "") or item.get("url", "")),
-            "snippet": item.get("snippet", ""),
-            "score": round(1.0 - i * 0.1, 2),
-            "rank": item.get("rank") or item.get("position") or i + 1,
-            "display_link": item.get("display_link") or item.get("displayed_link"),
-        })
-
-    related_searches = [
-        value for value in (_serpbase_related_search_query(item) for item in data.get("related_searches", [])) if value
-    ]
-    answer = ""
-    if data.get("answer_box"):
-        answer_box = data.get("answer_box") or {}
-        answer = answer_box.get("answer") or answer_box.get("snippet") or ""
-    elif data.get("knowledge_graph"):
-        kg = data.get("knowledge_graph") or {}
-        answer = kg.get("description") or kg.get("subtitle") or ""
-    elif results:
-        answer = results[0]["snippet"]
-
-    return {
-        "provider": "serpbase",
-        "query": query,
-        "results": results,
-        "answer": answer,
-        "knowledge_graph": data.get("knowledge_graph"),
-        "related_searches": related_searches,
-        "session_id": data.get("session_id"),
-    }
-
-
-# =============================================================================
-# Brave Search
-# =============================================================================
-
-def search_brave(
-    query: str,
-    api_key: str,
-    max_results: int = 5,
-    country: str = "US",
-    language: str = "en",
-    time_range: Optional[str] = None,
-    safesearch: str = "moderate",
-) -> dict:
-    """Search using Brave Search API."""
-    freshness_map = {
-        "hour": "pd",
-        "day": "pd",
-        "week": "pw",
-        "month": "pm",
-        "year": "py",
-    }
-    params = {
-        "q": query,
-        "count": max_results,
-        "country": country.upper(),
-        "search_lang": language,
-        "safesearch": safesearch,
-        "spellcheck": 1,
-    }
-    if time_range and time_range in freshness_map:
-        params["freshness"] = freshness_map[time_range]
-
-    url = f"https://api.search.brave.com/res/v1/web/search?{urlencode(params)}"
-    headers = {
-        "X-Subscription-Token": api_key,
-        "Accept": "application/json",
-        "Accept-Encoding": "gzip",
-    }
-
-    data = make_get_request(url, headers)
-
-    web_results = (data.get("web") or {}).get("results", [])[:max_results]
-    results = []
-    for i, item in enumerate(web_results):
-        snippet_parts = []
-        description = item.get("description") or item.get("snippet") or ""
-        if description:
-            snippet_parts.append(description)
-        extra_snippets = item.get("extra_snippets") or []
-        if extra_snippets:
-            snippet_parts.extend(extra_snippets[:2])
-        results.append({
-            "title": item.get("title", ""),
-            "url": item.get("url", ""),
-            "snippet": " ... ".join(part for part in snippet_parts if part),
-            "score": round(1.0 - i * 0.1, 2),
-            "age": item.get("age"),
-        })
-
-    answer = ""
-    if data.get("summary"):
-        answer = data.get("summary", "")
-    elif data.get("infobox", {}).get("description"):
-        answer = data["infobox"]["description"]
-    elif results:
-        answer = results[0]["snippet"]
-
-    return {
-        "provider": "brave",
-        "query": query,
-        "results": results,
-        "images": [],
-        "answer": answer,
-        "mixed": data.get("mixed"),
-    }
-
-
-# =============================================================================
-# Tavily (Research Search)
-# =============================================================================
-
-def search_tavily(
-    query: str,
-    api_key: str,
-    max_results: int = 5,
-    depth: str = "basic",
-    topic: str = "general",
-    include_domains: Optional[List[str]] = None,
-    exclude_domains: Optional[List[str]] = None,
-    include_images: bool = False,
-    include_raw_content: bool = False,
-) -> dict:
-    """Search using Tavily (AI Research Search)."""
-    endpoint = "https://api.tavily.com/search"
-    
-    body = {
-        "api_key": api_key,
-        "query": query,
-        "max_results": max_results,
-        "search_depth": depth,
-        "topic": topic,
-        "include_images": include_images,
-        "include_answer": True,
-        "include_raw_content": include_raw_content,
-    }
-    
-    if include_domains:
-        body["include_domains"] = include_domains
-    if exclude_domains:
-        body["exclude_domains"] = exclude_domains
-    
-    headers = {"Content-Type": "application/json"}
-    
-    data = make_request(endpoint, headers, body)
-    
-    results = []
-    for item in data.get("results", [])[:max_results]:
-        result = {
-            "title": item.get("title", ""),
-            "url": item.get("url", ""),
-            "snippet": item.get("content", ""),
-            "score": round(item.get("score", 0.0), 3),
-        }
-        if include_raw_content and item.get("raw_content"):
-            result["raw_content"] = item["raw_content"]
-        results.append(result)
-    
-    return {
-        "provider": "tavily",
-        "query": query,
-        "results": results,
-        "images": data.get("images", []),
-        "answer": data.get("answer", ""),
-    }
-
-
-# =============================================================================
-# Querit (Multi-lingual search API for AI, with rich metadata and real-time information)
-# =============================================================================
-
-def _map_querit_time_range(time_range: Optional[str]) -> Optional[str]:
-    """Map generic time ranges to Querit's compact date filter format."""
-    if not time_range:
-        return None
-    return {
-        "day": "d1",
-        "week": "w1",
-        "month": "m1",
-        "year": "y1",
-    }.get(time_range, time_range)
-
-
-def search_querit(
-    query: str,
-    api_key: str,
-    max_results: int = 5,
-    language: str = "en",
-    country: str = "us",
-    time_range: Optional[str] = None,
-    include_domains: Optional[List[str]] = None,
-    exclude_domains: Optional[List[str]] = None,
-    base_url: str = "https://api.querit.ai",
-    base_path: str = "/v1/search",
-    timeout: int = 30,
-) -> dict:
-    """Search using Querit.
-
-    Mirrors the Querit Python SDK payload shape:
-      - query
-      - count
-      - optional filters: languages, geo, sites, timeRange
-    """
-    endpoint = base_url.rstrip("/") + base_path
-
-    filters: Dict[str, Any] = {}
-    if language:
-        filters["languages"] = {"include": [language.lower()]}
-    if country:
-        filters["geo"] = {"countries": {"include": [country.upper()]}}
-    if include_domains or exclude_domains:
-        sites: Dict[str, List[str]] = {}
-        if include_domains:
-            sites["include"] = include_domains
-        if exclude_domains:
-            sites["exclude"] = exclude_domains
-        filters["sites"] = sites
-
-    querit_time_range = _map_querit_time_range(time_range)
-    if querit_time_range:
-        filters["timeRange"] = {"date": querit_time_range}
-
-    body: Dict[str, Any] = {
-        "query": query,
-        "count": max_results,
-    }
-    if filters:
-        body["filters"] = filters
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-    data = make_request(endpoint, headers, body, timeout=timeout)
-
-    error_code = data.get("error_code")
-    error_msg = data.get("error_msg")
-    if error_msg or (error_code not in (None, 0, 200)):
-        message = error_msg or f"Querit request failed with error_code={error_code}"
-        raise ProviderRequestError(message)
-
-    raw_results = ((data.get("results") or {}).get("result")) or []
-    results = []
-    for i, item in enumerate(raw_results[:max_results]):
-        snippet = item.get("snippet") or item.get("page_age") or ""
-        result = {
-            "title": item.get("title") or _title_from_url(item.get("url", "")),
-            "url": item.get("url", ""),
-            "snippet": snippet,
-            "score": round(1.0 - i * 0.05, 3),
-        }
-        if item.get("page_time") is not None:
-            result["page_time"] = item["page_time"]
-        if item.get("page_age"):
-            result["date"] = item["page_age"]
-        if item.get("language") is not None:
-            result["language"] = item["language"]
-        results.append(result)
-
-    answer = results[0]["snippet"] if results else ""
-
-    return {
-        "provider": "querit",
-        "query": query,
-        "results": results,
-        "images": [],
-        "answer": answer,
-        "metadata": {
-            "search_id": data.get("search_id"),
-            "time_range": querit_time_range,
-        }
-    }
-
-
-# =============================================================================
-# Linkup Search
-# =============================================================================
-
-def search_linkup(
-    query: str,
-    api_key: str,
-    max_results: int = 5,
-    depth: str = "standard",
-    output_type: str = "searchResults",
-    include_domains: Optional[List[str]] = None,
-    exclude_domains: Optional[List[str]] = None,
-    api_url: str = "https://api.linkup.so/v1/search",
-    timeout: int = 30,
-) -> dict:
-    """Search using Linkup's source-grounded web search API."""
-    body: Dict[str, Any] = {
-        "q": query,
-        "depth": depth,
-        "outputType": output_type,
-    }
-    if include_domains:
-        body["includeDomains"] = include_domains[:50]
-    if exclude_domains:
-        body["excludeDomains"] = exclude_domains[:50]
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-    data = make_request(api_url, headers, body, timeout=timeout)
-    if data.get("error"):
-        raise ProviderRequestError(str(data.get("error")))
-
-    raw_results = data.get("results") or data.get("sources") or []
-    results = []
-    for i, item in enumerate(raw_results[:max_results]):
-        snippet = item.get("content") or item.get("snippet") or item.get("description") or ""
-        result = {
-            "title": item.get("name") or item.get("title") or _title_from_url(item.get("url", "")),
-            "url": item.get("url", ""),
-            "snippet": snippet,
-            "score": round(1.0 - i * 0.05, 3),
-        }
-        if item.get("type") is not None:
-            result["type"] = item["type"]
-        if item.get("favicon") is not None:
-            result["favicon"] = item["favicon"]
-        results.append(result)
-
-    return {
-        "provider": "linkup",
-        "query": query,
-        "results": results,
-        "images": data.get("images", []),
-        "answer": data.get("answer", ""),
-        "metadata": {
-            "depth": depth,
-            "output_type": output_type,
-        },
-    }
-
-
-# =============================================================================
-# Firecrawl Search
-# =============================================================================
-
-def _map_firecrawl_time_range(time_range: Optional[str]) -> Optional[str]:
-    """Map generic time ranges to Firecrawl/Google tbs values."""
-    if not time_range:
-        return None
-    return {
-        "hour": "qdr:h",
-        "day": "qdr:d",
-        "week": "qdr:w",
-        "month": "qdr:m",
-        "year": "qdr:y",
-    }.get(time_range, time_range)
-
-
-def search_firecrawl(
-    query: str,
-    api_key: str,
-    max_results: int = 5,
-    country: str = "US",
-    time_range: Optional[str] = None,
-    sources: Optional[List[str]] = None,
-    include_domains: Optional[List[str]] = None,
-    exclude_domains: Optional[List[str]] = None,
-    scrape_markdown: bool = False,
-    ignore_invalid_urls: bool = False,
-    api_url: str = "https://api.firecrawl.dev/v2/search",
-    timeout_ms: int = 30000,
-) -> dict:
-    """Search using Firecrawl's v2 search endpoint."""
-    selected_sources = sources or ["web"]
-    body: Dict[str, Any] = {
-        "query": query,
-        "limit": max_results,
-        "sources": selected_sources,
-        "timeout": timeout_ms,
-        "ignoreInvalidURLs": ignore_invalid_urls,
-    }
-
-    if country:
-        body["country"] = country.upper()
-
-    tbs = _map_firecrawl_time_range(time_range)
-    if tbs:
-        body["tbs"] = tbs
-
-    if include_domains:
-        body["query"] += " " + " ".join(f"site:{domain}" for domain in include_domains)
-    if exclude_domains:
-        body["query"] += " " + " ".join(f"-site:{domain}" for domain in exclude_domains)
-
-    if scrape_markdown:
-        body["scrapeOptions"] = {"formats": ["markdown"]}
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-    data = make_request(api_url, headers, body, timeout=max(1, int(timeout_ms / 1000)))
-    if data.get("success") is False:
-        raise ProviderRequestError(data.get("error") or data.get("warning") or "Firecrawl request failed")
-
-    response_data = data.get("data") or {}
-    raw_web = response_data.get("web") or []
-    results = []
-    for i, item in enumerate(raw_web[:max_results]):
-        snippet = item.get("description") or item.get("snippet") or ""
-        result = {
-            "title": item.get("title") or _title_from_url(item.get("url", "")),
-            "url": item.get("url", ""),
-            "snippet": snippet,
-            "score": round(1.0 - i * 0.05, 3),
-        }
-        if item.get("position") is not None:
-            result["position"] = item.get("position")
-        if item.get("category") is not None:
-            result["category"] = item.get("category")
-        if item.get("markdown"):
-            result["raw_content"] = item["markdown"]
-            if not result["snippet"]:
-                result["snippet"] = item["markdown"][:500]
-        metadata = item.get("metadata") or {}
-        if metadata.get("statusCode") is not None:
-            result["status_code"] = metadata.get("statusCode")
-        if metadata.get("error"):
-            result["error"] = metadata.get("error")
-        results.append(result)
-
-    images = []
-    for image in response_data.get("images") or []:
-        image_url = image.get("imageUrl")
-        if image_url:
-            images.append(image_url)
-
-    answer = results[0]["snippet"] if results else ""
-    return {
-        "provider": "firecrawl",
-        "query": query,
-        "results": results,
-        "images": images,
-        "answer": answer,
-        "warning": data.get("warning"),
-        "credits_used": data.get("creditsUsed"),
-        "metadata": {
-            "id": data.get("id"),
-            "sources": selected_sources,
-            "tbs": tbs,
-        },
-    }
-
-
-# =============================================================================
-# Extract Plus (URL Content Extraction)
-# =============================================================================
-
-def _normalize_extract_result(
-    provider: str,
-    url: str,
-    title: str = "",
-    content: str = "",
-    raw_content: Optional[str] = None,
-    **extra: Any,
-) -> Dict[str, Any]:
-    result = {
-        "url": url,
-        "title": title or _title_from_url(url),
-        "content": content or "",
-        "raw_content": raw_content if raw_content is not None else (content or ""),
-        "provider": provider,
-    }
-    for key, value in extra.items():
-        if value is not None:
-            result[key] = value
-    return result
-
-
-def extract_firecrawl(
-    urls: List[str],
-    api_key: str,
-    output_format: str = "markdown",
-    include_images: bool = False,
-    include_raw_html: bool = False,
-    render_js: bool = False,
-    api_url: str = "https://api.firecrawl.dev/v2/scrape",
-    timeout: int = 60,
-) -> dict:
-    """Extract URL content using Firecrawl scrape."""
-    formats = ["markdown"] if output_format != "html" else ["html"]
-    if include_raw_html and "html" not in formats:
-        formats.append("html")
-
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    results: List[Dict[str, Any]] = []
-    for url in urls:
-        body: Dict[str, Any] = {"url": url, "formats": formats}
-        if render_js:
-            body["waitFor"] = 1000
-        data = make_request(api_url, headers, body, timeout=timeout)
-        if data.get("success") is False:
-            results.append(_normalize_extract_result("firecrawl", url, error=data.get("error") or data.get("warning") or "Firecrawl scrape failed"))
-            continue
-        payload = data.get("data") if isinstance(data.get("data"), dict) else data
-        metadata = payload.get("metadata") or {}
-        final_url = metadata.get("sourceURL") or metadata.get("url") or url
-        title = metadata.get("title") or ""
-        markdown = payload.get("markdown") or ""
-        html = payload.get("html") or payload.get("rawHtml") or ""
-        content = html if output_format == "html" else markdown or html
-        images = None
-        if include_images:
-            md_images = []
-            seen_image_urls = set()
-            for alt, image_url in re.findall(r"!\[([^\]]*)\]\(([^)]+)\)", markdown):
-                if image_url not in seen_image_urls:
-                    md_images.append({"alt": alt, "url": image_url})
-                    seen_image_urls.add(image_url)
-            og_image = metadata.get("ogImage") or metadata.get("og:image")
-            if og_image and og_image not in seen_image_urls:
-                md_images.insert(0, {"alt": "og:image", "url": og_image})
-            images = md_images or None
-        results.append(_normalize_extract_result(
-            "firecrawl",
-            final_url,
-            title=title,
-            content=content,
-            raw_content=content,
-            raw_html=html if html else None,
-            images=images,
-            metadata=metadata,
-        ))
-    return {"provider": "firecrawl", "results": results}
-
-
-def extract_linkup(
-    urls: List[str],
-    api_key: str,
-    output_format: str = "markdown",
-    include_images: bool = False,
-    include_raw_html: bool = False,
-    render_js: bool = False,
-    api_url: str = "https://api.linkup.so/v1/fetch",
-    timeout: int = 30,
-) -> dict:
-    """Extract URL content using Linkup fetch."""
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-    def fetch_one(url: str) -> Dict[str, Any]:
-        body = {
-            "url": url,
-            "extractImages": include_images,
-            "includeRawHtml": include_raw_html or output_format == "html",
-            "renderJs": render_js,
-        }
-        data = make_request(api_url, headers, body, timeout=timeout)
-        if data.get("error"):
-            return _normalize_extract_result("linkup", url, error=str(data.get("error")))
-        markdown = data.get("markdown") or ""
-        raw_html = data.get("rawHtml") or data.get("raw_html") or ""
-        content = raw_html if output_format == "html" else markdown or raw_html
-        return _normalize_extract_result(
-            "linkup",
-            url,
-            content=content,
-            raw_content=content,
-            raw_html=raw_html if raw_html else None,
-            images=data.get("images") if include_images else None,
-        )
-
-    if len(urls) <= 1:
-        return {"provider": "linkup", "results": [fetch_one(url) for url in urls]}
-
-    indexed_results: Dict[int, Dict[str, Any]] = {}
-    with ThreadPoolExecutor(max_workers=min(len(urls), 5)) as executor:
-        futures = {executor.submit(fetch_one, url): idx for idx, url in enumerate(urls)}
-        for future in as_completed(futures):
-            indexed_results[futures[future]] = future.result()
-    results = [indexed_results[idx] for idx in range(len(urls)) if idx in indexed_results]
-    return {"provider": "linkup", "results": results}
-
-
-def extract_tavily(
-    urls: List[str],
-    api_key: str,
-    output_format: str = "markdown",
-    include_images: bool = False,
-    include_raw_html: bool = False,
-    render_js: bool = False,
-    api_url: str = "https://api.tavily.com/extract",
-    timeout: int = 30,
-) -> dict:
-    """Extract URL content using Tavily extract."""
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    body = {"urls": urls, "include_images": include_images}
-    data = make_request(api_url, headers, body, timeout=timeout)
-    results: List[Dict[str, Any]] = []
-    for item in data.get("results", []):
-        url = item.get("url", "")
-        content = item.get("raw_content") or item.get("content") or ""
-        results.append(_normalize_extract_result(
-            "tavily",
-            url,
-            title=item.get("title", ""),
-            content=content,
-            raw_content=content,
-            images=item.get("images") if include_images else None,
-        ))
-    for failed in data.get("failed_results", []) or []:
-        failed_url = failed.get("url", "")
-        results.append(_normalize_extract_result("tavily", failed_url, error=failed.get("error") or "Tavily extract failed"))
-    return {"provider": "tavily", "results": results}
-
-
-def extract_exa(
-    urls: List[str],
-    api_key: str,
-    output_format: str = "markdown",
-    include_images: bool = False,
-    include_raw_html: bool = False,
-    render_js: bool = False,
-    api_url: str = "https://api.exa.ai/contents",
-    timeout: int = 30,
-) -> dict:
-    """Extract URL content using Exa Contents API."""
-    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
-    body: Dict[str, Any] = {"urls": urls, "text": True}
-    data = make_request(api_url, headers, body, timeout=timeout)
-    results: List[Dict[str, Any]] = []
-    for item in data.get("results", []):
-        url = item.get("url") or item.get("id") or ""
-        content = item.get("text") or item.get("summary") or ""
-        results.append(_normalize_extract_result(
-            "exa",
-            url,
-            title=item.get("title", ""),
-            content=content,
-            raw_content=content,
-            summary=item.get("summary"),
-            highlights=item.get("highlights"),
-            published_date=item.get("publishedDate"),
-            author=item.get("author"),
-            image=item.get("image") if include_images else None,
-            favicon=item.get("favicon"),
-        ))
-    return {
-        "provider": "exa",
-        "results": results,
-        "request_id": data.get("requestId"),
-        "cost_dollars": data.get("costDollars"),
-        "statuses": data.get("statuses"),
-    }
-
-
-def extract_you(
-    urls: List[str],
-    api_key: str,
-    output_format: str = "markdown",
-    include_images: bool = False,
-    include_raw_html: bool = False,
-    render_js: bool = False,
-    api_url: str = "https://ydc-index.io/v1/contents",
-    timeout: int = 30,
-) -> dict:
-    """Extract URL content using You.com Contents API."""
-    formats = ["html" if output_format == "html" else "markdown"]
-    if include_raw_html and "html" not in formats:
-        formats.append("html")
-    if "metadata" not in formats:
-        formats.append("metadata")
-    headers = {"X-API-Key": api_key, "Content-Type": "application/json"}
-    body = {"urls": urls, "formats": formats, "crawl_timeout": max(1, min(timeout, 60))}
-    data = make_request(api_url, headers, body, timeout=timeout)
-    raw_items = data if isinstance(data, list) else data.get("results", []) or data.get("data", [])
-    results: List[Dict[str, Any]] = []
-    for item in raw_items:
-        url = item.get("url", "")
-        markdown = item.get("markdown") or ""
-        html = item.get("html") or ""
-        content = html if output_format == "html" else markdown or html
-        results.append(_normalize_extract_result(
-            "you",
-            url,
-            title=item.get("title", ""),
-            content=content,
-            raw_content=content,
-            raw_html=html if html else None,
-            metadata=item.get("metadata"),
-        ))
-    return {"provider": "you", "results": results}
+def search_serper(*args, **kwargs) -> dict:
+    _sync_core_provider_dependencies()
+    return _core_provider.search_serper(*args, **kwargs)
+
+
+def _strip_tracking_params(*args, **kwargs):
+    _sync_core_provider_dependencies()
+    return _core_provider._strip_tracking_params(*args, **kwargs)
+
+
+def _serpbase_related_search_query(*args, **kwargs):
+    _sync_core_provider_dependencies()
+    return _core_provider._serpbase_related_search_query(*args, **kwargs)
+
+
+def search_serpbase(*args, **kwargs) -> dict:
+    _sync_core_provider_dependencies()
+    return _core_provider.search_serpbase(*args, **kwargs)
+
+
+def search_brave(*args, **kwargs) -> dict:
+    _sync_core_provider_dependencies()
+    return _core_provider.search_brave(*args, **kwargs)
+
+
+def search_tavily(*args, **kwargs) -> dict:
+    _sync_core_provider_dependencies()
+    return _core_provider.search_tavily(*args, **kwargs)
+
+
+def _map_querit_time_range(*args, **kwargs):
+    return _core_provider._map_querit_time_range(*args, **kwargs)
+
+
+def search_querit(*args, **kwargs) -> dict:
+    _sync_core_provider_dependencies()
+    return _core_provider.search_querit(*args, **kwargs)
+
+
+def search_linkup(*args, **kwargs) -> dict:
+    _sync_core_provider_dependencies()
+    return _core_provider.search_linkup(*args, **kwargs)
+
+
+def _map_firecrawl_time_range(*args, **kwargs):
+    return _core_provider._map_firecrawl_time_range(*args, **kwargs)
+
+
+def search_firecrawl(*args, **kwargs) -> dict:
+    _sync_core_provider_dependencies()
+    return _core_provider.search_firecrawl(*args, **kwargs)
+
+
+def _normalize_extract_result(*args, **kwargs):
+    _sync_core_provider_dependencies()
+    return _core_provider._normalize_extract_result(*args, **kwargs)
+
+
+def extract_firecrawl(*args, **kwargs) -> dict:
+    _sync_core_provider_dependencies()
+    return _core_provider.extract_firecrawl(*args, **kwargs)
+
+
+def extract_linkup(*args, **kwargs) -> dict:
+    _sync_core_provider_dependencies()
+    return _core_provider.extract_linkup(*args, **kwargs)
+
+
+def extract_tavily(*args, **kwargs) -> dict:
+    _sync_core_provider_dependencies()
+    return _core_provider.extract_tavily(*args, **kwargs)
+
+
+def extract_exa(*args, **kwargs) -> dict:
+    _sync_core_provider_dependencies()
+    return _core_provider.extract_exa(*args, **kwargs)
+
+
+def extract_you(*args, **kwargs) -> dict:
+    _sync_core_provider_dependencies()
+    return _core_provider.extract_you(*args, **kwargs)
 
 
 def _patch_parallel_provider() -> None:
@@ -1486,272 +463,21 @@ def extract_parallel(
     )
 
 
-EXTRACT_PROVIDER_PRIORITY = ["tavily", "exa", "linkup", "parallel", "firecrawl", "you"]
+EXTRACT_PROVIDER_PRIORITY = _extract.EXTRACT_PROVIDER_PRIORITY
 
 
-def extract_plus(
-    urls: List[str],
-    provider: str = "auto",
-    output_format: str = "markdown",
-    include_images: bool = False,
-    include_raw_html: bool = False,
-    render_js: bool = False,
-    config: Optional[Dict[str, Any]] = None,
-) -> dict:
-    """Extract URL content with provider fallback."""
-    config = config or load_config()
-    selected = provider or "auto"
-    if not urls:
-        return {"provider": selected, "results": [], "error": "No URLs provided", "requested_provider": selected}
-    invalid = [u for u in urls if not (isinstance(u, str) and u.startswith(("http://", "https://")))]
-    if invalid:
-        return {
-            "provider": selected,
-            "results": [],
-            "error": f"Invalid URL(s) — must start with http:// or https://: {invalid}",
-            "requested_provider": selected,
-        }
-    providers = EXTRACT_PROVIDER_PRIORITY if selected == "auto" else [selected] + [p for p in EXTRACT_PROVIDER_PRIORITY if p != selected]
-    errors = []
-    cooldown_skips = []
-    for prov in providers:
-        if prov not in EXTRACT_PROVIDER_PRIORITY:
-            errors.append({"provider": prov, "error": f"Provider {prov} does not support extraction"})
-            continue
-        key = get_api_key(prov, config)
-        if not key:
-            errors.append({"provider": prov, "error": "missing_api_key"})
-            continue
-        in_cooldown, remaining = provider_in_cooldown(prov)
-        if in_cooldown and not (selected != "auto" and prov == selected):
-            cooldown_skips.append({"provider": prov, "cooldown_remaining_seconds": remaining})
-            continue
-        try:
-            def execute_extract() -> Dict[str, Any]:
-                if prov == "firecrawl":
-                    fc = config.get("firecrawl", {})
-                    return extract_firecrawl(urls, key, output_format, include_images, include_raw_html, render_js, api_url=fc.get("scrape_url", "https://api.firecrawl.dev/v2/scrape"), timeout=int(fc.get("extract_timeout", 60)))
-                if prov == "linkup":
-                    lu = config.get("linkup", {})
-                    return extract_linkup(urls, key, output_format, include_images, include_raw_html, render_js, api_url=lu.get("fetch_url", "https://api.linkup.so/v1/fetch"), timeout=int(lu.get("timeout", 30)))
-                if prov == "tavily":
-                    tv = config.get("tavily", {})
-                    return extract_tavily(urls, key, output_format, include_images, include_raw_html, render_js, api_url=tv.get("extract_url", "https://api.tavily.com/extract"), timeout=int(tv.get("timeout", 30)))
-                if prov == "exa":
-                    exa = config.get("exa", {})
-                    return extract_exa(urls, key, output_format, include_images, include_raw_html, render_js, api_url=exa.get("contents_url", "https://api.exa.ai/contents"), timeout=int(exa.get("timeout", 30)))
-                if prov == "parallel":
-                    parallel = config.get("parallel", {})
-                    return extract_parallel(
-                        urls, key, output_format, include_images, include_raw_html, render_js,
-                        api_url=parallel.get("extract_url", "https://api.parallel.ai/v1/extract"),
-                        timeout=int(parallel.get("extract_timeout", parallel.get("timeout", 60))),
-                        client_model=parallel.get("client_model"),
-                        max_chars_total=int(parallel.get("max_chars_total", 12000)),
-                        max_chars_per_result=int(parallel.get("max_chars_per_result", 6000)),
-                    )
-                you = config.get("you", {})
-                return extract_you(urls, key, output_format, include_images, include_raw_html, render_js, api_url=you.get("contents_url", "https://ydc-index.io/v1/contents"), timeout=int(you.get("timeout", 30)))
-
-            result = execute_provider_with_retry(prov, execute_extract)
-            res_list = result.get("results") or []
-            all_failed = bool(res_list) and all(r.get("error") for r in res_list)
-            if all_failed:
-                errors.append({
-                    "provider": prov,
-                    "error": "all_urls_failed",
-                    "details": [r.get("error") for r in res_list],
-                })
-                continue
-            reset_provider_health(prov)
-            result["routing"] = {"provider": prov, "requested_provider": selected, "fallback_used": bool(errors) or bool(cooldown_skips), "fallback_errors": errors}
-            if cooldown_skips:
-                result["routing"]["cooldown_skips"] = cooldown_skips
-            return result
-        except Exception as e:
-            error_msg = str(e)
-            cooldown_info = mark_provider_failure(prov, error_msg)
-            errors.append({"provider": prov, "error": error_msg, "cooldown_seconds": cooldown_info.get("cooldown_seconds")})
-            continue
-    error_result = {"provider": selected, "results": [], "error": "All extraction providers failed", "fallback_errors": errors}
-    if cooldown_skips:
-        error_result["cooldown_skips"] = cooldown_skips
-    return error_result
+def extract_plus(*args, **kwargs) -> dict:
+    _sync_extract_dependencies()
+    return _extract.extract_plus(*args, **kwargs)
 
 
 # =============================================================================
 # Exa (Neural/Semantic/Deep Search)
 # =============================================================================
 
-def search_exa(
-    query: str,
-    api_key: str,
-    max_results: int = 5,
-    search_type: str = "neural",
-    exa_depth: str = "normal",
-    category: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    similar_url: Optional[str] = None,
-    include_domains: Optional[List[str]] = None,
-    exclude_domains: Optional[List[str]] = None,
-    text_verbosity: str = "standard",
-) -> dict:
-    """Search using Exa (Neural/Semantic/Deep Search).
-
-    exa_depth controls synthesis level:
-      - "normal": standard search (neural/fast/auto/keyword/instant)
-      - "deep": multi-source synthesis with grounding (4-12s, $12/1k)
-      - "deep-reasoning": cross-reference reasoning with grounding (12-50s, $15/1k)
-    """
-    is_deep = exa_depth in ("deep", "deep-reasoning")
-
-    if similar_url:
-        # findSimilar does not support deep search types
-        endpoint = "https://api.exa.ai/findSimilar"
-        body: Dict[str, Any] = {
-            "url": similar_url,
-            "numResults": max_results,
-            "contents": {
-                "text": {"maxCharacters": 2000, "verbosity": text_verbosity},
-                "highlights": {"numSentences": 3, "highlightsPerUrl": 2},
-            },
-        }
-    elif is_deep:
-        endpoint = "https://api.exa.ai/search"
-        body = {
-            "query": query,
-            "numResults": max_results,
-            "type": exa_depth,
-            "contents": {
-                "text": {"maxCharacters": 5000, "verbosity": "full"},
-            },
-        }
-    else:
-        endpoint = "https://api.exa.ai/search"
-        body = {
-            "query": query,
-            "numResults": max_results,
-            "type": search_type,
-            "contents": {
-                "text": {"maxCharacters": 2000, "verbosity": text_verbosity},
-                "highlights": {"numSentences": 3, "highlightsPerUrl": 2},
-            },
-        }
-
-    if category:
-        body["category"] = category
-    if start_date:
-        body["startPublishedDate"] = start_date
-    if end_date:
-        body["endPublishedDate"] = end_date
-    if include_domains:
-        body["includeDomains"] = include_domains
-    if exclude_domains:
-        body["excludeDomains"] = exclude_domains
-
-    headers = {
-        "x-api-key": api_key,
-        "Content-Type": "application/json",
-    }
-
-    timeout = 55 if is_deep else 30
-    data = make_request(endpoint, headers, body, timeout=timeout)
-
-    results = []
-
-    # Deep search: primary content in output field with grounding citations
-    if is_deep:
-        deep_output = data.get("output", {})
-        synthesized_text = ""
-        grounding_citations: List[Dict[str, Any]] = []
-
-        if isinstance(deep_output.get("content"), str):
-            synthesized_text = deep_output["content"]
-        elif isinstance(deep_output.get("content"), dict):
-            synthesized_text = json.dumps(deep_output["content"], ensure_ascii=False)
-
-        for field_citation in deep_output.get("grounding", []):
-            for cite in field_citation.get("citations", []):
-                grounding_citations.append({
-                    "url": cite.get("url", ""),
-                    "title": cite.get("title", ""),
-                    "confidence": field_citation.get("confidence", ""),
-                    "field": field_citation.get("field", ""),
-                })
-
-        # Primary synthesized result
-        if synthesized_text:
-            results.append({
-                "title": f"Exa {exa_depth.replace('-', ' ').title()} Synthesis",
-                "url": "",
-                "snippet": synthesized_text,
-                "full_synthesis": synthesized_text,
-                "score": 1.0,
-                "grounding": grounding_citations[:10],
-                "type": "synthesis",
-            })
-
-        # Supporting source documents
-        for item in data.get("results", [])[:max_results]:
-            text_content = item.get("text", "") or ""
-            highlights = item.get("highlights", [])
-            snippet = text_content[:800] if text_content else (highlights[0] if highlights else "")
-            results.append({
-                "title": item.get("title", ""),
-                "url": item.get("url", ""),
-                "snippet": snippet,
-                "score": round(item.get("score", 0.0), 3),
-                "published_date": item.get("publishedDate"),
-                "author": item.get("author"),
-                "type": "source",
-            })
-
-        answer = synthesized_text if synthesized_text else (results[1]["snippet"] if len(results) > 1 else "")
-
-        return {
-            "provider": "exa",
-            "query": query,
-            "exa_depth": exa_depth,
-            "results": results,
-            "images": [],
-            "answer": answer,
-            "grounding": grounding_citations,
-            "metadata": {
-                "synthesis_length": len(synthesized_text),
-                "source_count": len(data.get("results", [])),
-            },
-        }
-
-    # Standard search result parsing
-    for item in data.get("results", [])[:max_results]:
-        text_content = item.get("text", "") or ""
-        highlights = item.get("highlights", [])
-        if text_content:
-            snippet = text_content[:800]
-        elif highlights:
-            snippet = " ... ".join(highlights[:2])
-        else:
-            snippet = ""
-
-        results.append({
-            "title": item.get("title", ""),
-            "url": item.get("url", ""),
-            "snippet": snippet,
-            "score": round(item.get("score", 0.0), 3),
-            "published_date": item.get("publishedDate"),
-            "author": item.get("author"),
-        })
-
-    answer = results[0]["snippet"] if results else ""
-
-    return {
-        "provider": "exa",
-        "query": query if not similar_url else f"Similar to: {similar_url}",
-        "results": results,
-        "images": [],
-        "answer": answer,
-    }
+def search_exa(*args, **kwargs) -> dict:
+    _sync_core_provider_dependencies()
+    return _core_provider.search_exa(*args, **kwargs)
 
 
 # =============================================================================
@@ -1812,313 +538,16 @@ def search_perplexity(
 # =============================================================================
 # You.com (LLM-Ready Web & News Search)
 # =============================================================================
-# =============================================================================
-# You.com (LLM-Ready Web & News Search)
-# =============================================================================
 
-def search_you(
-    query: str,
-    api_key: str,
-    max_results: int = 5,
-    country: str = "US",
-    language: str = "en",
-    freshness: Optional[str] = None,
-    safesearch: str = "moderate",
-    include_news: bool = True,
-    livecrawl: Optional[str] = None,
-) -> dict:
-    """Search using You.com (LLM-Ready Web & News Search).
-    
-    You.com excels at:
-    - RAG applications with pre-extracted snippets
-    - Combined web + news results in one call
-    - Real-time information with automatic news classification
-    - Clean, structured JSON optimized for AI consumption
-    
-    Args:
-        query: Search query
-        api_key: You.com API key
-        max_results: Maximum results to return (default 5, max 100)
-        country: ISO 3166-2 country code (e.g., US, GB, DE)
-        language: BCP 47 language code (e.g., en, de, fr)
-        freshness: Filter by recency: day, week, month, year, or YYYY-MM-DDtoYYYY-MM-DD
-        safesearch: Content filter: off, moderate (default), strict
-        include_news: Include news results when relevant (default True)
-        livecrawl: Fetch full page content: "web", "news", or "all"
-    """
-    endpoint = "https://ydc-index.io/v1/search"
-    
-    # Build query parameters
-    params = {
-        "query": query,
-        "count": max_results,
-        "safesearch": safesearch,
-    }
-    
-    if country:
-        params["country"] = country.upper()
-    if language:
-        params["language"] = language.upper()
-    if freshness:
-        params["freshness"] = freshness
-    if livecrawl:
-        params["livecrawl"] = livecrawl
-        params["livecrawl_formats"] = "markdown"
-    
-    # Build URL with query params (URL-encode values)
-    query_string = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
-    url = f"{endpoint}?{query_string}"
-    
-    headers = {
-        "X-API-KEY": api_key,
-        "Accept": "application/json",
-        "User-Agent": "ClawdBot-WebSearchPlus/2.4",
-    }
-    
-    # Make GET request (You.com uses GET, not POST)
-    from urllib.request import Request, urlopen
-    req = Request(url, headers=headers, method="GET")
-    
-    try:
-        with urlopen(req, timeout=30) as response:
-            data = _read_json_response(response)
-    except HTTPError as e:
-        error_body = _read_response_body(e).decode("utf-8") if e.fp else str(e)
-        try:
-            error_json = json.loads(error_body)
-            error_detail = error_json.get("error") or error_json.get("message") or error_body
-        except json.JSONDecodeError:
-            error_detail = error_body[:500]
-        
-        error_messages = {
-            401: "Invalid or expired API key. Get one at https://api.you.com",
-            403: "Access forbidden. Check your API key permissions.",
-            429: "Rate limit exceeded. Please wait and try again.",
-            500: "You.com server error. Try again later.",
-            503: "You.com service unavailable."
-        }
-        friendly_msg = error_messages.get(e.code, f"API error: {error_detail}")
-        raise ProviderRequestError(f"{friendly_msg} (HTTP {e.code})", status_code=e.code, transient=e.code in TRANSIENT_HTTP_CODES)
-    except URLError as e:
-        reason = str(getattr(e, "reason", e))
-        is_timeout = "timed out" in reason.lower()
-        raise ProviderRequestError(f"Network error: {reason}. Check your internet connection.", transient=is_timeout)
-    except TimeoutError:
-        raise ProviderRequestError("You.com request timed out after 30s.", transient=True)
-    
-    # Parse results
-    results_data = data.get("results", {})
-    web_results = results_data.get("web", [])
-    news_results = results_data.get("news", []) if include_news else []
-    metadata = data.get("metadata", {})
-    
-    # Normalize web results
-    results = []
-    for i, item in enumerate(web_results[:max_results]):
-        snippets = item.get("snippets", [])
-        snippet = snippets[0] if snippets else item.get("description", "")
-        
-        result = {
-            "title": item.get("title", ""),
-            "url": item.get("url", ""),
-            "snippet": snippet,
-            "score": round(1.0 - i * 0.05, 3),  # Assign descending score
-            "date": item.get("page_age"),
-            "source": "web",
-        }
-        
-        # Include additional snippets if available (great for RAG)
-        if len(snippets) > 1:
-            result["additional_snippets"] = snippets[1:3]
-        
-        # Include thumbnail and favicon for UI display
-        if item.get("thumbnail_url"):
-            result["thumbnail"] = item["thumbnail_url"]
-        if item.get("favicon_url"):
-            result["favicon"] = item["favicon_url"]
-        
-        # Include live-crawled content if available
-        if item.get("contents"):
-            result["raw_content"] = item["contents"].get("markdown") or item["contents"].get("html", "")
-        
-        results.append(result)
-    
-    # Add news results (if any)
-    news = []
-    for item in news_results[:5]:
-        news.append({
-            "title": item.get("title", ""),
-            "url": item.get("url", ""),
-            "snippet": item.get("description", ""),
-            "date": item.get("page_age"),
-            "thumbnail": item.get("thumbnail_url"),
-            "source": "news",
-        })
-    
-    # Build answer from best snippets
-    answer = ""
-    if results:
-        # Combine top snippets for LLM context
-        top_snippets = []
-        for r in results[:3]:
-            if r.get("snippet"):
-                top_snippets.append(r["snippet"])
-        answer = " ".join(top_snippets)[:1000]
-    
-    return {
-        "provider": "you",
-        "query": query,
-        "results": results,
-        "news": news,
-        "images": [],
-        "answer": answer,
-        "metadata": {
-            "search_uuid": metadata.get("search_uuid"),
-            "latency": metadata.get("latency"),
-        }
-    }
+def search_you(*args, **kwargs) -> dict:
+    _sync_core_provider_dependencies()
+    return _core_provider.search_you(*args, **kwargs)
 
 
-# =============================================================================
-# SearXNG (Privacy-First Meta-Search)
-# =============================================================================
+def search_searxng(*args, **kwargs) -> dict:
+    _sync_core_provider_dependencies()
+    return _core_provider.search_searxng(*args, **kwargs)
 
-def search_searxng(
-    query: str,
-    instance_url: str,
-    max_results: int = 5,
-    categories: Optional[List[str]] = None,
-    engines: Optional[List[str]] = None,
-    language: str = "en",
-    time_range: Optional[str] = None,
-    safesearch: int = 0,
-) -> dict:
-    """Search using SearXNG (self-hosted privacy-first meta-search).
-    
-    SearXNG excels at:
-    - Privacy-preserving search (no tracking, no profiling)
-    - Multi-source aggregation (70+ upstream engines)
-    - $0 API cost (self-hosted)
-    - Diverse perspectives from multiple search engines
-    
-    Args:
-        query: Search query
-        instance_url: URL of your SearXNG instance (required)
-        max_results: Maximum results to return (default 5)
-        categories: Search categories (general, images, news, videos, etc.)
-        engines: Specific engines to use (google, bing, duckduckgo, etc.)
-        language: Language code (e.g., en, de, fr)
-        time_range: Filter by recency: day, week, month, year
-        safesearch: Content filter: 0=off, 1=moderate, 2=strict
-    
-    Note:
-        Requires a self-hosted SearXNG instance with JSON format enabled.
-        See: https://docs.searxng.org/admin/installation.html
-    """
-    # Build URL with query parameters
-    params = {
-        "q": query,
-        "format": "json",
-        "language": language,
-        "safesearch": str(safesearch),
-    }
-    
-    if categories:
-        params["categories"] = ",".join(categories)
-    if engines:
-        params["engines"] = ",".join(engines)
-    if time_range:
-        params["time_range"] = time_range
-    
-    # Build URL — instance_url comes from operator-controlled config/env only
-    # (validated by _validate_searxng_url), not from agent/LLM input
-    base_url = instance_url.rstrip("/")
-    query_string = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
-    url = f"{base_url}/search?{query_string}"
-    
-    headers = {
-        "User-Agent": "ClawdBot-WebSearchPlus/2.5",
-        "Accept": "application/json",
-    }
-    
-    # Make GET request
-    req = Request(url, headers=headers, method="GET")
-    
-    try:
-        with urlopen(req, timeout=30) as response:
-            data = _read_json_response(response)
-    except HTTPError as e:
-        error_body = _read_response_body(e).decode("utf-8") if e.fp else str(e)
-        try:
-            error_json = json.loads(error_body)
-            error_detail = error_json.get("error") or error_json.get("message") or error_body
-        except json.JSONDecodeError:
-            error_detail = error_body[:500]
-        
-        error_messages = {
-            403: "JSON API disabled on this SearXNG instance. Enable 'json' in search.formats in settings.yml",
-            404: "SearXNG instance not found. Check your instance URL.",
-            500: "SearXNG server error. Check instance health.",
-            503: "SearXNG service unavailable."
-        }
-        friendly_msg = error_messages.get(e.code, f"SearXNG error: {error_detail}")
-        raise ProviderRequestError(f"{friendly_msg} (HTTP {e.code})", status_code=e.code, transient=e.code in TRANSIENT_HTTP_CODES)
-    except URLError as e:
-        reason = str(getattr(e, "reason", e))
-        is_timeout = "timed out" in reason.lower()
-        raise ProviderRequestError(f"Cannot reach SearXNG instance at {instance_url}. Error: {reason}", transient=is_timeout)
-    except TimeoutError:
-        raise ProviderRequestError("SearXNG request timed out after 30s. Check instance health.", transient=True)
-    
-    # Parse results
-    raw_results = data.get("results", [])
-    
-    # Normalize results to unified format
-    results = []
-    engines_used = set()
-    for i, item in enumerate(raw_results[:max_results]):
-        engine = item.get("engine", "unknown")
-        engines_used.add(engine)
-        
-        results.append({
-            "title": item.get("title", ""),
-            "url": item.get("url", ""),
-            "snippet": item.get("content", ""),
-            "score": round(item.get("score", 1.0 - i * 0.05), 3),
-            "engine": engine,
-            "category": item.get("category", "general"),
-            "date": item.get("publishedDate"),
-        })
-    
-    # Build answer from answers, infoboxes, or first result
-    answer = ""
-    if data.get("answers"):
-        answer = data["answers"][0] if isinstance(data["answers"][0], str) else str(data["answers"][0])
-    elif data.get("infoboxes"):
-        infobox = data["infoboxes"][0]
-        answer = infobox.get("content", "") or infobox.get("infobox", "")
-    elif results:
-        answer = results[0]["snippet"]
-    
-    return {
-        "provider": "searxng",
-        "query": query,
-        "results": results,
-        "images": [],
-        "answer": answer,
-        "suggestions": data.get("suggestions", []),
-        "corrections": data.get("corrections", []),
-        "metadata": {
-            "number_of_results": data.get("number_of_results"),
-            "engines_used": list(engines_used),
-            "instance_url": instance_url,
-        }
-    }
-
-
-# =============================================================================
-# CLI
-# =============================================================================
 
 def main():
     config = load_config()
