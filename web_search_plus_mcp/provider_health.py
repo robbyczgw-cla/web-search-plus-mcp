@@ -1,0 +1,69 @@
+"""Provider cooldown and health helpers."""
+
+from __future__ import annotations
+
+import json
+import time
+from pathlib import Path
+from typing import Any, Dict, Tuple
+
+try:  # pragma: no cover - import style depends on CLI/package execution
+    from .cache import PROVIDER_HEALTH_FILE
+except ImportError:  # pragma: no cover
+    from cache import PROVIDER_HEALTH_FILE  # type: ignore
+
+COOLDOWN_STEPS_SECONDS = [60, 300, 1500, 3600]  # 1m -> 5m -> 25m -> 1h cap
+RETRY_BACKOFF_SECONDS = [1, 3, 9]
+
+
+def _ensure_parent(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _load_provider_health() -> Dict[str, Any]:
+    if not PROVIDER_HEALTH_FILE.exists():
+        return {}
+    try:
+        with open(PROVIDER_HEALTH_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+def _save_provider_health(state: Dict[str, Any]) -> None:
+    _ensure_parent(PROVIDER_HEALTH_FILE)
+    with open(PROVIDER_HEALTH_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def provider_in_cooldown(provider: str) -> Tuple[bool, int]:
+    state = _load_provider_health()
+    pstate = state.get(provider, {})
+    cooldown_until = int(pstate.get("cooldown_until", 0) or 0)
+    remaining = cooldown_until - int(time.time())
+    return (remaining > 0, max(0, remaining))
+
+
+def mark_provider_failure(provider: str, error_message: str) -> Dict[str, Any]:
+    state = _load_provider_health()
+    now = int(time.time())
+    pstate = state.get(provider, {})
+    fail_count = int(pstate.get("failure_count", 0)) + 1
+    cooldown_seconds = COOLDOWN_STEPS_SECONDS[min(fail_count - 1, len(COOLDOWN_STEPS_SECONDS) - 1)]
+    state[provider] = {
+        "failure_count": fail_count,
+        "cooldown_until": now + cooldown_seconds,
+        "cooldown_seconds": cooldown_seconds,
+        "last_error": error_message,
+        "last_failure_at": now,
+    }
+    _save_provider_health(state)
+    return state[provider]
+
+
+def reset_provider_health(provider: str) -> None:
+    state = _load_provider_health()
+    if provider in state:
+        state.pop(provider, None)
+        _save_provider_health(state)
