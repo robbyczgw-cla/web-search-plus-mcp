@@ -1,5 +1,3 @@
-import json
-
 import web_search_plus_mcp.search as search
 import web_search_plus_mcp.server as server
 

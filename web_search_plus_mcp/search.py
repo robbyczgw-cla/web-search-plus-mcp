@@ -30,7 +30,6 @@ from http.client import IncompleteRead
 import gzip
 import hashlib
 import json
-import os
 import re
 import sys
 import time
@@ -44,691 +43,111 @@ from urllib.parse import quote, urlencode, urlparse, parse_qsl, urlunparse
 ROUTING_POLICY = "routing-v2"
 CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
 
-
-# =============================================================================
-# Result Caching
-# =============================================================================
-
-CACHE_DIR = Path(os.environ.get("WSP_CACHE_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".cache")))
-PROVIDER_HEALTH_FILE = CACHE_DIR / "provider_health.json"
-DEFAULT_CACHE_TTL = 3600  # 1 hour in seconds
-
-
-def _build_cache_payload(query: str, provider: str, max_results: int, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Build normalized payload used for cache key hashing."""
-    payload = {
-        "query": query,
-        "provider": provider,
-        "max_results": max_results,
-    }
-    if params:
-        payload.update(params)
-    return payload
-
-
-def _get_cache_key(query: str, provider: str, max_results: int, params: Optional[Dict[str, Any]] = None) -> str:
-    """Generate a unique cache key from all relevant query parameters."""
-    payload = _build_cache_payload(query, provider, max_results, params)
-    key_string = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(key_string.encode("utf-8")).hexdigest()[:32]
-
-
-def _get_cache_path(cache_key: str) -> Path:
-    """Get the file path for a cache entry."""
-    return CACHE_DIR / f"{cache_key}.json"
-
-
-def _ensure_cache_dir() -> None:
-    """Create cache directory if it doesn't exist."""
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def cache_get(query: str, provider: str, max_results: int, ttl: int = DEFAULT_CACHE_TTL, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
-    """
-    Retrieve cached search results if they exist and are not expired.
-    
-    Args:
-        query: The search query
-        provider: The search provider
-        max_results: Maximum results requested
-        ttl: Time-to-live in seconds (default: 1 hour)
-    
-    Returns:
-        Cached result dict or None if not found/expired
-    """
-    cache_key = _get_cache_key(query, provider, max_results, params)
-    cache_path = _get_cache_path(cache_key)
-    
-    if not cache_path.exists():
-        return None
-    
-    try:
-        with open(cache_path, "r", encoding="utf-8") as f:
-            cached = json.load(f)
-        
-        cached_time = cached.get("_cache_timestamp", 0)
-        if time.time() - cached_time > ttl:
-            # Cache expired, remove it
-            cache_path.unlink(missing_ok=True)
-            return None
-        
-        return cached
-    except (json.JSONDecodeError, IOError, KeyError):
-        # Corrupted cache file, remove it
-        cache_path.unlink(missing_ok=True)
-        return None
-
-
-def cache_put(query: str, provider: str, max_results: int, result: Dict[str, Any], params: Optional[Dict[str, Any]] = None) -> None:
-    """
-    Store search results in cache.
-    
-    Args:
-        query: The search query
-        provider: The search provider  
-        max_results: Maximum results requested
-        result: The search result to cache
-    """
-    _ensure_cache_dir()
-    
-    cache_key = _get_cache_key(query, provider, max_results, params)
-    cache_path = _get_cache_path(cache_key)
-    
-    # Add cache metadata
-    cached_result = result.copy()
-    cached_result["_cache_timestamp"] = time.time()
-    cached_result["_cache_key"] = cache_key
-    cached_result["_cache_query"] = query
-    cached_result["_cache_provider"] = provider
-    cached_result["_cache_max_results"] = max_results
-    cached_result["_cache_params"] = params or {}
-    
-    try:
-        with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump(cached_result, f, ensure_ascii=False, indent=2)
-    except IOError as e:
-        # Non-fatal: log to stderr but don't fail
-        print(json.dumps({"cache_write_error": str(e)}), file=sys.stderr)
-
-
-def cache_clear() -> Dict[str, Any]:
-    """
-    Clear all cached results.
-    
-    Returns:
-        Stats about what was cleared
-    """
-    if not CACHE_DIR.exists():
-        return {"cleared": 0, "message": "Cache directory does not exist"}
-    
-    count = 0
-    size_freed = 0
-    
-    for cache_file in CACHE_DIR.glob("*.json"):
-        if cache_file.name == PROVIDER_HEALTH_FILE.name:
-            continue
-        try:
-            size_freed += cache_file.stat().st_size
-            cache_file.unlink()
-            count += 1
-        except IOError:
-            pass
-    
-    return {
-        "cleared": count,
-        "size_freed_bytes": size_freed,
-        "size_freed_kb": round(size_freed / 1024, 2),
-        "message": f"Cleared {count} cached entries"
-    }
-
-
-def cache_stats() -> Dict[str, Any]:
-    """
-    Get statistics about the cache.
-    
-    Returns:
-        Dict with cache statistics
-    """
-    if not CACHE_DIR.exists():
-        return {
-            "total_entries": 0,
-            "total_size_bytes": 0,
-            "total_size_kb": 0,
-            "oldest": None,
-            "newest": None,
-            "cache_dir": str(CACHE_DIR),
-            "exists": False
-        }
-    
-    entries = [p for p in CACHE_DIR.glob("*.json") if p.name != PROVIDER_HEALTH_FILE.name]
-    total_size = 0
-    oldest_time = None
-    newest_time = None
-    oldest_query = None
-    newest_query = None
-    provider_counts = {}
-    
-    for cache_file in entries:
-        try:
-            stat = cache_file.stat()
-            total_size += stat.st_size
-            
-            with open(cache_file, "r", encoding="utf-8") as f:
-                cached = json.load(f)
-            
-            ts = cached.get("_cache_timestamp", 0)
-            query = cached.get("_cache_query", "unknown")
-            provider = cached.get("_cache_provider", "unknown")
-            
-            provider_counts[provider] = provider_counts.get(provider, 0) + 1
-            
-            if oldest_time is None or ts < oldest_time:
-                oldest_time = ts
-                oldest_query = query
-            if newest_time is None or ts > newest_time:
-                newest_time = ts
-                newest_query = query
-        except (json.JSONDecodeError, IOError):
-            pass
-    
-    return {
-        "total_entries": len(entries),
-        "total_size_bytes": total_size,
-        "total_size_kb": round(total_size / 1024, 2),
-        "providers": provider_counts,
-        "oldest": {
-            "timestamp": oldest_time,
-            "age_seconds": int(time.time() - oldest_time) if oldest_time else None,
-            "query": oldest_query
-        } if oldest_time else None,
-        "newest": {
-            "timestamp": newest_time,
-            "age_seconds": int(time.time() - newest_time) if newest_time else None,
-            "query": newest_query
-        } if newest_time else None,
-        "cache_dir": str(CACHE_DIR),
-        "exists": True
-    }
-
-
-# =============================================================================
-# Auto-load .env from skill directory (if exists)
-# =============================================================================
-def _load_env_file():
-    """Load .env files from plugin-local and legacy parent locations."""
-    env_paths = [
-        Path(__file__).parent / ".env",
-        Path(__file__).parent.parent / ".env",
-    ]
-    for env_path in env_paths:
-        if not env_path.exists():
-            continue
-        with open(env_path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    # Handle export VAR=value or VAR=value
-                    if line.startswith("export "):
-                        line = line[7:]
-                    key, _, value = line.partition("=")
-                    key = key.strip()
-                    value = value.strip().strip('"').strip("'")
-                    if key and key not in os.environ:
-                        os.environ[key] = value
-
-_load_env_file()
-
-
-# =============================================================================
-# Configuration
-# =============================================================================
-
-DEFAULT_CONFIG = {
-    "version": 1,
-    "default_provider": None,
-    "defaults": {
-        "provider": "serper",
-        "max_results": 5
-    },
-    "auto_routing": {
-        "enabled": True,
-        "fallback_provider": "serper",
-        # Low-trust / experimental providers can stay configured for explicit use
-        # without being selected automatically.
-        "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"],
-        "disabled_providers": [],
-        "auto_allow": {
-            "serpbase": False,
-            "querit": False,
-            "brave": False,
-            "kilo-perplexity": False,
-            "perplexity": False,
-            "parallel": False,
-        },
-        "confidence_threshold": 0.3,  # Below this, note low confidence
-    },
-    "serper": {
-        "country": "us",
-        "language": "en",
-        "type": "search"
-    },
-    "brave": {
-        "country": "US",
-        "search_lang": "en",
-        "safesearch": "moderate",
-    },
-    "tavily": {
-        "depth": "basic",
-        "topic": "general"
-    },
-    "querit": {
-        "base_url": "https://api.querit.ai",
-        "base_path": "/v1/search",
-        "timeout": 10
-    },
-    "linkup": {
-        "api_url": "https://api.linkup.so/v1/search",
-        "depth": "standard",
-        "output_type": "searchResults",
-        "timeout": 30
-    },
-    "exa": {
-        "type": "neural",
-        "depth": "normal",
-        "verbosity": "standard"
-    },
-    "perplexity": {
-        "api_url": "https://api.perplexity.ai/chat/completions",
-        "model": "sonar-pro"
-    },
-    "parallel": {
-        "api_url": "https://api.parallel.ai/v1/search",
-        "extract_url": "https://api.parallel.ai/v1/extract",
-        "timeout": 45,
-        "extract_timeout": 60,
-        "client_model": None,
-        "max_chars_total": 12000,
-        "max_chars_per_result": 6000
-    },
-    "kilo-perplexity": {
-        "api_url": "https://api.kilo.ai/api/gateway/chat/completions",
-        "model": "perplexity/sonar-pro"
-    },
-    "firecrawl": {
-        "api_url": "https://api.firecrawl.dev/v2/search",
-        "country": "US",
-        "timeout": 30000,
-        "sources": ["web"],
-        "ignore_invalid_urls": False
-    },
-    "you": {
-        "country": "us",
-        "safesearch": "moderate"
-    },
-    "serpbase": {
-        "api_url": "https://api.serpbase.dev/google/search",
-        "country": "us",
-        "language": "en",
-        "page": 1,
-        "timeout": 30,
-    },
-    "searxng": {
-        "instance_url": None,  # Required - user must set their own instance
-        "safesearch": 0,  # 0=off, 1=moderate, 2=strict
-        "engines": None,  # Optional list of engines to use
-        "language": "en"
-    }
-}
-
-
-def _deepcopy_default_config() -> Dict[str, Any]:
-    return json.loads(json.dumps(DEFAULT_CONFIG))
-
-
-_ROUTING_PROVIDER_NAMES = {"tavily", "linkup", "querit", "exa", "firecrawl", "parallel", "perplexity", "kilo-perplexity", "brave", "serper", "serpbase", "you", "searxng"}
-_VALID_PROVIDERS = _ROUTING_PROVIDER_NAMES
-
-
-def _normalize_routing_provider_config(provider: str) -> str:
-    normalized = (provider or "").strip().lower()
-    if normalized == "kilo_perplexity":
-        normalized = "kilo-perplexity"
-    if normalized not in _ROUTING_PROVIDER_NAMES:
-        raise ValueError(f"unknown routing provider: {provider}")
-    return normalized
-
-
-def _canonical_provider(provider: str) -> str:
-    return _normalize_routing_provider_config(provider)
-
-
-def _normalize_routing_provider_list_config(value: Any) -> List[str]:
-    if isinstance(value, str):
-        raw_values = [item.strip() for item in value.split(",")]
-    elif isinstance(value, list):
-        raw_values = [str(item).strip() for item in value]
-    else:
-        raise ValueError("provider list must be a string or list")
-    providers = []
-    seen = set()
-    for raw in raw_values:
-        if not raw:
-            continue
-        provider = _normalize_routing_provider_config(raw)
-        if provider in seen:
-            continue
-        seen.add(provider)
-        providers.append(provider)
-    if not providers:
-        raise ValueError("provider list cannot be empty")
-    return providers
-
-
-def _append_missing_default_providers(providers: List[str]) -> List[str]:
-    """Preserve user ordering while adding newly introduced default providers.
-
-    Existing config.json files often pin provider_priority from an older plugin
-    version. Without this migration, newly added explicit/guarded providers can
-    be valid but invisible to fallback/auto-allow configuration until users
-    manually reset config.
-    """
-    seen = set(providers)
-    merged = list(providers)
-    for provider in DEFAULT_CONFIG["auto_routing"].get("provider_priority", []):
-        if provider not in seen:
-            seen.add(provider)
-            merged.append(provider)
-    return merged
-
-
-def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    auto = config.get("auto_routing", {})
-    if not isinstance(auto, dict):
-        raise ValueError("auto_routing must be an object")
-    if config.get("default_provider"):
-        config["default_provider"] = _normalize_routing_provider_config(str(config["default_provider"]))
-    defaults = config.setdefault("defaults", {})
-    if defaults.get("provider"):
-        defaults["provider"] = _normalize_routing_provider_config(str(defaults["provider"]))
-    if auto.get("enabled", True) is False and not config.get("default_provider") and defaults.get("provider"):
-        config["default_provider"] = defaults["provider"]
-    if auto.get("fallback_provider"):
-        auto["fallback_provider"] = _normalize_routing_provider_config(str(auto["fallback_provider"]))
-    if auto.get("provider_priority"):
-        priority = _normalize_routing_provider_list_config(auto["provider_priority"])
-        auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
-    if "disabled_providers" in auto:
-        disabled = auto.get("disabled_providers") or []
-        if disabled:
-            auto["disabled_providers"] = _normalize_routing_provider_list_config(disabled)
-        else:
-            auto["disabled_providers"] = []
-    if "auto_allow" in auto:
-        raw_allow = auto.get("auto_allow") or {}
-        if not isinstance(raw_allow, dict):
-            raise ValueError("auto_allow must be an object mapping provider names to booleans")
-        normalized_allow = dict(DEFAULT_CONFIG["auto_routing"].get("auto_allow", {}))
-        for raw_provider, allowed in raw_allow.items():
-            provider = _normalize_routing_provider_config(str(raw_provider))
-            normalized_allow[provider] = bool(allowed)
-        auto["auto_allow"] = normalized_allow
-    else:
-        auto["auto_allow"] = dict(DEFAULT_CONFIG["auto_routing"].get("auto_allow", {}))
-    if "confidence_threshold" in auto:
-        threshold = float(auto["confidence_threshold"])
-        if threshold < 0.0 or threshold > 1.0:
-            raise ValueError("confidence_threshold must be between 0.0 and 1.0")
-        auto["confidence_threshold"] = threshold
-    if config.get("default_provider") and config["default_provider"] in set(auto.get("disabled_providers", [])):
-        raise ValueError("default_provider cannot be disabled")
-    config["auto_routing"] = auto
-    return config
-
-
-def _unique_timestamped_path(path: Path, marker: str) -> Path:
-    base = path.with_name(path.name + f".{marker}-{int(time.time())}")
-    candidate = base
-    suffix = 2
-    while candidate.exists():
-        candidate = base.with_name(base.name + f"-{suffix}")
-        suffix += 1
-    return candidate
-
-
-def _quarantine_runtime_config(config_path: Path, reason: str) -> None:
-    broken = _unique_timestamped_path(config_path, "broken")
-    try:
-        config_path.rename(broken)
-        print(json.dumps({
-            "warning": f"Invalid config moved to {broken}: {reason}",
-            "using": "default configuration",
-        }), file=sys.stderr)
-    except OSError as exc:
-        print(json.dumps({
-            "warning": f"Invalid config could not be moved: {exc}; reason: {reason}",
-            "using": "default configuration",
-        }), file=sys.stderr)
-
-
-def load_config() -> Dict[str, Any]:
-    """Load configuration from config.json if it exists, with defaults."""
-    config = _deepcopy_default_config()
-    config_path = Path(os.environ.get(CONFIG_ENV_VAR) or (Path(__file__).parent.parent / "config.json"))
-
-    if config_path.exists():
-        try:
-            with open(config_path) as f:
-                user_config = json.load(f)
-                for key, value in user_config.items():
-                    if isinstance(value, dict) and key in config:
-                        config[key] = {**config.get(key, {}), **value}
-                    else:
-                        config[key] = value
-            config = _validate_runtime_config(config)
-        except (json.JSONDecodeError, IOError, ValueError, TypeError) as e:
-            _quarantine_runtime_config(config_path, str(e))
-            config = _deepcopy_default_config()
-
-    return config
-
-
-def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
-    """Get API key for provider from config.json or environment.
-    
-    Priority: config.json > .env > environment variable
-    
-    Note: SearXNG doesn't require an API key, but returns instance_url if configured.
-    """
-    # Special case: SearXNG uses instance_url instead of API key
-    if provider == "searxng":
-        return get_searxng_instance_url(config)
-    
-    # Check config.json first
-    if config:
-        provider_config = config.get(provider, {})
-        if isinstance(provider_config, dict):
-            key = provider_config.get("api_key") or provider_config.get("apiKey")
-            if key:
-                return key
-    
-    # Then check environment
-    if provider == "perplexity":
-        return os.environ.get("PERPLEXITY_API_KEY")
-    if provider == "kilo-perplexity":
-        return os.environ.get("KILOCODE_API_KEY")
-    key_map = {
-        "serper": "SERPER_API_KEY",
-        "serpbase": "SERPBASE_API_KEY",
-        "brave": "BRAVE_API_KEY",
-        "tavily": "TAVILY_API_KEY",
-        "querit": "QUERIT_API_KEY",
-        "linkup": "LINKUP_API_KEY",
-        "exa": "EXA_API_KEY",
-        "you": "YOU_API_KEY",
-        "parallel": "PARALLEL_API_KEY",
-        "firecrawl": "FIRECRAWL_API_KEY",
-    }
-    return os.environ.get(key_map.get(provider, ""))
-
-
-def _validate_searxng_url(url: str) -> str:
-    """Validate and sanitize SearXNG instance URL to prevent SSRF.
-    
-    Enforces http/https scheme and blocks requests to private/internal networks
-    including cloud metadata endpoints, loopback, link-local, and RFC1918 ranges.
-    """
-    import ipaddress
-    import socket
-    from urllib.parse import urlparse
-
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError(f"SearXNG URL must use http or https scheme, got: {parsed.scheme}")
-    if not parsed.hostname:
-        raise ValueError("SearXNG URL must include a hostname")
-
-    hostname = parsed.hostname
-
-    # Block cloud metadata endpoints by hostname
-    BLOCKED_HOSTS = {
-        "169.254.169.254",        # AWS/GCP/Azure metadata
-        "metadata.google.internal",
-        "metadata.internal",
-    }
-    if hostname in BLOCKED_HOSTS:
-        raise ValueError(f"SearXNG URL blocked: {hostname} is a cloud metadata endpoint")
-
-    # Resolve hostname and check for private/internal IPs
-    # Operators who intentionally self-host on private networks can opt out
-    allow_private = os.environ.get("SEARXNG_ALLOW_PRIVATE", "").strip() == "1"
-    if not allow_private:
-        try:
-            resolved_ips = socket.getaddrinfo(hostname, parsed.port or 80, proto=socket.IPPROTO_TCP)
-            for family, _type, _proto, _canonname, sockaddr in resolved_ips:
-                ip = ipaddress.ip_address(sockaddr[0])
-                if ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_reserved:
-                    raise ValueError(
-                        f"SearXNG URL blocked: {hostname} resolves to private/internal IP {ip}. "
-                        f"If this is intentional, set SEARXNG_ALLOW_PRIVATE=1 in your environment."
-                    )
-        except socket.gaierror:
-            raise ValueError(f"SearXNG URL blocked: cannot resolve hostname {hostname}")
-
-    return url
-
-
-def get_searxng_instance_url(config: Dict[str, Any] = None) -> Optional[str]:
-    """Get SearXNG instance URL from config or environment.
-    
-    SearXNG is self-hosted, so no API key needed - just the instance URL.
-    Priority: config.json > SEARXNG_INSTANCE_URL environment variable
-    
-    Security: URL is validated to prevent SSRF via scheme enforcement.
-    Both config sources (config.json, env var) are operator-controlled,
-    not agent-controlled, so private IPs like localhost are permitted.
-    """
-    # Check config.json first
-    if config:
-        searxng_config = config.get("searxng", {})
-        if isinstance(searxng_config, dict):
-            url = searxng_config.get("instance_url")
-            if url:
-                return _validate_searxng_url(url)
-    
-    # Then check environment
-    env_url = os.environ.get("SEARXNG_INSTANCE_URL")
-    if env_url:
-        return _validate_searxng_url(env_url)
-    return None
-
-
-# Backward compatibility alias
-def get_env_key(provider: str) -> Optional[str]:
-    """Get API key for provider from environment (legacy function)."""
-    return get_api_key(provider)
-
-
-def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
-    """Validate and return API key (or instance URL for SearXNG), with helpful error messages."""
-    key = get_api_key(provider, config)
-    
-    # Special handling for SearXNG - it needs instance URL, not API key
-    if provider == "searxng":
-        if not key:
-            error_msg = {
-                "error": "Missing SearXNG instance URL",
-                "env_var": "SEARXNG_INSTANCE_URL",
-                "how_to_fix": [
-                    "1. Set up your own SearXNG instance: https://docs.searxng.org/admin/installation.html",
-                    "2. Add to config.json: \"searxng\": {\"instance_url\": \"https://your-instance.example.com\"}",
-                    "3. Or set environment variable: export SEARXNG_INSTANCE_URL=\"https://your-instance.example.com\"",
-                    "Note: SearXNG requires a self-hosted instance with JSON format enabled.",
-                ],
-                "provider": provider
-            }
-            raise ProviderConfigError(json.dumps(error_msg))
-
-        # Validate URL format
-        if not key.startswith(("http://", "https://")):
-            raise ProviderConfigError(json.dumps({
-                "error": "SearXNG instance URL must start with http:// or https://",
-                "provided": key,
-                "provider": provider
-            }))
-        
-        return key
-    
-    if not key:
-        env_var = {
-            "serper": "SERPER_API_KEY",
-            "serpbase": "SERPBASE_API_KEY",
-            "brave": "BRAVE_API_KEY",
-            "tavily": "TAVILY_API_KEY",
-            "querit": "QUERIT_API_KEY",
-            "linkup": "LINKUP_API_KEY",
-            "exa": "EXA_API_KEY",
-            "you": "YOU_API_KEY",
-            "perplexity": "PERPLEXITY_API_KEY",
-            "kilo-perplexity": "KILOCODE_API_KEY",
-            "firecrawl": "FIRECRAWL_API_KEY"
-        }[provider]
-        
-        urls = {
-            "serper": "https://serper.dev",
-            "serpbase": "https://www.serpbase.dev",
-            "brave": "https://brave.com/search/api/",
-            "tavily": "https://tavily.com",
-            "querit": "https://querit.ai",
-            "linkup": "https://app.linkup.so",
-            "exa": "https://exa.ai",
-            "you": "https://api.you.com",
-            "parallel": "https://platform.parallel.ai",
-            "perplexity": "https://www.perplexity.ai/settings/api",
-            "kilo-perplexity": "https://api.kilo.ai",
-            "firecrawl": "https://www.firecrawl.dev/app/api-keys"
-        }
-        
-        error_msg = {
-            "error": f"Missing API key for {provider}",
-            "env_var": env_var,
-            "how_to_fix": [
-                f"1. Get your API key from {urls[provider]}",
-                f"2. Add to config.json: \"{provider}\": {{\"api_key\": \"your-key\"}}",
-                f"3. Or set environment variable: export {env_var}=\"your-key\"",
-            ],
-            "provider": provider
-        }
-        raise ProviderConfigError(json.dumps(error_msg))
-
-    if len(key) < 10:
-        raise ProviderConfigError(json.dumps({
-            "error": f"API key for {provider} appears invalid (too short)",
-            "provider": provider
-        }))
-
-    return key
-
-
+# Keep direct script/importlib.spec execution working for compatibility tests.
+_MODULE_DIR = Path(__file__).resolve().parent
+if __package__ in (None, "") and str(_MODULE_DIR) not in sys.path:
+    sys.path.insert(0, str(_MODULE_DIR))
+
+try:  # pragma: no cover - import style depends on CLI/package execution
+    from .cache import (
+        CACHE_DIR,
+        DEFAULT_CACHE_TTL,
+        PROVIDER_HEALTH_FILE,
+        _build_cache_payload,
+        _ensure_cache_dir,
+        _get_cache_key,
+        _get_cache_path,
+        cache_clear,
+        cache_get,
+        cache_put,
+        cache_stats,
+    )
+    from .config import (
+        DEFAULT_CONFIG,
+        ProviderConfigError,
+        _append_missing_default_providers,
+        _canonical_provider,
+        _deepcopy_default_config,
+        _load_env_file,
+        _normalize_routing_provider_config,
+        _normalize_routing_provider_list_config,
+        _quarantine_runtime_config,
+        _unique_timestamped_path,
+        _validate_runtime_config,
+        _validate_searxng_url,
+        _VALID_PROVIDERS,
+        get_api_key,
+        get_env_key,
+        get_searxng_instance_url,
+        load_config,
+        validate_api_key,
+    )
+except ImportError:  # pragma: no cover
+    from cache import (  # type: ignore
+        CACHE_DIR,
+        DEFAULT_CACHE_TTL,
+        PROVIDER_HEALTH_FILE,
+        _build_cache_payload,
+        _ensure_cache_dir,
+        _get_cache_key,
+        _get_cache_path,
+        cache_clear,
+        cache_get,
+        cache_put,
+        cache_stats,
+    )
+    from config import (  # type: ignore
+        DEFAULT_CONFIG,
+        ProviderConfigError,
+        _append_missing_default_providers,
+        _canonical_provider,
+        _deepcopy_default_config,
+        _load_env_file,
+        _normalize_routing_provider_config,
+        _normalize_routing_provider_list_config,
+        _quarantine_runtime_config,
+        _unique_timestamped_path,
+        _validate_runtime_config,
+        _validate_searxng_url,
+        _VALID_PROVIDERS,
+        get_api_key,
+        get_env_key,
+        get_searxng_instance_url,
+        load_config,
+        validate_api_key,
+    )
+
+__all__ = [
+    "CACHE_DIR",
+    "DEFAULT_CACHE_TTL",
+    "PROVIDER_HEALTH_FILE",
+    "_build_cache_payload",
+    "_ensure_cache_dir",
+    "_get_cache_key",
+    "_get_cache_path",
+    "cache_clear",
+    "cache_get",
+    "cache_put",
+    "cache_stats",
+    "DEFAULT_CONFIG",
+    "ProviderConfigError",
+    "_append_missing_default_providers",
+    "_canonical_provider",
+    "_deepcopy_default_config",
+    "_load_env_file",
+    "_normalize_routing_provider_config",
+    "_normalize_routing_provider_list_config",
+    "_quarantine_runtime_config",
+    "_unique_timestamped_path",
+    "_validate_runtime_config",
+    "_validate_searxng_url",
+    "_VALID_PROVIDERS",
+    "get_api_key",
+    "get_env_key",
+    "get_searxng_instance_url",
+    "load_config",
+    "validate_api_key",
+]
 # =============================================================================
 # Intelligent Auto-Routing Engine
 # =============================================================================
@@ -1836,11 +1255,6 @@ def _provider_auto_allowed(provider: str, auto_config: Dict[str, Any]) -> bool:
     if not isinstance(auto_allow, dict):
         return True
     return bool(auto_allow.get(provider, True))
-
-
-class ProviderConfigError(Exception):
-    """Raised when a provider is missing or has an invalid API key/config."""
-    pass
 
 
 class ProviderRequestError(Exception):
