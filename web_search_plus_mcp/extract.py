@@ -8,14 +8,12 @@ try:  # pragma: no cover - import style depends on CLI/package execution
     from .config import get_api_key, load_config
     from .provider_health import mark_provider_failure, provider_in_cooldown, reset_provider_health
     from .http_client import execute_provider_with_retry
-    from .providers.core import extract_exa, extract_firecrawl, extract_linkup, extract_tavily, extract_you
-    from .providers.parallel import extract_parallel
+    from .providers import extract_exa, extract_firecrawl, extract_linkup, extract_parallel, extract_tavily, extract_you
 except ImportError:  # pragma: no cover
     from config import get_api_key, load_config  # type: ignore
     from provider_health import mark_provider_failure, provider_in_cooldown, reset_provider_health  # type: ignore
     from http_client import execute_provider_with_retry  # type: ignore
-    from providers.core import extract_exa, extract_firecrawl, extract_linkup, extract_tavily, extract_you  # type: ignore
-    from providers.parallel import extract_parallel  # type: ignore
+    from providers import extract_exa, extract_firecrawl, extract_linkup, extract_parallel, extract_tavily, extract_you  # type: ignore
 
 EXTRACT_PROVIDER_PRIORITY = ["tavily", "exa", "linkup", "parallel", "firecrawl", "you"]
 

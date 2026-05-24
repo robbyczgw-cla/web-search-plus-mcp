@@ -193,9 +193,7 @@ except ImportError:  # pragma: no cover
 
 try:  # pragma: no cover - import style depends on CLI/package execution
     from . import extract as _extract
-    from .providers import core as _core_provider
-    from .providers import parallel as _parallel_provider
-    from .providers import perplexity as _perplexity_provider
+    from . import providers as _providers
     from .provider_health import (
         COOLDOWN_STEPS_SECONDS,
         RETRY_BACKOFF_SECONDS,
@@ -221,9 +219,7 @@ try:  # pragma: no cover - import style depends on CLI/package execution
     from .research import run_research_mode
 except ImportError:  # pragma: no cover
     import extract as _extract  # type: ignore
-    from providers import core as _core_provider  # type: ignore
-    from providers import parallel as _parallel_provider  # type: ignore
-    from providers import perplexity as _perplexity_provider  # type: ignore
+    import providers as _providers  # type: ignore
     from provider_health import (  # type: ignore
         COOLDOWN_STEPS_SECONDS,
         RETRY_BACKOFF_SECONDS,
@@ -310,15 +306,15 @@ def explain_routing(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
 # modules and are imported above for backward-compatible access through search.py.
 
 
-def _sync_core_provider_dependencies() -> None:
+def _sync_providers_dependencies() -> None:
     """Keep provider modules compatible with search.py monkeypatches."""
-    _core_provider.make_request = make_request
-    _core_provider.make_get_request = make_get_request
-    _core_provider.urlopen = urlopen
-    _core_provider.Request = Request
-    _core_provider._read_json_response = _read_json_response
-    _core_provider._read_response_body = _read_response_body
-    _core_provider._title_from_url = _title_from_url
+    _providers.make_request = make_request
+    _providers.make_get_request = make_get_request
+    _providers.urlopen = urlopen
+    _providers.Request = Request
+    _providers._read_json_response = _read_json_response
+    _providers._read_response_body = _read_response_body
+    _providers._title_from_url = _title_from_url
 
 
 def _sync_extract_dependencies() -> None:
@@ -345,92 +341,91 @@ def _sync_extract_dependencies() -> None:
 # =============================================================================
 
 def search_serper(*args, **kwargs) -> dict:
-    _sync_core_provider_dependencies()
-    return _core_provider.search_serper(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers.search_serper(*args, **kwargs)
 
 
 def _strip_tracking_params(*args, **kwargs):
-    _sync_core_provider_dependencies()
-    return _core_provider._strip_tracking_params(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers._strip_tracking_params(*args, **kwargs)
 
 
 def _serpbase_related_search_query(*args, **kwargs):
-    _sync_core_provider_dependencies()
-    return _core_provider._serpbase_related_search_query(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers._serpbase_related_search_query(*args, **kwargs)
 
 
 def search_serpbase(*args, **kwargs) -> dict:
-    _sync_core_provider_dependencies()
-    return _core_provider.search_serpbase(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers.search_serpbase(*args, **kwargs)
 
 
 def search_brave(*args, **kwargs) -> dict:
-    _sync_core_provider_dependencies()
-    return _core_provider.search_brave(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers.search_brave(*args, **kwargs)
 
 
 def search_tavily(*args, **kwargs) -> dict:
-    _sync_core_provider_dependencies()
-    return _core_provider.search_tavily(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers.search_tavily(*args, **kwargs)
 
 
 def _map_querit_time_range(*args, **kwargs):
-    return _core_provider._map_querit_time_range(*args, **kwargs)
+    return _providers._map_querit_time_range(*args, **kwargs)
 
 
 def search_querit(*args, **kwargs) -> dict:
-    _sync_core_provider_dependencies()
-    return _core_provider.search_querit(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers.search_querit(*args, **kwargs)
 
 
 def search_linkup(*args, **kwargs) -> dict:
-    _sync_core_provider_dependencies()
-    return _core_provider.search_linkup(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers.search_linkup(*args, **kwargs)
 
 
 def _map_firecrawl_time_range(*args, **kwargs):
-    return _core_provider._map_firecrawl_time_range(*args, **kwargs)
+    return _providers._map_firecrawl_time_range(*args, **kwargs)
 
 
 def search_firecrawl(*args, **kwargs) -> dict:
-    _sync_core_provider_dependencies()
-    return _core_provider.search_firecrawl(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers.search_firecrawl(*args, **kwargs)
 
 
 def _normalize_extract_result(*args, **kwargs):
-    _sync_core_provider_dependencies()
-    return _core_provider._normalize_extract_result(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers._normalize_extract_result(*args, **kwargs)
 
 
 def extract_firecrawl(*args, **kwargs) -> dict:
-    _sync_core_provider_dependencies()
-    return _core_provider.extract_firecrawl(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers.extract_firecrawl(*args, **kwargs)
 
 
 def extract_linkup(*args, **kwargs) -> dict:
-    _sync_core_provider_dependencies()
-    return _core_provider.extract_linkup(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers.extract_linkup(*args, **kwargs)
 
 
 def extract_tavily(*args, **kwargs) -> dict:
-    _sync_core_provider_dependencies()
-    return _core_provider.extract_tavily(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers.extract_tavily(*args, **kwargs)
 
 
 def extract_exa(*args, **kwargs) -> dict:
-    _sync_core_provider_dependencies()
-    return _core_provider.extract_exa(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers.extract_exa(*args, **kwargs)
 
 
 def extract_you(*args, **kwargs) -> dict:
-    _sync_core_provider_dependencies()
-    return _core_provider.extract_you(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers.extract_you(*args, **kwargs)
 
 
-def _patch_parallel_provider() -> None:
-    _parallel_provider.make_request = make_request
-    _parallel_provider._title_from_url = _title_from_url
-    _parallel_provider._normalize_extract_result = _normalize_extract_result
+def _patch_providers() -> None:
+    _providers.make_request = make_request
+    _providers._title_from_url = _title_from_url
 
 
 def extract_parallel(
@@ -447,8 +442,8 @@ def extract_parallel(
     max_chars_per_result: int = 6000,
 ) -> dict:
     """Compatibility wrapper for the Parallel extraction adapter."""
-    _patch_parallel_provider()
-    return _parallel_provider.extract_parallel(
+    _patch_providers()
+    return _providers.extract_parallel(
         urls,
         api_key,
         output_format=output_format,
@@ -476,8 +471,8 @@ def extract_plus(*args, **kwargs) -> dict:
 # =============================================================================
 
 def search_exa(*args, **kwargs) -> dict:
-    _sync_core_provider_dependencies()
-    return _core_provider.search_exa(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers.search_exa(*args, **kwargs)
 
 
 # =============================================================================
@@ -495,8 +490,8 @@ def search_parallel(
     client_model: Optional[str] = None,
 ) -> dict:
     """Compatibility wrapper for the Parallel search adapter."""
-    _patch_parallel_provider()
-    return _parallel_provider.search_parallel(
+    _patch_providers()
+    return _providers.search_parallel(
         query,
         api_key,
         max_results=max_results,
@@ -522,9 +517,9 @@ def search_perplexity(
     provider_name: str = "perplexity",
 ) -> dict:
     """Compatibility wrapper for the Perplexity-compatible adapter."""
-    _perplexity_provider.make_request = make_request
-    _perplexity_provider._title_from_url = _title_from_url
-    return _perplexity_provider.search_perplexity(
+    _providers.make_request = make_request
+    _providers._title_from_url = _title_from_url
+    return _providers.search_perplexity(
         query,
         api_key,
         max_results=max_results,
@@ -540,13 +535,13 @@ def search_perplexity(
 # =============================================================================
 
 def search_you(*args, **kwargs) -> dict:
-    _sync_core_provider_dependencies()
-    return _core_provider.search_you(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers.search_you(*args, **kwargs)
 
 
 def search_searxng(*args, **kwargs) -> dict:
-    _sync_core_provider_dependencies()
-    return _core_provider.search_searxng(*args, **kwargs)
+    _sync_providers_dependencies()
+    return _providers.search_searxng(*args, **kwargs)
 
 
 def main():
