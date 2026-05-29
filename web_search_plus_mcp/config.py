@@ -1,4 +1,6 @@
-"""Configuration and credential helpers for Web Search Plus MCP."""
+"""Configuration and credential helpers for Web Search Plus."""
+
+from __future__ import annotations
 
 import json
 import os
@@ -7,16 +9,31 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+try:
+    from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS
+except ImportError:  # pragma: no cover
+    from provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS  # type: ignore
+
+
 CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
 
 
 class ProviderConfigError(Exception):
-    """Raised when a provider is not configured correctly."""
+    """Raised when a provider is missing or has an invalid API key/config."""
+    pass
 
 
-# =============================================================================
-# Auto-load .env from skill directory (if exists)
-# =============================================================================
+def _is_placeholder_env_value(value: str) -> bool:
+    """Return True for template placeholders that should not count as credentials."""
+    stripped = (value or "").strip().strip('"').strip("'")
+    return not stripped or set(stripped) == {"*"}
+
+
+def _clean_env_value(value: str) -> Optional[str]:
+    stripped = (value or "").strip().strip('"').strip("'")
+    return None if _is_placeholder_env_value(stripped) else stripped
+
+
 def _load_env_file():
     """Load .env files from plugin-local and legacy parent locations."""
     env_paths = [
@@ -35,16 +52,9 @@ def _load_env_file():
                         line = line[7:]
                     key, _, value = line.partition("=")
                     key = key.strip()
-                    value = value.strip().strip('"').strip("'")
-                    if key and key not in os.environ:
+                    value = _clean_env_value(value)
+                    if key and value and key not in os.environ:
                         os.environ[key] = value
-
-_load_env_file()
-
-
-# =============================================================================
-# Configuration
-# =============================================================================
 
 DEFAULT_CONFIG = {
     "version": 1,
@@ -58,16 +68,9 @@ DEFAULT_CONFIG = {
         "fallback_provider": "serper",
         # Low-trust / experimental providers can stay configured for explicit use
         # without being selected automatically.
-        "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"],
+        "provider_priority": list(DEFAULT_PROVIDER_PRIORITY),
         "disabled_providers": [],
-        "auto_allow": {
-            "serpbase": False,
-            "querit": False,
-            "brave": False,
-            "kilo-perplexity": False,
-            "perplexity": False,
-            "parallel": False,
-        },
+        "auto_allow": dict(DEFAULT_AUTO_ALLOW),
         "confidence_threshold": 0.3,  # Below this, note low confidence
     },
     "serper": {
@@ -148,20 +151,19 @@ def _deepcopy_default_config() -> Dict[str, Any]:
     return json.loads(json.dumps(DEFAULT_CONFIG))
 
 
-_ROUTING_PROVIDER_NAMES = {"tavily", "linkup", "querit", "exa", "firecrawl", "parallel", "perplexity", "kilo-perplexity", "brave", "serper", "serpbase", "you", "searxng"}
+_ROUTING_PROVIDER_NAMES = set(PROVIDER_SPECS)
 _VALID_PROVIDERS = _ROUTING_PROVIDER_NAMES
 
 
 def _normalize_routing_provider_config(provider: str) -> str:
-    normalized = (provider or "").strip().lower()
-    if normalized == "kilo_perplexity":
-        normalized = "kilo-perplexity"
+    normalized = provider.strip().lower().replace("_", "-")
     if normalized not in _ROUTING_PROVIDER_NAMES:
-        raise ValueError(f"unknown routing provider: {provider}")
+        raise ProviderConfigError(f"Unknown provider '{provider}'. Valid providers: {', '.join(sorted(_ROUTING_PROVIDER_NAMES))}")
     return normalized
 
 
 def _canonical_provider(provider: str) -> str:
+    """Backward-compatible alias used by older tests and callers."""
     return _normalize_routing_provider_config(provider)
 
 
@@ -288,7 +290,7 @@ def load_config() -> Dict[str, Any]:
                     else:
                         config[key] = value
             config = _validate_runtime_config(config)
-        except (json.JSONDecodeError, IOError, ValueError, TypeError) as e:
+        except (json.JSONDecodeError, IOError, ValueError, TypeError, ProviderConfigError) as e:
             _quarantine_runtime_config(config_path, str(e))
             config = _deepcopy_default_config()
 
@@ -297,46 +299,32 @@ def load_config() -> Dict[str, Any]:
 
 def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
     """Get API key for provider from config.json or environment.
-    
+
     Priority: config.json > .env > environment variable
-    
+
     Note: SearXNG doesn't require an API key, but returns instance_url if configured.
     """
     # Special case: SearXNG uses instance_url instead of API key
     if provider == "searxng":
         return get_searxng_instance_url(config)
-    
+
     # Check config.json first
     if config:
         provider_config = config.get(provider, {})
         if isinstance(provider_config, dict):
             key = provider_config.get("api_key") or provider_config.get("apiKey")
+            key = _clean_env_value(str(key)) if key is not None else None
             if key:
                 return key
-    
+
     # Then check environment
-    if provider == "perplexity":
-        return os.environ.get("PERPLEXITY_API_KEY")
-    if provider == "kilo-perplexity":
-        return os.environ.get("KILOCODE_API_KEY")
-    key_map = {
-        "serper": "SERPER_API_KEY",
-        "serpbase": "SERPBASE_API_KEY",
-        "brave": "BRAVE_API_KEY",
-        "tavily": "TAVILY_API_KEY",
-        "querit": "QUERIT_API_KEY",
-        "linkup": "LINKUP_API_KEY",
-        "exa": "EXA_API_KEY",
-        "you": "YOU_API_KEY",
-        "parallel": "PARALLEL_API_KEY",
-        "firecrawl": "FIRECRAWL_API_KEY",
-    }
-    return os.environ.get(key_map.get(provider, ""))
+    spec = PROVIDER_SPECS.get(provider)
+    return _clean_env_value(os.environ.get(spec.env_var if spec else "", ""))
 
 
 def _validate_searxng_url(url: str) -> str:
     """Validate and sanitize SearXNG instance URL to prevent SSRF.
-    
+
     Enforces http/https scheme and blocks requests to private/internal networks
     including cloud metadata endpoints, loopback, link-local, and RFC1918 ranges.
     """
@@ -382,10 +370,10 @@ def _validate_searxng_url(url: str) -> str:
 
 def get_searxng_instance_url(config: Dict[str, Any] = None) -> Optional[str]:
     """Get SearXNG instance URL from config or environment.
-    
+
     SearXNG is self-hosted, so no API key needed - just the instance URL.
     Priority: config.json > SEARXNG_INSTANCE_URL environment variable
-    
+
     Security: URL is validated to prevent SSRF via scheme enforcement.
     Both config sources (config.json, env var) are operator-controlled,
     not agent-controlled, so private IPs like localhost are permitted.
@@ -397,9 +385,9 @@ def get_searxng_instance_url(config: Dict[str, Any] = None) -> Optional[str]:
             url = searxng_config.get("instance_url")
             if url:
                 return _validate_searxng_url(url)
-    
+
     # Then check environment
-    env_url = os.environ.get("SEARXNG_INSTANCE_URL")
+    env_url = _clean_env_value(os.environ.get("SEARXNG_INSTANCE_URL", ""))
     if env_url:
         return _validate_searxng_url(env_url)
     return None
@@ -414,7 +402,7 @@ def get_env_key(provider: str) -> Optional[str]:
 def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
     """Validate and return API key (or instance URL for SearXNG), with helpful error messages."""
     key = get_api_key(provider, config)
-    
+
     # Special handling for SearXNG - it needs instance URL, not API key
     if provider == "searxng":
         if not key:
@@ -438,45 +426,18 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
                 "provided": key,
                 "provider": provider
             }))
-        
+
         return key
-    
+
     if not key:
-        env_var = {
-            "serper": "SERPER_API_KEY",
-            "serpbase": "SERPBASE_API_KEY",
-            "brave": "BRAVE_API_KEY",
-            "tavily": "TAVILY_API_KEY",
-            "querit": "QUERIT_API_KEY",
-            "linkup": "LINKUP_API_KEY",
-            "exa": "EXA_API_KEY",
-            "you": "YOU_API_KEY",
-            "parallel": "PARALLEL_API_KEY",
-            "perplexity": "PERPLEXITY_API_KEY",
-            "kilo-perplexity": "KILOCODE_API_KEY",
-            "firecrawl": "FIRECRAWL_API_KEY"
-        }[provider]
-        
-        urls = {
-            "serper": "https://serper.dev",
-            "serpbase": "https://www.serpbase.dev",
-            "brave": "https://brave.com/search/api/",
-            "tavily": "https://tavily.com",
-            "querit": "https://querit.ai",
-            "linkup": "https://app.linkup.so",
-            "exa": "https://exa.ai",
-            "you": "https://api.you.com",
-            "parallel": "https://platform.parallel.ai",
-            "perplexity": "https://www.perplexity.ai/settings/api",
-            "kilo-perplexity": "https://api.kilo.ai",
-            "firecrawl": "https://www.firecrawl.dev/app/api-keys"
-        }
-        
+        spec = PROVIDER_SPECS[provider]
+        env_var = spec.env_var
+
         error_msg = {
             "error": f"Missing API key for {provider}",
             "env_var": env_var,
             "how_to_fix": [
-                f"1. Get your API key from {urls[provider]}",
+                f"1. Get your API key from {spec.signup_url}",
                 f"2. Add to config.json: \"{provider}\": {{\"api_key\": \"your-key\"}}",
                 f"3. Or set environment variable: export {env_var}=\"your-key\"",
             ],
@@ -493,3 +454,4 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
     return key
 
 
+_load_env_file()

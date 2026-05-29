@@ -1,21 +1,48 @@
-"""Extraction fallback orchestration."""
-
-from __future__ import annotations
+"""Extraction orchestrator for Web Search Plus."""
 
 from typing import Any, Dict, List, Optional
 
-try:  # pragma: no cover - import style depends on CLI/package execution
+try:
     from .config import get_api_key, load_config
-    from .provider_health import mark_provider_failure, provider_in_cooldown, reset_provider_health
-    from .http_client import execute_provider_with_retry
-    from .providers import extract_exa, extract_firecrawl, extract_linkup, extract_parallel, extract_tavily, extract_you
 except ImportError:  # pragma: no cover
     from config import get_api_key, load_config  # type: ignore
-    from provider_health import mark_provider_failure, provider_in_cooldown, reset_provider_health  # type: ignore
-    from http_client import execute_provider_with_retry  # type: ignore
-    from providers import extract_exa, extract_firecrawl, extract_linkup, extract_parallel, extract_tavily, extract_you  # type: ignore
+try:
+    from .provider_health import (
+        execute_provider_with_retry,
+        mark_provider_failure,
+        provider_in_cooldown,
+        reset_provider_health,
+    )
+    from .providers import (
+        extract_exa,
+        extract_firecrawl,
+        extract_linkup,
+        extract_parallel,
+        extract_tavily,
+        extract_you,
+    )
+except ImportError:  # pragma: no cover
+    from provider_health import (  # type: ignore
+        execute_provider_with_retry,
+        mark_provider_failure,
+        provider_in_cooldown,
+        reset_provider_health,
+    )
+    from providers import (  # type: ignore
+        extract_exa,
+        extract_firecrawl,
+        extract_linkup,
+        extract_parallel,
+        extract_tavily,
+        extract_you,
+    )
+try:
+    from .provider_registry import EXTRACT_PROVIDER_IDS
+except ImportError:  # pragma: no cover
+    from provider_registry import EXTRACT_PROVIDER_IDS  # type: ignore
 
-EXTRACT_PROVIDER_PRIORITY = ["tavily", "exa", "linkup", "parallel", "firecrawl", "you"]
+
+EXTRACT_PROVIDER_PRIORITY = list(EXTRACT_PROVIDER_IDS)
 
 
 def extract_plus(

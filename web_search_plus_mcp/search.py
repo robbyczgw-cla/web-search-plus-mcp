@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 2.2.0-mcp
+Version: 2.3.0-mcp
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
 Brave Search, SerpBase, Querit, Parallel, Perplexity, Kilo Perplexity, SearXNG.
 Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com.
@@ -26,299 +26,506 @@ Examples:
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
-from urllib.request import Request, urlopen
+from typing import List, Dict, Any, Tuple
 
-ROUTING_POLICY = "routing-v2"
-CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
-
-# Keep direct script/importlib.spec execution working for compatibility tests.
 _MODULE_DIR = Path(__file__).resolve().parent
-if __package__ in (None, "") and str(_MODULE_DIR) not in sys.path:
+if str(_MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(_MODULE_DIR))
-
-try:  # pragma: no cover - import style depends on CLI/package execution
+try:
+    from . import http_client as _http_client
+    from .http_client import (  # noqa: F401 - re-exported for backward-compatible tests/imports
+    ProviderRequestError,
+    TRANSIENT_HTTP_CODES,
+    _read_json_response,
+    _read_response_body,
+    make_get_request,
+    make_request,
+)
     from .cache import (
-        CACHE_DIR,
-        DEFAULT_CACHE_TTL,
-        PROVIDER_HEALTH_FILE,
-        _build_cache_payload,
-        _ensure_cache_dir,
-        _get_cache_key,
-        _get_cache_path,
-        cache_clear,
-        cache_get,
-        cache_put,
-        cache_stats,
-    )
-    from .config import (
-        DEFAULT_CONFIG,
-        ProviderConfigError,
-        _append_missing_default_providers,
-        _canonical_provider,
-        _deepcopy_default_config,
-        _load_env_file,
-        _normalize_routing_provider_config,
-        _normalize_routing_provider_list_config,
-        _quarantine_runtime_config,
-        _unique_timestamped_path,
-        _validate_runtime_config,
-        _validate_searxng_url,
-        _VALID_PROVIDERS,
-        get_api_key,
-        get_env_key,
-        get_searxng_instance_url,
-        load_config,
-        validate_api_key,
-    )
+    CACHE_DIR,
+    DEFAULT_CACHE_TTL,
+    _get_cache_key,
+    cache_clear,
+    cache_get,
+    cache_put,
+    cache_stats,
+)
+    from .config import (  # noqa: F401 - re-exported for backward-compatible tests/imports
+    CONFIG_ENV_VAR,
+    DEFAULT_CONFIG,
+    _VALID_PROVIDERS,
+    ProviderConfigError,
+    _clean_env_value,
+    _canonical_provider,
+    _deepcopy_default_config,
+    _validate_runtime_config,
+    _validate_searxng_url,
+    get_api_key,
+    load_config,
+    validate_api_key,
+)
+    from .provider_health import (  # noqa: F401 - re-exported for backward-compatible tests/imports
+    RETRY_BACKOFF_SECONDS,
+    COOLDOWN_STEPS_SECONDS,
+    execute_provider_with_retry,
+    mark_provider_failure,
+    provider_in_cooldown,
+    reset_provider_health,
+)
+    from .quality import (  # noqa: F401 - re-exported for backward-compatible tests/imports
+    _choose_tie_winner,
+    _domain_matches_rule,
+    build_authority_signals,
+    build_quality_report,
+    deduplicate_results_across_providers,
+    rerank_results_for_intent,
+    select_research_providers,
+)
+    from .provider_registry import SEARCH_PROVIDER_IDS, doctor_catalog
+    from .research import run_research_mode
+    from . import providers as _providers
+    from . import routing as _routing
+    from . import extract as _extract
 except ImportError:  # pragma: no cover
+    import http_client as _http_client  # type: ignore
+    from http_client import (  # type: ignore  # noqa: F401
+        ProviderRequestError,
+        TRANSIENT_HTTP_CODES,
+        _read_json_response,
+        _read_response_body,
+        make_get_request,
+        make_request,
+    )
     from cache import (  # type: ignore
         CACHE_DIR,
         DEFAULT_CACHE_TTL,
-        PROVIDER_HEALTH_FILE,
-        _build_cache_payload,
-        _ensure_cache_dir,
-        _get_cache_key,
-        _get_cache_path,
+        _get_cache_key,  # noqa: F401 - re-exported for backward-compatible tests/imports
         cache_clear,
         cache_get,
         cache_put,
         cache_stats,
     )
-    from config import (  # type: ignore
+    from config import (  # type: ignore  # noqa: F401
+        CONFIG_ENV_VAR,
         DEFAULT_CONFIG,
+        _VALID_PROVIDERS,
         ProviderConfigError,
-        _append_missing_default_providers,
+        _clean_env_value,
         _canonical_provider,
         _deepcopy_default_config,
-        _load_env_file,
-        _normalize_routing_provider_config,
-        _normalize_routing_provider_list_config,
-        _quarantine_runtime_config,
-        _unique_timestamped_path,
         _validate_runtime_config,
         _validate_searxng_url,
-        _VALID_PROVIDERS,
         get_api_key,
-        get_env_key,
-        get_searxng_instance_url,
         load_config,
         validate_api_key,
     )
-
-try:  # pragma: no cover - import style depends on CLI/package execution
-    from . import http_client as _http_client
-    from .http_client import (
-        ProviderRequestError,
-        TRANSIENT_HTTP_CODES,
+    from provider_health import (  # type: ignore  # noqa: F401
+        COOLDOWN_STEPS_SECONDS,
+        RETRY_BACKOFF_SECONDS,
         execute_provider_with_retry,
-        _read_json_response,
-        _read_response_body,
+        mark_provider_failure,
+        provider_in_cooldown,
+        reset_provider_health,
     )
-except ImportError:  # pragma: no cover
-    import http_client as _http_client  # type: ignore
-    from http_client import (  # type: ignore
-        ProviderRequestError,
-        TRANSIENT_HTTP_CODES,
-        execute_provider_with_retry,
-        _read_json_response,
-        _read_response_body,
+    from quality import (  # type: ignore  # noqa: F401
+        _choose_tie_winner,
+        _domain_matches_rule,
+        build_authority_signals,
+        build_quality_report,
+        deduplicate_results_across_providers,
+        rerank_results_for_intent,
+        select_research_providers,
     )
+    from provider_registry import SEARCH_PROVIDER_IDS, doctor_catalog  # type: ignore
+    from research import run_research_mode  # type: ignore
+    import providers as _providers  # type: ignore
+    import routing as _routing  # type: ignore
+    import extract as _extract  # type: ignore
 
+
+# Backward-compatible URL opener surface: older callers/tests monkeypatch
+# search.urlopen, while provider HTTP helpers live in http_client.
+urlopen = _http_client.urlopen
+_http_make_request = make_request
+_http_make_get_request = make_get_request
 
 def make_request(url: str, headers: dict, body: dict, timeout: int = 30) -> dict:
-    """Compatibility wrapper around http_client.make_request."""
     _http_client.urlopen = urlopen
-    return _http_client.make_request(url, headers, body, timeout)
-
+    return _http_make_request(url, headers, body, timeout=timeout)
 
 def make_get_request(url: str, headers: dict, timeout: int = 30) -> dict:
-    """Compatibility wrapper around http_client.make_get_request."""
     _http_client.urlopen = urlopen
-    return _http_client.make_get_request(url, headers, timeout)
+    return _http_make_get_request(url, headers, timeout=timeout)
 
-__all__ = [
-    "CACHE_DIR",
-    "DEFAULT_CACHE_TTL",
-    "PROVIDER_HEALTH_FILE",
-    "_build_cache_payload",
-    "_ensure_cache_dir",
-    "_get_cache_key",
-    "_get_cache_path",
-    "cache_clear",
-    "cache_get",
-    "cache_put",
-    "cache_stats",
-    "DEFAULT_CONFIG",
-    "ProviderConfigError",
-    "_append_missing_default_providers",
-    "_canonical_provider",
-    "_deepcopy_default_config",
-    "_load_env_file",
-    "_normalize_routing_provider_config",
-    "_normalize_routing_provider_list_config",
-    "_quarantine_runtime_config",
-    "_unique_timestamped_path",
-    "_validate_runtime_config",
-    "_validate_searxng_url",
-    "_VALID_PROVIDERS",
-    "get_api_key",
-    "get_env_key",
-    "get_searxng_instance_url",
-    "load_config",
-    "validate_api_key",
-    "ProviderRequestError",
-    "TRANSIENT_HTTP_CODES",
-    "execute_provider_with_retry",
-    "_read_json_response",
-    "_read_response_body",
-    "make_get_request",
-    "make_request",
-    "QueryAnalyzer",
-    "_choose_tie_winner",
-    "_provider_auto_allowed",
-    "auto_route_provider",
-    "explain_routing",
-]
-# Routing helpers live in routing.py and are imported below for compatibility.
-try:  # pragma: no cover - import style depends on CLI/package execution
-    from . import routing as _routing
-    from .routing import ROUTING_POLICY, _choose_tie_winner, _provider_auto_allowed
-except ImportError:  # pragma: no cover
-    import routing as _routing  # type: ignore
-    from routing import ROUTING_POLICY, _choose_tie_winner, _provider_auto_allowed  # type: ignore
+# Backward-compatible cache helper aliases for older imports/tests.
+get_cached_result = cache_get
+cache_search_result = cache_put
+clear_cache = cache_clear
+get_cache_stats = cache_stats
 
-try:  # pragma: no cover - import style depends on CLI/package execution
-    from . import extract as _extract
-    from . import providers as _providers
-    from .provider_health import (
-        COOLDOWN_STEPS_SECONDS,
-        RETRY_BACKOFF_SECONDS,
-        _ensure_parent,
-        _load_provider_health,
-        _save_provider_health,
-        mark_provider_failure,
-        provider_in_cooldown,
-        reset_provider_health,
-    )
-    from .quality import (
-        CANONICAL_DOMAIN_RULES,
-        _domain_matches_rule,
-        _result_domain,
-        _snippet_text,
-        _title_from_url,
-        build_quality_report,
-        deduplicate_results_across_providers,
-        normalize_result_url,
-        rerank_results_for_intent,
-        select_research_providers,
-    )
-    from .research import run_research_mode
-except ImportError:  # pragma: no cover
-    import extract as _extract  # type: ignore
-    import providers as _providers  # type: ignore
-    from provider_health import (  # type: ignore
-        COOLDOWN_STEPS_SECONDS,
-        RETRY_BACKOFF_SECONDS,
-        _ensure_parent,
-        _load_provider_health,
-        _save_provider_health,
-        mark_provider_failure,
-        provider_in_cooldown,
-        reset_provider_health,
-    )
-    from quality import (  # type: ignore
-        CANONICAL_DOMAIN_RULES,
-        _domain_matches_rule,
-        _result_domain,
-        _snippet_text,
-        _title_from_url,
-        build_quality_report,
-        deduplicate_results_across_providers,
-        normalize_result_url,
-        rerank_results_for_intent,
-        select_research_providers,
-    )
-    from research import run_research_mode  # type: ignore
 
-_COMPAT_REEXPORTS = (
-    COOLDOWN_STEPS_SECONDS,
-    RETRY_BACKOFF_SECONDS,
-    _ensure_parent,
-    _load_provider_health,
-    _save_provider_health,
-    CANONICAL_DOMAIN_RULES,
-    _domain_matches_rule,
-    _result_domain,
-    _snippet_text,
-    normalize_result_url,
-)
+def _load_env_file():
+    """Load .env files using search.py's path for backward-compatible tests/shims."""
+    env_paths = [
+        Path(__file__).parent / ".env",
+        Path(__file__).parent.parent / ".env",
+    ]
+    for env_path in env_paths:
+        if not env_path.exists():
+            continue
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    if line.startswith("export "):
+                        line = line[7:]
+                    key, _, value = line.partition("=")
+                    key = key.strip()
+                    value = _clean_env_value(value)
+                    if key and value and key not in os.environ:
+                        os.environ[key] = value
+
+
+ROUTING_POLICY = "routing-v2"
+
+COMPATIBILITY_SHIM_DEPRECATION = {
+    "public_surface": [
+        "QueryAnalyzer",
+        "auto_route_provider",
+        "search_provider",
+        "extract_plus",
+        "get_cached_result",
+        "cache_search_result",
+        "clear_cache",
+        "get_cache_stats",
+    ],
+    "internal_shims": [
+        "_sync_routing_dependencies",
+        "_sync_provider_dependencies",
+        "_sync_extract_dependencies",
+        "provider function wrappers",
+    ],
+    "removal_target": "after ProviderSpec registry stabilization and one documented minor release window",
+    "tracking_issue": "#34",
+    "policy": "Keep search.py imports working while tests/users migrate to module-level seams; do not remove wrappers in feature PRs.",
+}
+
+
+def get_compatibility_shim_policy() -> Dict[str, Any]:
+    """Return the documented compatibility-shim policy for tests and release notes."""
+    return {
+        key: value.copy() if isinstance(value, list) else value
+        for key, value in COMPATIBILITY_SHIM_DEPRECATION.items()
+    }
+
+
+def _sync_routing_dependencies() -> None:
+    """Keep moved routing implementation compatible with search.py monkeypatches.
+
+    Removal target: after ProviderSpec registry stabilization and one documented minor release window.
+    """
+    _routing.get_api_key = get_api_key
 
 
 class QueryAnalyzer(_routing.QueryAnalyzer):
-    """Compatibility wrapper that respects monkeypatches to search.get_api_key."""
-
-    def __init__(self, config: Dict[str, Any]):
-        original_get_api_key = _routing.get_api_key
-        try:
-            _routing.get_api_key = get_api_key
-            super().__init__(config)
-        finally:
-            _routing.get_api_key = original_get_api_key
-
-    def route(self, query: str) -> Dict[str, Any]:
-        original_get_api_key = _routing.get_api_key
-        try:
-            _routing.get_api_key = get_api_key
-            return super().route(query)
-        finally:
-            _routing.get_api_key = original_get_api_key
+    def __init__(self, *args, **kwargs):
+        _sync_routing_dependencies()
+        super().__init__(*args, **kwargs)
 
 
-def auto_route_provider(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
-    if not config.get("auto_routing", {}).get("enabled", True):
-        provider = config.get("default_provider") or config.get("defaults", {}).get("provider", "serper")
-        return {
-            "provider": provider,
-            "confidence": 1.0,
-            "confidence_level": "high",
-            "reason": "auto_routing_disabled_default_provider",
-            "routing_policy": ROUTING_POLICY,
-            "scores": {},
-            "top_signals": [],
-            "auto_routed": False,
-        }
-    return QueryAnalyzer(config).route(query)
+def auto_route_provider(*args, **kwargs):
+    _sync_routing_dependencies()
+    return _routing.auto_route_provider(*args, **kwargs)
 
 
-def explain_routing(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
-    original_get_api_key = _routing.get_api_key
-    try:
-        _routing.get_api_key = get_api_key
-        return _routing.explain_routing(query, config)
-    finally:
-        _routing.get_api_key = original_get_api_key
-
-# Provider health, result-quality, and research-mode helpers live in dedicated
-# modules and are imported above for backward-compatible access through search.py.
+def explain_routing(*args, **kwargs):
+    _sync_routing_dependencies()
+    return _routing.explain_routing(*args, **kwargs)
 
 
-def _sync_providers_dependencies() -> None:
-    """Keep provider modules compatible with search.py monkeypatches."""
+def _provider_auto_allowed(*args, **kwargs):
+    return _routing._provider_auto_allowed(*args, **kwargs)
+
+
+
+
+
+
+# =============================================================================
+# Intelligent Auto-Routing Engine
+# =============================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ProviderRequestError and TRANSIENT_HTTP_CODES live in http_client.py.
+# Provider cooldown/backoff constants live in provider_health.py.
+
+
+
+
+
+
+# =============================================================================
+# HTTP Client
+# =============================================================================
+
+
+
+# HTTP request helpers live in http_client.py and are imported above for backward-compatible monkeypatching.
+
+
+# =============================================================================
+# Serper (Google Search API)
+# =============================================================================
+
+
+
+# =============================================================================
+# SerpBase (Google SERP API)
+# =============================================================================
+
+
+
+
+
+
+
+# =============================================================================
+# Brave Search
+# =============================================================================
+
+
+
+# =============================================================================
+# Tavily (Research Search)
+# =============================================================================
+
+
+
+# =============================================================================
+# Querit (Multi-lingual search API for AI, with rich metadata and real-time information)
+# =============================================================================
+
+
+
+
+
+# =============================================================================
+# Linkup Search
+# =============================================================================
+
+
+
+# =============================================================================
+# Firecrawl Search
+# =============================================================================
+
+
+
+
+
+# =============================================================================
+# Extract Plus (URL Content Extraction)
+# =============================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def _sync_provider_dependencies() -> None:
+    """Keep moved provider implementations compatible with search.py monkeypatches.
+
+    Removal target: after ProviderSpec registry stabilization and one documented minor release window.
+    """
     _providers.make_request = make_request
     _providers.make_get_request = make_get_request
-    _providers.urlopen = urlopen
-    _providers.Request = Request
-    _providers._read_json_response = _read_json_response
-    _providers._read_response_body = _read_response_body
-    _providers._title_from_url = _title_from_url
+    _providers.get_api_key = get_api_key
+    _providers.load_config = load_config
+    _providers.provider_in_cooldown = provider_in_cooldown
+    _providers.mark_provider_failure = mark_provider_failure
+    _providers.reset_provider_health = reset_provider_health
+    _providers.execute_provider_with_retry = execute_provider_with_retry
+
+
+def search_serper(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.search_serper(*args, **kwargs)
+
+
+def _strip_tracking_params(*args, **kwargs):
+    return _providers._strip_tracking_params(*args, **kwargs)
+
+
+def _serpbase_related_search_query(*args, **kwargs):
+    return _providers._serpbase_related_search_query(*args, **kwargs)
+
+
+def search_serpbase(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.search_serpbase(*args, **kwargs)
+
+
+def search_brave(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.search_brave(*args, **kwargs)
+
+
+def search_tavily(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.search_tavily(*args, **kwargs)
+
+
+def _map_querit_time_range(*args, **kwargs):
+    return _providers._map_querit_time_range(*args, **kwargs)
+
+
+def search_querit(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.search_querit(*args, **kwargs)
+
+
+def search_linkup(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.search_linkup(*args, **kwargs)
+
+
+def _map_firecrawl_time_range(*args, **kwargs):
+    return _providers._map_firecrawl_time_range(*args, **kwargs)
+
+
+def search_firecrawl(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.search_firecrawl(*args, **kwargs)
+
+
+def _normalize_extract_result(*args, **kwargs):
+    return _providers._normalize_extract_result(*args, **kwargs)
+
+
+def extract_firecrawl(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.extract_firecrawl(*args, **kwargs)
+
+
+def extract_linkup(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.extract_linkup(*args, **kwargs)
+
+
+def extract_tavily(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.extract_tavily(*args, **kwargs)
+
+
+def extract_exa(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.extract_exa(*args, **kwargs)
+
+
+def extract_you(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.extract_you(*args, **kwargs)
+
+
+def extract_parallel(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.extract_parallel(*args, **kwargs)
+
+
+def search_exa(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.search_exa(*args, **kwargs)
+
+
+def search_parallel(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.search_parallel(*args, **kwargs)
+
+
+def search_perplexity(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.search_perplexity(*args, **kwargs)
+
+
+def search_you(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.search_you(*args, **kwargs)
+
+
+def search_searxng(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.search_searxng(*args, **kwargs)
+
+
+
+# =============================================================================
+# Exa (Neural/Semantic/Deep Search)
+# =============================================================================
+
+
+
+# =============================================================================
+# Parallel (LLM-ready web search)
+# =============================================================================
+
+
+
+# =============================================================================
+# Perplexity-compatible Direct Answers
+# =============================================================================
+
+
+
+
+# =============================================================================
+# You.com (LLM-Ready Web & News Search)
+# =============================================================================
+
+
+
+# =============================================================================
+# SearXNG (Privacy-First Meta-Search)
+# =============================================================================
+
+
+
+# =============================================================================
+# CLI
+# =============================================================================
 
 
 def _sync_extract_dependencies() -> None:
-    """Keep extract orchestration compatible with search.py monkeypatches."""
+    """Keep moved extract orchestrator compatible with search.py monkeypatches.
+
+    Removal target: after ProviderSpec registry stabilization and one documented minor release window.
+    """
     _extract.get_api_key = get_api_key
     _extract.load_config = load_config
     _extract.provider_in_cooldown = provider_in_cooldown
@@ -333,220 +540,130 @@ def _sync_extract_dependencies() -> None:
     _extract.extract_parallel = extract_parallel
 
 
-# =============================================================================
-# HTTP request helpers live in http_client.py and are imported above for compatibility.
-
-# =============================================================================
-# Serper (Google Search API)
-# =============================================================================
-
-def search_serper(*args, **kwargs) -> dict:
-    _sync_providers_dependencies()
-    return _providers.search_serper(*args, **kwargs)
-
-
-def _strip_tracking_params(*args, **kwargs):
-    _sync_providers_dependencies()
-    return _providers._strip_tracking_params(*args, **kwargs)
-
-
-def _serpbase_related_search_query(*args, **kwargs):
-    _sync_providers_dependencies()
-    return _providers._serpbase_related_search_query(*args, **kwargs)
-
-
-def search_serpbase(*args, **kwargs) -> dict:
-    _sync_providers_dependencies()
-    return _providers.search_serpbase(*args, **kwargs)
-
-
-def search_brave(*args, **kwargs) -> dict:
-    _sync_providers_dependencies()
-    return _providers.search_brave(*args, **kwargs)
-
-
-def search_tavily(*args, **kwargs) -> dict:
-    _sync_providers_dependencies()
-    return _providers.search_tavily(*args, **kwargs)
-
-
-def _map_querit_time_range(*args, **kwargs):
-    return _providers._map_querit_time_range(*args, **kwargs)
-
-
-def search_querit(*args, **kwargs) -> dict:
-    _sync_providers_dependencies()
-    return _providers.search_querit(*args, **kwargs)
-
-
-def search_linkup(*args, **kwargs) -> dict:
-    _sync_providers_dependencies()
-    return _providers.search_linkup(*args, **kwargs)
-
-
-def _map_firecrawl_time_range(*args, **kwargs):
-    return _providers._map_firecrawl_time_range(*args, **kwargs)
-
-
-def search_firecrawl(*args, **kwargs) -> dict:
-    _sync_providers_dependencies()
-    return _providers.search_firecrawl(*args, **kwargs)
-
-
-def _normalize_extract_result(*args, **kwargs):
-    _sync_providers_dependencies()
-    return _providers._normalize_extract_result(*args, **kwargs)
-
-
-def extract_firecrawl(*args, **kwargs) -> dict:
-    _sync_providers_dependencies()
-    return _providers.extract_firecrawl(*args, **kwargs)
-
-
-def extract_linkup(*args, **kwargs) -> dict:
-    _sync_providers_dependencies()
-    return _providers.extract_linkup(*args, **kwargs)
-
-
-def extract_tavily(*args, **kwargs) -> dict:
-    _sync_providers_dependencies()
-    return _providers.extract_tavily(*args, **kwargs)
-
-
-def extract_exa(*args, **kwargs) -> dict:
-    _sync_providers_dependencies()
-    return _providers.extract_exa(*args, **kwargs)
-
-
-def extract_you(*args, **kwargs) -> dict:
-    _sync_providers_dependencies()
-    return _providers.extract_you(*args, **kwargs)
-
-
-def _patch_providers() -> None:
-    _providers.make_request = make_request
-    _providers._title_from_url = _title_from_url
-
-
-def extract_parallel(
-    urls: List[str],
-    api_key: str,
-    output_format: str = "markdown",
-    include_images: bool = False,
-    include_raw_html: bool = False,
-    render_js: bool = False,
-    api_url: str = "https://api.parallel.ai/v1/extract",
-    timeout: int = 60,
-    client_model: Optional[str] = None,
-    max_chars_total: int = 12000,
-    max_chars_per_result: int = 6000,
-) -> dict:
-    """Compatibility wrapper for the Parallel extraction adapter."""
-    _patch_providers()
-    return _providers.extract_parallel(
-        urls,
-        api_key,
-        output_format=output_format,
-        include_images=include_images,
-        include_raw_html=include_raw_html,
-        render_js=render_js,
-        api_url=api_url,
-        timeout=timeout,
-        client_model=client_model,
-        max_chars_total=max_chars_total,
-        max_chars_per_result=max_chars_per_result,
-    )
-
-
 EXTRACT_PROVIDER_PRIORITY = _extract.EXTRACT_PROVIDER_PRIORITY
 
 
-def extract_plus(*args, **kwargs) -> dict:
+PROVIDER_DOCTOR_CATALOG = doctor_catalog()
+
+
+def extract_plus(*args, **kwargs):
     _sync_extract_dependencies()
     return _extract.extract_plus(*args, **kwargs)
 
 
-# =============================================================================
-# Exa (Neural/Semantic/Deep Search)
-# =============================================================================
+def _doctor_error(error_type: str, message: str) -> Dict[str, str]:
+    """Return a deliberately sanitized doctor error.
 
-def search_exa(*args, **kwargs) -> dict:
-    _sync_providers_dependencies()
-    return _providers.search_exa(*args, **kwargs)
+    Doctor output is often pasted into issues/support chats. Keep it useful without
+    echoing private URLs, filesystem paths, tokens, or corrupt raw cache values.
+    """
+    safe_messages = {
+        "config": "Provider configuration is invalid; inspect local config/env for this provider.",
+        "cooldown": "Provider health cache has an invalid cooldown entry; reset provider health cache if it persists.",
+    }
+    return {"type": error_type, "message": safe_messages.get(error_type, "Provider diagnostic failed.")}
 
 
-# =============================================================================
-# Parallel (LLM-ready web search)
-# =============================================================================
+def _doctor_provider_has_error_type(provider_report: Dict[str, Any], error_type: str) -> bool:
+    error = provider_report.get("error")
+    if isinstance(error, dict):
+        return error.get("type") == error_type
+    if isinstance(error, list):
+        return any(isinstance(item, dict) and item.get("type") == error_type for item in error)
+    return False
 
-def search_parallel(
-    query: str,
-    api_key: str,
-    max_results: int = 5,
-    include_domains: Optional[List[str]] = None,
-    exclude_domains: Optional[List[str]] = None,
-    api_url: str = "https://api.parallel.ai/v1/search",
-    timeout: int = 45,
-    client_model: Optional[str] = None,
-) -> dict:
-    """Compatibility wrapper for the Parallel search adapter."""
-    _patch_providers()
-    return _providers.search_parallel(
-        query,
-        api_key,
-        max_results=max_results,
-        include_domains=include_domains,
-        exclude_domains=exclude_domains,
-        api_url=api_url,
-        timeout=timeout,
-        client_model=client_model,
+
+def _build_doctor_report(config: Dict[str, Any], *, live: bool = False) -> Dict[str, Any]:
+    auto_config = config.get("auto_routing", {})
+    disabled = set(auto_config.get("disabled_providers", []) or [])
+    providers = []
+    for provider, spec in PROVIDER_DOCTOR_CATALOG.items():
+        errors = []
+        try:
+            in_cooldown, remaining = provider_in_cooldown(provider)
+            cooldown = {"active": bool(in_cooldown), "remaining_seconds": int(remaining)}
+        except (TypeError, ValueError):
+            cooldown = {"active": False, "remaining_seconds": 0}
+            errors.append(_doctor_error("cooldown", "invalid provider health cache value"))
+
+        try:
+            key_present = bool(get_api_key(provider, config))
+        except (ProviderConfigError, ValueError):
+            key_present = False
+            errors.append(_doctor_error("config", "invalid provider configuration"))
+
+        provider_report = {
+            "provider": provider,
+            "env_var": spec["env_var"],
+            "search_capable": spec["search_capable"],
+            "extract_capable": spec["extract_capable"],
+            "key_present": key_present,
+            "auto_allowed": _provider_auto_allowed(provider, auto_config),
+            "disabled": provider in disabled,
+            "cooldown": cooldown,
+        }
+        if errors:
+            provider_report["error"] = errors[0] if len(errors) == 1 else errors
+        providers.append(provider_report)
+
+    usable = [p for p in providers if p["key_present"] and not p["disabled"]]
+    config_errors = [p for p in providers if _doctor_provider_has_error_type(p, "config")]
+    return {
+        "ok": bool(usable) and not config_errors,
+        "mode": "live" if live else "offline",
+        "config": {
+            "auto_routing_enabled": auto_config.get("enabled", True),
+            "default_provider": config.get("default_provider"),
+            "fallback_provider": auto_config.get("fallback_provider"),
+            "disabled_providers": sorted(disabled),
+        },
+        "cache": {
+            "dir": str(CACHE_DIR),
+            "exists": CACHE_DIR.exists(),
+            "writable": os.access(CACHE_DIR if CACHE_DIR.exists() else CACHE_DIR.parent, os.W_OK),
+            "provider_health_file": str(CACHE_DIR / "provider_health.json"),
+        },
+        "providers": providers,
+    }
+
+
+def _format_doctor_text(report: Dict[str, Any]) -> str:
+    lines = ["Web Search Plus Doctor", f"Mode: {report['mode']}", f"OK: {report['ok']}", "", "Providers:"]
+    for provider in report["providers"]:
+        capabilities = []
+        if provider["search_capable"]:
+            capabilities.append("search")
+        if provider["extract_capable"]:
+            capabilities.append("extract")
+        cooldown = provider["cooldown"]
+        cooldown_text = f"cooldown {cooldown['remaining_seconds']}s" if cooldown["active"] else "no cooldown"
+        lines.append(
+            f"- {provider['provider']}: env={provider['env_var']} "
+            f"key={'yes' if provider['key_present'] else 'no'} "
+            f"capabilities={','.join(capabilities)} "
+            f"auto_allowed={'yes' if provider['auto_allowed'] else 'no'} "
+            f"disabled={'yes' if provider['disabled'] else 'no'} "
+            f"{cooldown_text}"
+        )
+    lines.extend(["", f"Cache: {report['cache']['dir']} (writable={report['cache']['writable']})"])
+    return "\n".join(lines)
+
+
+def build_parser_for_tests() -> argparse.ArgumentParser:
+    """Return a minimal parser exposing registry-backed provider choices for drift tests."""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument(
+        "--provider",
+        "-p",
+        choices=[*SEARCH_PROVIDER_IDS, "auto"],
+        help="Search provider (auto=intelligent routing)",
     )
-
-
-# =============================================================================
-# Perplexity-compatible Direct Answers
-# =============================================================================
-
-def search_perplexity(
-    query: str,
-    api_key: str,
-    max_results: int = 5,
-    model: str = "sonar-pro",
-    api_url: str = "https://api.perplexity.ai/chat/completions",
-    freshness: Optional[str] = None,
-    provider_name: str = "perplexity",
-) -> dict:
-    """Compatibility wrapper for the Perplexity-compatible adapter."""
-    _providers.make_request = make_request
-    _providers._title_from_url = _title_from_url
-    return _providers.search_perplexity(
-        query,
-        api_key,
-        max_results=max_results,
-        model=model,
-        api_url=api_url,
-        freshness=freshness,
-        provider_name=provider_name,
-    )
-
-
-# =============================================================================
-# You.com (LLM-Ready Web & News Search)
-# =============================================================================
-
-def search_you(*args, **kwargs) -> dict:
-    _sync_providers_dependencies()
-    return _providers.search_you(*args, **kwargs)
-
-
-def search_searxng(*args, **kwargs) -> dict:
-    _sync_providers_dependencies()
-    return _providers.search_searxng(*args, **kwargs)
+    return parser
 
 
 def main():
     config = load_config()
-    
+
     parser = argparse.ArgumentParser(
         description="Web Search Plus — Intelligent multi-provider search with smart auto-routing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -579,10 +696,20 @@ Full docs: See README.md and SKILL.md
         """,
     )
     
+    # Command arguments
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=["doctor"],
+        help="Run a maintenance command such as 'doctor'",
+    )
+    parser.add_argument("--json", action="store_true", help="Emit JSON for maintenance commands")
+    parser.add_argument("--live", action="store_true", help="Allow doctor to run live provider smokes (reserved; offline by default)")
+
     # Common arguments
     parser.add_argument(
         "--provider", "-p", 
-        choices=["serper", "serpbase", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "parallel", "perplexity", "kilo-perplexity", "you", "searxng", "auto"],
+        choices=[*SEARCH_PROVIDER_IDS, "auto"],
         help="Search provider (auto=intelligent routing)"
     )
     parser.add_argument(
@@ -845,6 +972,15 @@ Full docs: See README.md and SKILL.md
     )
     
     args = parser.parse_args()
+
+    if args.command == "doctor":
+        report = _build_doctor_report(config, live=args.live)
+        if args.json or args.compact:
+            indent = None if args.compact else 2
+            print(json.dumps(report, indent=indent, ensure_ascii=False))
+        else:
+            print(_format_doctor_text(report))
+        return
     
     # Handle cache management commands first (before query validation)
     if args.clear_cache:
@@ -918,7 +1054,7 @@ Full docs: See README.md and SKILL.md
     
     # Build provider fallback list
     auto_config = config.get("auto_routing", {})
-    provider_priority = auto_config.get("provider_priority", ["tavily", "linkup", "parallel", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"])
+    provider_priority = auto_config.get("provider_priority", list(SEARCH_PROVIDER_IDS))
     disabled_providers = auto_config.get("disabled_providers", [])
 
     # Start with the selected provider, then try others in priority order.

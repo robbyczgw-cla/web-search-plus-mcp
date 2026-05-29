@@ -22,18 +22,18 @@ def test_web_search_schema_exposes_v17_providers_and_controls():
     assert props["provider"]["enum"] == [
         "auto",
         "serper",
+        "serpbase",
         "brave",
         "tavily",
-        "exa",
+        "querit",
         "linkup",
+        "exa",
         "firecrawl",
         "parallel",
         "perplexity",
         "kilo-perplexity",
         "you",
         "searxng",
-        "serpbase",
-        "querit",
     ]
     assert props["depth"]["enum"] == ["normal", "deep", "deep-reasoning"]
     assert props["mode"]["enum"] == ["normal", "research"]

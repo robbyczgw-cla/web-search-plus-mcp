@@ -1,14 +1,15 @@
-"""Opt-in research mode orchestration."""
+"""Research mode orchestration helpers."""
 
 from __future__ import annotations
 
 import time
 from typing import Any, Dict, List, Tuple
 
-try:  # pragma: no cover - import style depends on CLI/package execution
+try:
     from .quality import deduplicate_results_across_providers
 except ImportError:  # pragma: no cover
     from quality import deduplicate_results_across_providers  # type: ignore
+
 
 def run_research_mode(
     query: str,
