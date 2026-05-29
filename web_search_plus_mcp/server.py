@@ -20,28 +20,24 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-__version__ = "0.9.0"
+from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
+
+__version__ = "0.10.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus")
 
 
 SEARCH_PROVIDERS = {
-    "serper": {"env": "SERPER_API_KEY", "capabilities": ["search"]},
-    "brave": {"env": "BRAVE_API_KEY", "capabilities": ["search"], "auto_allow": False},
-    "tavily": {"env": "TAVILY_API_KEY", "capabilities": ["search", "extract"]},
-    "exa": {"env": "EXA_API_KEY", "capabilities": ["search", "extract"]},
-    "linkup": {"env": "LINKUP_API_KEY", "capabilities": ["search", "extract"]},
-    "firecrawl": {"env": "FIRECRAWL_API_KEY", "capabilities": ["search", "extract"]},
-    "parallel": {"env": "PARALLEL_API_KEY", "capabilities": ["search", "extract"], "auto_allow": False},
-    "perplexity": {"env": "PERPLEXITY_API_KEY", "capabilities": ["search"], "auto_allow": False},
-    "kilo-perplexity": {"env": "KILOCODE_API_KEY", "capabilities": ["search"], "auto_allow": False},
-    "you": {"env": "YOU_API_KEY", "capabilities": ["search", "extract"]},
-    "searxng": {"env": "SEARXNG_INSTANCE_URL", "capabilities": ["search"]},
-    "serpbase": {"env": "SERPBASE_API_KEY", "capabilities": ["search"], "auto_allow": False},
-    "querit": {"env": "QUERIT_API_KEY", "capabilities": ["search"], "auto_allow": False},
+    provider: {
+        "env": spec.env_var,
+        "capabilities": [*spec.capability_labels],
+        **({"auto_allow": False} if not spec.auto_allowed_by_default else {}),
+    }
+    for provider, spec in PROVIDER_SPECS.items()
+    if spec.supports_search
 }
-EXTRACT_PROVIDERS = ["tavily", "exa", "linkup", "parallel", "firecrawl", "you"]
+EXTRACT_PROVIDERS = list(EXTRACT_PROVIDER_IDS)
 PRESETS = {
     "starter": ["YOU_API_KEY", "SERPER_API_KEY", "LINKUP_API_KEY"],
     "minimal": ["YOU_API_KEY"],
@@ -51,7 +47,7 @@ PRESETS = {
 
 CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
 PROVIDER_ALIASES = {"kilo_perplexity": "kilo-perplexity"}
-ROUTING_PROVIDER_ORDER = ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "kilo-perplexity", "perplexity", "searxng", "serpbase", "querit"]
+ROUTING_PROVIDER_ORDER = list(DEFAULT_PROVIDER_PRIORITY)
 
 
 def _canonical_provider(provider: str) -> str:
@@ -75,14 +71,7 @@ def _default_behavior_config() -> dict[str, Any]:
             "fallback_provider": "serper",
             "provider_priority": ROUTING_PROVIDER_ORDER[:],
             "disabled_providers": [],
-            "auto_allow": {
-                "serpbase": False,
-                "querit": False,
-                "brave": False,
-                "kilo-perplexity": False,
-                "perplexity": False,
-                "parallel": False,
-            },
+            "auto_allow": dict(DEFAULT_AUTO_ALLOW),
             "confidence_threshold": 0.3,
         },
     }
@@ -271,22 +260,7 @@ async def list_tools() -> list[Tool]:
                     "query": {"type": "string", "description": "Search query"},
                     "provider": {
                         "type": "string",
-                        "enum": [
-                            "auto",
-                            "serper",
-                            "brave",
-                            "tavily",
-                            "exa",
-                            "linkup",
-                            "firecrawl",
-                            "parallel",
-                            "perplexity",
-                            "kilo-perplexity",
-                            "you",
-                            "searxng",
-                            "serpbase",
-                            "querit",
-                        ],
+                        "enum": ["auto", *SEARCH_PROVIDERS],
                         "description": "Force a specific provider, or use auto-routing.",
                         "default": "auto",
                     },
@@ -317,7 +291,7 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "urls": {"type": "array", "items": {"type": "string"}, "description": "URLs to extract"},
-                    "provider": {"type": "string", "enum": ["auto", "tavily", "exa", "linkup", "parallel", "firecrawl", "you"], "default": "auto"},
+                    "provider": {"type": "string", "enum": ["auto", *EXTRACT_PROVIDERS], "default": "auto"},
                     "format": {"type": "string", "enum": ["markdown", "html"], "default": "markdown"},
                     "include_images": {"type": "boolean", "default": False},
                     "include_raw_html": {"type": "boolean", "default": False},

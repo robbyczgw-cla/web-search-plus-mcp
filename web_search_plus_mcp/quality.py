@@ -1,15 +1,13 @@
-"""Result quality, deduplication, and reporting helpers."""
+"""Result normalization, deduplication, reranking, and quality-report helpers."""
 
-from __future__ import annotations
-
+import hashlib
 import re
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
 
-try:  # pragma: no cover - import style depends on CLI/package execution
-    from .routing import ROUTING_POLICY
-except ImportError:  # pragma: no cover
-    from routing import ROUTING_POLICY  # type: ignore
+
+ROUTING_POLICY = "routing-v2"
+
 
 def _title_from_url(url: str) -> str:
     """Derive a readable title from a URL when none is provided."""
@@ -59,6 +57,22 @@ def deduplicate_results_across_providers(results_by_provider: List[Tuple[str, Di
                 return deduped, dedup_count
     return deduped, dedup_count
 
+def _choose_tie_winner(query: str, winners: List[str], priority: List[str]) -> str:
+    """Break score ties deterministically per query.
+
+    Uses a stable hash of the query to distribute ties across providers while
+    keeping the same query reproducible across runs.
+    """
+    ordered_winners = [p for p in priority if p in winners]
+    if not ordered_winners:
+        ordered_winners = sorted(winners)
+    if len(ordered_winners) == 1:
+        return ordered_winners[0]
+    digest = hashlib.sha256(f"{query}|{'|'.join(ordered_winners)}".encode("utf-8")).hexdigest()
+    idx = int(digest[:8], 16) % len(ordered_winners)
+    return ordered_winners[idx]
+
+
 def _result_domain(url: str) -> str:
     try:
         netloc = urlparse(url or "").netloc.lower()
@@ -89,7 +103,7 @@ CANONICAL_DOMAIN_RULES: Dict[str, Dict[str, List[str]]] = {
         "demote": ["reddit.com", "fool.com", "seekingalpha.com", "youtube.com"],
     },
     "security_advisory": {
-        "boost": ["nvd.nist.gov", "cve.org", "github.com/advisories", "security.", "cert.europa.eu", "kb.cert.org"],
+        "boost": ["nvd.nist.gov", "cve.org", "github.com", "github.com/advisories", "security.", "cert.europa.eu", "kb.cert.org"],
         "demote": ["youtube.com", "medium.com", "reddit.com"],
     },
 }
@@ -97,6 +111,15 @@ CANONICAL_DOMAIN_RULES: Dict[str, Dict[str, List[str]]] = {
 
 def _domain_matches_rule(domain: str, rule: str) -> bool:
     return domain == rule or domain.endswith(f".{rule}") or domain.startswith(rule)
+
+
+def _url_matches_rule(url: str, rule: str) -> bool:
+    domain = _result_domain(url)
+    if "/" not in rule:
+        return _domain_matches_rule(domain, rule)
+    normalized = normalize_result_url(url)
+    normalized_rule = rule.lower().strip().rstrip("/")
+    return normalized == normalized_rule or normalized.startswith(f"{normalized_rule}/")
 
 
 def rerank_results_for_intent(
@@ -112,13 +135,14 @@ def rerank_results_for_intent(
     q = query.lower()
     scored: List[Tuple[float, int, Dict[str, Any]]] = []
     for idx, item in enumerate(results):
-        domain = _result_domain(item.get("url", ""))
+        url = item.get("url", "")
+        domain = _result_domain(url)
         title = (item.get("title") or "").lower()
         snippet = (item.get("snippet") or item.get("description") or "").lower()
         score = float(len(results) - idx) * 0.01
-        if any(_domain_matches_rule(domain, rule) for rule in rules.get("boost", [])):
+        if any(_url_matches_rule(url, rule) for rule in rules.get("boost", [])):
             score += 10.0
-        if any(_domain_matches_rule(domain, rule) for rule in rules.get("demote", [])):
+        if any(_url_matches_rule(url, rule) for rule in rules.get("demote", [])):
             score -= 6.0
         if routing_class == "official_vendor_release" and any(term in domain for term in ("mistral", "anthropic", "openai", "nvidia", "google", "meta")):
             score += 3.0
@@ -137,6 +161,33 @@ def rerank_results_for_intent(
         "routing_class": routing_class,
         "top_domain_before": _result_domain(results[0].get("url", "")) if results else None,
         "top_domain_after": _result_domain(reranked[0].get("url", "")) if reranked else None,
+    }
+
+
+def build_authority_signals(routing_class: str, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Summarize primary-source authority signals for quality reports."""
+    rules = CANONICAL_DOMAIN_RULES.get(routing_class, {})
+    urls = [item.get("url", "") for item in results if item.get("url")]
+    domains = [_result_domain(url) for url in urls]
+    boosted_domains = []
+    demoted_domains = []
+    boosted_flags = []
+    for url, domain in zip(urls, domains):
+        boosted = any(_url_matches_rule(url, rule) for rule in rules.get("boost", []))
+        demoted = any(_url_matches_rule(url, rule) for rule in rules.get("demote", []))
+        boosted_flags.append(boosted)
+        if boosted:
+            boosted_domains.append(domain)
+        if demoted:
+            demoted_domains.append(domain)
+
+    return {
+        "routing_class": routing_class,
+        "rules_applied": bool(rules),
+        "top_domain": domains[0] if domains else None,
+        "canonical_domain_hits": sorted(set(boosted_domains)),
+        "demoted_domain_hits": sorted(set(demoted_domains)),
+        "canonical_top_result": bool(boosted_flags and boosted_flags[0]),
     }
 
 
@@ -196,12 +247,15 @@ def build_quality_report(
             "error": err.get("error"),
         })
 
+    routing_class = routing_info.get("analysis_summary", {}).get("routing_class")
+    authority_signals = build_authority_signals(routing_class, results) if routing_class else None
+
     return {
         "query": query,
         "selected_provider": routing_info.get("provider") or result.get("provider"),
         "routing_reason": routing_info.get("reason"),
         "routing_policy": routing_info.get("routing_policy", ROUTING_POLICY),
-        "routing_class": routing_info.get("analysis_summary", {}).get("routing_class"),
+        "routing_class": routing_class,
         "language_hint": routing_info.get("analysis_summary", {}).get("language_hint"),
 
         "confidence": confidence_level,
@@ -218,6 +272,7 @@ def build_quality_report(
         "extract_recommended": bool(extract_reasons),
         "extract_reasons": extract_reasons,
         "scores": routing_info.get("scores", {}),
+        "authority_signals": authority_signals,
     }
 
 

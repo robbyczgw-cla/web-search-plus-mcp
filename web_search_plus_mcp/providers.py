@@ -1,17 +1,16 @@
-"""Provider adapters for Web Search Plus MCP."""
-
-from __future__ import annotations
+"""Provider implementations for Web Search Plus search and extraction backends."""
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import re
 from typing import Any, Dict, List, Optional
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode, urlparse, parse_qsl, urlunparse
+from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
-try:  # pragma: no cover - import style depends on CLI/package execution
+try:
     from .http_client import (
+        DEFAULT_USER_AGENT,
         ProviderRequestError,
         TRANSIENT_HTTP_CODES,
         _read_json_response,
@@ -22,6 +21,7 @@ try:  # pragma: no cover - import style depends on CLI/package execution
     from .quality import _title_from_url
 except ImportError:  # pragma: no cover
     from http_client import (  # type: ignore
+        DEFAULT_USER_AGENT,
         ProviderRequestError,
         TRANSIENT_HTTP_CODES,
         _read_json_response,
@@ -30,6 +30,7 @@ except ImportError:  # pragma: no cover
         make_request,
     )
     from quality import _title_from_url  # type: ignore
+
 
 def search_serper(
     query: str,
@@ -43,7 +44,7 @@ def search_serper(
 ) -> dict:
     """Search using Serper (Google Search API)."""
     endpoint = f"https://google.serper.dev/{search_type}"
-    
+
     body = {
         "q": query,
         "gl": country,
@@ -51,7 +52,7 @@ def search_serper(
         "num": max_results,
         "autocorrect": True,
     }
-    
+
     if time_range and time_range != "none":
         tbs_map = {
             "hour": "qdr:h",
@@ -62,14 +63,14 @@ def search_serper(
         }
         if time_range in tbs_map:
             body["tbs"] = tbs_map[time_range]
-    
+
     headers = {
         "X-API-KEY": api_key,
         "Content-Type": "application/json",
     }
-    
+
     data = make_request(endpoint, headers, body)
-    
+
     results = []
     for i, item in enumerate(data.get("organic", [])[:max_results]):
         results.append({
@@ -79,7 +80,7 @@ def search_serper(
             "score": round(1.0 - i * 0.1, 2),
             "date": item.get("date"),
         })
-    
+
     answer = ""
     if data.get("answerBox", {}).get("answer"):
         answer = data["answerBox"]["answer"]
@@ -89,7 +90,7 @@ def search_serper(
         answer = data["knowledgeGraph"]["description"]
     elif results:
         answer = results[0]["snippet"]
-    
+
     images = []
     if include_images:
         try:
@@ -101,21 +102,17 @@ def search_serper(
             images = [img.get("imageUrl", "") for img in img_data.get("images", [])[:5] if img.get("imageUrl")]
         except Exception:
             pass
-    
+
     return {
         "provider": "serper",
         "query": query,
         "results": results,
         "images": images,
         "answer": answer,
+        "metadata": {},
         "knowledge_graph": data.get("knowledgeGraph"),
         "related_searches": [r.get("query") for r in data.get("relatedSearches", [])]
     }
-
-
-# =============================================================================
-# SerpBase (Google SERP API)
-# =============================================================================
 
 def _strip_tracking_params(url: str) -> str:
     """Remove common SERP tracking params while preserving the canonical target URL."""
@@ -131,14 +128,12 @@ def _strip_tracking_params(url: str) -> str:
     ]
     return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
 
-
 def _serpbase_related_search_query(item: Any) -> Optional[str]:
     if isinstance(item, dict):
         return item.get("query") or item.get("title")
     if isinstance(item, str):
         return item
     return None
-
 
 def search_serpbase(
     query: str,
@@ -201,16 +196,15 @@ def search_serpbase(
         "provider": "serpbase",
         "query": query,
         "results": results,
+        "images": [],
         "answer": answer,
+        "metadata": {
+            "session_id": data.get("session_id"),
+        },
         "knowledge_graph": data.get("knowledge_graph"),
         "related_searches": related_searches,
         "session_id": data.get("session_id"),
     }
-
-
-# =============================================================================
-# Brave Search
-# =============================================================================
 
 def search_brave(
     query: str,
@@ -281,13 +275,9 @@ def search_brave(
         "results": results,
         "images": [],
         "answer": answer,
+        "metadata": {},
         "mixed": data.get("mixed"),
     }
-
-
-# =============================================================================
-# Tavily (Research Search)
-# =============================================================================
 
 def search_tavily(
     query: str,
@@ -302,7 +292,7 @@ def search_tavily(
 ) -> dict:
     """Search using Tavily (AI Research Search)."""
     endpoint = "https://api.tavily.com/search"
-    
+
     body = {
         "api_key": api_key,
         "query": query,
@@ -313,16 +303,16 @@ def search_tavily(
         "include_answer": True,
         "include_raw_content": include_raw_content,
     }
-    
+
     if include_domains:
         body["include_domains"] = include_domains
     if exclude_domains:
         body["exclude_domains"] = exclude_domains
-    
+
     headers = {"Content-Type": "application/json"}
-    
+
     data = make_request(endpoint, headers, body)
-    
+
     results = []
     for item in data.get("results", [])[:max_results]:
         result = {
@@ -334,19 +324,15 @@ def search_tavily(
         if include_raw_content and item.get("raw_content"):
             result["raw_content"] = item["raw_content"]
         results.append(result)
-    
+
     return {
         "provider": "tavily",
         "query": query,
         "results": results,
         "images": data.get("images", []),
         "answer": data.get("answer", ""),
+        "metadata": {},
     }
-
-
-# =============================================================================
-# Querit (Multi-lingual search API for AI, with rich metadata and real-time information)
-# =============================================================================
 
 def _map_querit_time_range(time_range: Optional[str]) -> Optional[str]:
     """Map generic time ranges to Querit's compact date filter format."""
@@ -358,7 +344,6 @@ def _map_querit_time_range(time_range: Optional[str]) -> Optional[str]:
         "month": "m1",
         "year": "y1",
     }.get(time_range, time_range)
-
 
 def search_querit(
     query: str,
@@ -451,11 +436,6 @@ def search_querit(
         }
     }
 
-
-# =============================================================================
-# Linkup Search
-# =============================================================================
-
 def search_linkup(
     query: str,
     api_key: str,
@@ -515,11 +495,6 @@ def search_linkup(
         },
     }
 
-
-# =============================================================================
-# Firecrawl Search
-# =============================================================================
-
 def _map_firecrawl_time_range(time_range: Optional[str]) -> Optional[str]:
     """Map generic time ranges to Firecrawl/Google tbs values."""
     if not time_range:
@@ -531,7 +506,6 @@ def _map_firecrawl_time_range(time_range: Optional[str]) -> Optional[str]:
         "month": "qdr:m",
         "year": "qdr:y",
     }.get(time_range, time_range)
-
 
 def search_firecrawl(
     query: str,
@@ -629,11 +603,6 @@ def search_firecrawl(
         },
     }
 
-
-# =============================================================================
-# Extract Plus (URL Content Extraction)
-# =============================================================================
-
 def _normalize_extract_result(
     provider: str,
     url: str,
@@ -653,7 +622,6 @@ def _normalize_extract_result(
         if value is not None:
             result[key] = value
     return result
-
 
 def extract_firecrawl(
     urls: List[str],
@@ -711,7 +679,6 @@ def extract_firecrawl(
         ))
     return {"provider": "firecrawl", "results": results}
 
-
 def extract_linkup(
     urls: List[str],
     api_key: str,
@@ -758,7 +725,6 @@ def extract_linkup(
     results = [indexed_results[idx] for idx in range(len(urls)) if idx in indexed_results]
     return {"provider": "linkup", "results": results}
 
-
 def extract_tavily(
     urls: List[str],
     api_key: str,
@@ -789,7 +755,6 @@ def extract_tavily(
         failed_url = failed.get("url", "")
         results.append(_normalize_extract_result("tavily", failed_url, error=failed.get("error") or "Tavily extract failed"))
     return {"provider": "tavily", "results": results}
-
 
 def extract_exa(
     urls: List[str],
@@ -830,7 +795,6 @@ def extract_exa(
         "statuses": data.get("statuses"),
     }
 
-
 def extract_you(
     urls: List[str],
     api_key: str,
@@ -868,6 +832,66 @@ def extract_you(
         ))
     return {"provider": "you", "results": results}
 
+def extract_parallel(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://api.parallel.ai/v1/extract",
+    timeout: int = 60,
+    client_model: Optional[str] = None,
+    max_chars_total: int = 12000,
+    max_chars_per_result: int = 6000,
+) -> dict:
+    """Extract URL content using Parallel Extract.
+
+    Parallel returns excerpts by default; request full_content explicitly and
+    normalize it into the common markdown/content shape. HTML/raw-image options
+    are accepted for tool compatibility but ignored when unsupported upstream.
+    """
+    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
+    body: Dict[str, Any] = {
+        "urls": urls,
+        "max_chars_total": max_chars_total,
+        "advanced_settings": {
+            "full_content": {"max_chars_per_result": max_chars_per_result}
+        },
+    }
+    if client_model:
+        body["client_model"] = client_model
+
+    data = make_request(api_url, headers, body, timeout=timeout)
+    results: List[Dict[str, Any]] = []
+    for item in data.get("results", []) or []:
+        url = item.get("url") or ""
+        excerpts = item.get("excerpts") or []
+        excerpt_text = "\n\n".join(
+            (ex.get("text") or ex.get("content") or "") if isinstance(ex, dict) else str(ex)
+            for ex in excerpts
+        ).strip()
+        content = item.get("full_content") or item.get("markdown") or item.get("content") or excerpt_text
+        results.append(_normalize_extract_result(
+            "parallel",
+            url,
+            title=item.get("title", ""),
+            content=content,
+            raw_content=content,
+            excerpts=excerpts or None,
+            metadata={k: v for k, v in item.items() if k not in {"url", "title", "full_content", "markdown", "content", "excerpts"}},
+        ))
+    for failed in data.get("errors", []) or []:
+        failed_url = failed.get("url", "") if isinstance(failed, dict) else ""
+        results.append(_normalize_extract_result("parallel", failed_url, error=str(failed)))
+    return {
+        "provider": "parallel",
+        "results": results,
+        "metadata": {
+            "search_id": data.get("search_id"),
+            "session_id": data.get("session_id"),
+        },
+    }
 
 def search_exa(
     query: str,
@@ -1037,320 +1061,8 @@ def search_exa(
         "results": results,
         "images": [],
         "answer": answer,
+        "metadata": {},
     }
-
-
-# =============================================================================
-# You.com (LLM-Ready Web & News Search)
-# =============================================================================
-# =============================================================================
-# You.com (LLM-Ready Web & News Search)
-# =============================================================================
-
-def search_you(
-    query: str,
-    api_key: str,
-    max_results: int = 5,
-    country: str = "US",
-    language: str = "en",
-    freshness: Optional[str] = None,
-    safesearch: str = "moderate",
-    include_news: bool = True,
-    livecrawl: Optional[str] = None,
-) -> dict:
-    """Search using You.com (LLM-Ready Web & News Search).
-    
-    You.com excels at:
-    - RAG applications with pre-extracted snippets
-    - Combined web + news results in one call
-    - Real-time information with automatic news classification
-    - Clean, structured JSON optimized for AI consumption
-    
-    Args:
-        query: Search query
-        api_key: You.com API key
-        max_results: Maximum results to return (default 5, max 100)
-        country: ISO 3166-2 country code (e.g., US, GB, DE)
-        language: BCP 47 language code (e.g., en, de, fr)
-        freshness: Filter by recency: day, week, month, year, or YYYY-MM-DDtoYYYY-MM-DD
-        safesearch: Content filter: off, moderate (default), strict
-        include_news: Include news results when relevant (default True)
-        livecrawl: Fetch full page content: "web", "news", or "all"
-    """
-    endpoint = "https://ydc-index.io/v1/search"
-    
-    # Build query parameters
-    params = {
-        "query": query,
-        "count": max_results,
-        "safesearch": safesearch,
-    }
-    
-    if country:
-        params["country"] = country.upper()
-    if language:
-        params["language"] = language.upper()
-    if freshness:
-        params["freshness"] = freshness
-    if livecrawl:
-        params["livecrawl"] = livecrawl
-        params["livecrawl_formats"] = "markdown"
-    
-    # Build URL with query params (URL-encode values)
-    query_string = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
-    url = f"{endpoint}?{query_string}"
-    
-    headers = {
-        "X-API-KEY": api_key,
-        "Accept": "application/json",
-        "User-Agent": "ClawdBot-WebSearchPlus/2.4",
-    }
-    
-    # Make GET request (You.com uses GET, not POST)
-    from urllib.request import Request, urlopen
-    req = Request(url, headers=headers, method="GET")
-    
-    try:
-        with urlopen(req, timeout=30) as response:
-            data = _read_json_response(response)
-    except HTTPError as e:
-        error_body = _read_response_body(e).decode("utf-8") if e.fp else str(e)
-        try:
-            error_json = json.loads(error_body)
-            error_detail = error_json.get("error") or error_json.get("message") or error_body
-        except json.JSONDecodeError:
-            error_detail = error_body[:500]
-        
-        error_messages = {
-            401: "Invalid or expired API key. Get one at https://api.you.com",
-            403: "Access forbidden. Check your API key permissions.",
-            429: "Rate limit exceeded. Please wait and try again.",
-            500: "You.com server error. Try again later.",
-            503: "You.com service unavailable."
-        }
-        friendly_msg = error_messages.get(e.code, f"API error: {error_detail}")
-        raise ProviderRequestError(f"{friendly_msg} (HTTP {e.code})", status_code=e.code, transient=e.code in TRANSIENT_HTTP_CODES)
-    except URLError as e:
-        reason = str(getattr(e, "reason", e))
-        is_timeout = "timed out" in reason.lower()
-        raise ProviderRequestError(f"Network error: {reason}. Check your internet connection.", transient=is_timeout)
-    except TimeoutError:
-        raise ProviderRequestError("You.com request timed out after 30s.", transient=True)
-    
-    # Parse results
-    results_data = data.get("results", {})
-    web_results = results_data.get("web", [])
-    news_results = results_data.get("news", []) if include_news else []
-    metadata = data.get("metadata", {})
-    
-    # Normalize web results
-    results = []
-    for i, item in enumerate(web_results[:max_results]):
-        snippets = item.get("snippets", [])
-        snippet = snippets[0] if snippets else item.get("description", "")
-        
-        result = {
-            "title": item.get("title", ""),
-            "url": item.get("url", ""),
-            "snippet": snippet,
-            "score": round(1.0 - i * 0.05, 3),  # Assign descending score
-            "date": item.get("page_age"),
-            "source": "web",
-        }
-        
-        # Include additional snippets if available (great for RAG)
-        if len(snippets) > 1:
-            result["additional_snippets"] = snippets[1:3]
-        
-        # Include thumbnail and favicon for UI display
-        if item.get("thumbnail_url"):
-            result["thumbnail"] = item["thumbnail_url"]
-        if item.get("favicon_url"):
-            result["favicon"] = item["favicon_url"]
-        
-        # Include live-crawled content if available
-        if item.get("contents"):
-            result["raw_content"] = item["contents"].get("markdown") or item["contents"].get("html", "")
-        
-        results.append(result)
-    
-    # Add news results (if any)
-    news = []
-    for item in news_results[:5]:
-        news.append({
-            "title": item.get("title", ""),
-            "url": item.get("url", ""),
-            "snippet": item.get("description", ""),
-            "date": item.get("page_age"),
-            "thumbnail": item.get("thumbnail_url"),
-            "source": "news",
-        })
-    
-    # Build answer from best snippets
-    answer = ""
-    if results:
-        # Combine top snippets for LLM context
-        top_snippets = []
-        for r in results[:3]:
-            if r.get("snippet"):
-                top_snippets.append(r["snippet"])
-        answer = " ".join(top_snippets)[:1000]
-    
-    return {
-        "provider": "you",
-        "query": query,
-        "results": results,
-        "news": news,
-        "images": [],
-        "answer": answer,
-        "metadata": {
-            "search_uuid": metadata.get("search_uuid"),
-            "latency": metadata.get("latency"),
-        }
-    }
-
-
-# =============================================================================
-# SearXNG (Privacy-First Meta-Search)
-# =============================================================================
-
-def search_searxng(
-    query: str,
-    instance_url: str,
-    max_results: int = 5,
-    categories: Optional[List[str]] = None,
-    engines: Optional[List[str]] = None,
-    language: str = "en",
-    time_range: Optional[str] = None,
-    safesearch: int = 0,
-) -> dict:
-    """Search using SearXNG (self-hosted privacy-first meta-search).
-    
-    SearXNG excels at:
-    - Privacy-preserving search (no tracking, no profiling)
-    - Multi-source aggregation (70+ upstream engines)
-    - $0 API cost (self-hosted)
-    - Diverse perspectives from multiple search engines
-    
-    Args:
-        query: Search query
-        instance_url: URL of your SearXNG instance (required)
-        max_results: Maximum results to return (default 5)
-        categories: Search categories (general, images, news, videos, etc.)
-        engines: Specific engines to use (google, bing, duckduckgo, etc.)
-        language: Language code (e.g., en, de, fr)
-        time_range: Filter by recency: day, week, month, year
-        safesearch: Content filter: 0=off, 1=moderate, 2=strict
-    
-    Note:
-        Requires a self-hosted SearXNG instance with JSON format enabled.
-        See: https://docs.searxng.org/admin/installation.html
-    """
-    # Build URL with query parameters
-    params = {
-        "q": query,
-        "format": "json",
-        "language": language,
-        "safesearch": str(safesearch),
-    }
-    
-    if categories:
-        params["categories"] = ",".join(categories)
-    if engines:
-        params["engines"] = ",".join(engines)
-    if time_range:
-        params["time_range"] = time_range
-    
-    # Build URL — instance_url comes from operator-controlled config/env only
-    # (validated by _validate_searxng_url), not from agent/LLM input
-    base_url = instance_url.rstrip("/")
-    query_string = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
-    url = f"{base_url}/search?{query_string}"
-    
-    headers = {
-        "User-Agent": "ClawdBot-WebSearchPlus/2.5",
-        "Accept": "application/json",
-    }
-    
-    # Make GET request
-    req = Request(url, headers=headers, method="GET")
-    
-    try:
-        with urlopen(req, timeout=30) as response:
-            data = _read_json_response(response)
-    except HTTPError as e:
-        error_body = _read_response_body(e).decode("utf-8") if e.fp else str(e)
-        try:
-            error_json = json.loads(error_body)
-            error_detail = error_json.get("error") or error_json.get("message") or error_body
-        except json.JSONDecodeError:
-            error_detail = error_body[:500]
-        
-        error_messages = {
-            403: "JSON API disabled on this SearXNG instance. Enable 'json' in search.formats in settings.yml",
-            404: "SearXNG instance not found. Check your instance URL.",
-            500: "SearXNG server error. Check instance health.",
-            503: "SearXNG service unavailable."
-        }
-        friendly_msg = error_messages.get(e.code, f"SearXNG error: {error_detail}")
-        raise ProviderRequestError(f"{friendly_msg} (HTTP {e.code})", status_code=e.code, transient=e.code in TRANSIENT_HTTP_CODES)
-    except URLError as e:
-        reason = str(getattr(e, "reason", e))
-        is_timeout = "timed out" in reason.lower()
-        raise ProviderRequestError(f"Cannot reach SearXNG instance at {instance_url}. Error: {reason}", transient=is_timeout)
-    except TimeoutError:
-        raise ProviderRequestError("SearXNG request timed out after 30s. Check instance health.", transient=True)
-    
-    # Parse results
-    raw_results = data.get("results", [])
-    
-    # Normalize results to unified format
-    results = []
-    engines_used = set()
-    for i, item in enumerate(raw_results[:max_results]):
-        engine = item.get("engine", "unknown")
-        engines_used.add(engine)
-        
-        results.append({
-            "title": item.get("title", ""),
-            "url": item.get("url", ""),
-            "snippet": item.get("content", ""),
-            "score": round(item.get("score", 1.0 - i * 0.05), 3),
-            "engine": engine,
-            "category": item.get("category", "general"),
-            "date": item.get("publishedDate"),
-        })
-    
-    # Build answer from answers, infoboxes, or first result
-    answer = ""
-    if data.get("answers"):
-        answer = data["answers"][0] if isinstance(data["answers"][0], str) else str(data["answers"][0])
-    elif data.get("infoboxes"):
-        infobox = data["infoboxes"][0]
-        answer = infobox.get("content", "") or infobox.get("infobox", "")
-    elif results:
-        answer = results[0]["snippet"]
-    
-    return {
-        "provider": "searxng",
-        "query": query,
-        "results": results,
-        "images": [],
-        "answer": answer,
-        "suggestions": data.get("suggestions", []),
-        "corrections": data.get("corrections", []),
-        "metadata": {
-            "number_of_results": data.get("number_of_results"),
-            "engines_used": list(engines_used),
-            "instance_url": instance_url,
-        }
-    }
-
-
-# =============================================================================
-# CLI
-# =============================================================================
-
 
 def search_parallel(
     query: str,
@@ -1417,70 +1129,6 @@ def search_parallel(
             "result_count_raw": len(raw_results),
         },
     }
-
-
-def extract_parallel(
-    urls: List[str],
-    api_key: str,
-    output_format: str = "markdown",
-    include_images: bool = False,
-    include_raw_html: bool = False,
-    render_js: bool = False,
-    api_url: str = "https://api.parallel.ai/v1/extract",
-    timeout: int = 60,
-    client_model: Optional[str] = None,
-    max_chars_total: int = 12000,
-    max_chars_per_result: int = 6000,
-) -> dict:
-    """Extract URL content using Parallel Extract.
-
-    Parallel returns excerpts by default; request full_content explicitly and
-    normalize it into the common markdown/content shape. HTML/raw-image options
-    are accepted for tool compatibility but ignored when unsupported upstream.
-    """
-    _ = output_format, include_images, include_raw_html, render_js
-    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
-    body: Dict[str, Any] = {
-        "urls": urls,
-        "max_chars_total": max_chars_total,
-        "advanced_settings": {
-            "full_content": {"max_chars_per_result": max_chars_per_result}
-        },
-    }
-    if client_model:
-        body["client_model"] = client_model
-
-    data = make_request(api_url, headers, body, timeout=timeout)
-    results: List[Dict[str, Any]] = []
-    for item in data.get("results", []) or []:
-        url = item.get("url") or ""
-        excerpts = item.get("excerpts") or []
-        excerpt_text = "\n\n".join(
-            (ex.get("text") or ex.get("content") or "") if isinstance(ex, dict) else str(ex)
-            for ex in excerpts
-        ).strip()
-        content = item.get("full_content") or item.get("markdown") or item.get("content") or excerpt_text
-        results.append(_normalize_extract_result(
-            "parallel",
-            url,
-            title=item.get("title", ""),
-            content=content,
-            raw_content=content,
-            excerpts=excerpts or None,
-            metadata={k: v for k, v in item.items() if k not in {"url", "title", "full_content", "markdown", "content", "excerpts"}},
-        ))
-    for failed in data.get("errors", []) or []:
-        failed_url = failed.get("url", "") if isinstance(failed, dict) else ""
-        results.append(_normalize_extract_result("parallel", failed_url, error=str(failed)))
-    return {
-        "provider": "parallel",
-        "results": results,
-        "metadata": {
-            "search_id": data.get("search_id"),
-            "session_id": data.get("session_id"),
-        },
-    }
-
 
 def search_perplexity(
     query: str,
@@ -1578,5 +1226,299 @@ def search_perplexity(
         "metadata": {
             "model": model,
             "usage": data.get("usage", {}),
+        }
+    }
+
+def search_you(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    country: str = "US",
+    language: str = "en",
+    freshness: Optional[str] = None,
+    safesearch: str = "moderate",
+    include_news: bool = True,
+    livecrawl: Optional[str] = None,
+) -> dict:
+    """Search using You.com (LLM-Ready Web & News Search).
+
+    You.com excels at:
+    - RAG applications with pre-extracted snippets
+    - Combined web + news results in one call
+    - Real-time information with automatic news classification
+    - Clean, structured JSON optimized for AI consumption
+
+    Args:
+        query: Search query
+        api_key: You.com API key
+        max_results: Maximum results to return (default 5, max 100)
+        country: ISO 3166-2 country code (e.g., US, GB, DE)
+        language: BCP 47 language code (e.g., en, de, fr)
+        freshness: Filter by recency: day, week, month, year, or YYYY-MM-DDtoYYYY-MM-DD
+        safesearch: Content filter: off, moderate (default), strict
+        include_news: Include news results when relevant (default True)
+        livecrawl: Fetch full page content: "web", "news", or "all"
+    """
+    endpoint = "https://ydc-index.io/v1/search"
+
+    # Build query parameters
+    params = {
+        "query": query,
+        "count": max_results,
+        "safesearch": safesearch,
+    }
+
+    if country:
+        params["country"] = country.upper()
+    if language:
+        params["language"] = language.upper()
+    if freshness:
+        params["freshness"] = freshness
+    if livecrawl:
+        params["livecrawl"] = livecrawl
+        params["livecrawl_formats"] = "markdown"
+
+    # Build URL with query params (URL-encode values)
+    query_string = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
+    url = f"{endpoint}?{query_string}"
+
+    headers = {
+        "X-API-KEY": api_key,
+        "Accept": "application/json",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
+
+    # Make GET request (You.com uses GET, not POST)
+    from urllib.request import Request, urlopen
+    req = Request(url, headers=headers, method="GET")
+
+    try:
+        with urlopen(req, timeout=30) as response:
+            data = _read_json_response(response)
+    except HTTPError as e:
+        error_body = _read_response_body(e).decode("utf-8") if e.fp else str(e)
+        try:
+            error_json = json.loads(error_body)
+            error_detail = error_json.get("error") or error_json.get("message") or error_body
+        except json.JSONDecodeError:
+            error_detail = error_body[:500]
+
+        error_messages = {
+            401: "Invalid or expired API key. Get one at https://api.you.com",
+            403: "Access forbidden. Check your API key permissions.",
+            429: "Rate limit exceeded. Please wait and try again.",
+            500: "You.com server error. Try again later.",
+            503: "You.com service unavailable."
+        }
+        friendly_msg = error_messages.get(e.code, f"API error: {error_detail}")
+        raise ProviderRequestError(f"{friendly_msg} (HTTP {e.code})", status_code=e.code, transient=e.code in TRANSIENT_HTTP_CODES)
+    except URLError as e:
+        reason = str(getattr(e, "reason", e))
+        is_timeout = "timed out" in reason.lower()
+        raise ProviderRequestError(f"Network error: {reason}. Check your internet connection.", transient=is_timeout)
+    except TimeoutError:
+        raise ProviderRequestError("You.com request timed out after 30s.", transient=True)
+
+    # Parse results
+    results_data = data.get("results", {})
+    web_results = results_data.get("web", [])
+    news_results = results_data.get("news", []) if include_news else []
+    metadata = data.get("metadata", {})
+
+    # Normalize web results
+    results = []
+    for i, item in enumerate(web_results[:max_results]):
+        snippets = item.get("snippets", [])
+        snippet = snippets[0] if snippets else item.get("description", "")
+
+        result = {
+            "title": item.get("title", ""),
+            "url": item.get("url", ""),
+            "snippet": snippet,
+            "score": round(1.0 - i * 0.05, 3),  # Assign descending score
+            "date": item.get("page_age"),
+            "source": "web",
+        }
+
+        # Include additional snippets if available (great for RAG)
+        if len(snippets) > 1:
+            result["additional_snippets"] = snippets[1:3]
+
+        # Include thumbnail and favicon for UI display
+        if item.get("thumbnail_url"):
+            result["thumbnail"] = item["thumbnail_url"]
+        if item.get("favicon_url"):
+            result["favicon"] = item["favicon_url"]
+
+        # Include live-crawled content if available
+        if item.get("contents"):
+            result["raw_content"] = item["contents"].get("markdown") or item["contents"].get("html", "")
+
+        results.append(result)
+
+    # Add news results (if any)
+    news = []
+    for item in news_results[:5]:
+        news.append({
+            "title": item.get("title", ""),
+            "url": item.get("url", ""),
+            "snippet": item.get("description", ""),
+            "date": item.get("page_age"),
+            "thumbnail": item.get("thumbnail_url"),
+            "source": "news",
+        })
+
+    # Build answer from best snippets
+    answer = ""
+    if results:
+        # Combine top snippets for LLM context
+        top_snippets = []
+        for r in results[:3]:
+            if r.get("snippet"):
+                top_snippets.append(r["snippet"])
+        answer = " ".join(top_snippets)[:1000]
+
+    return {
+        "provider": "you",
+        "query": query,
+        "results": results,
+        "news": news,
+        "images": [],
+        "answer": answer,
+        "metadata": {
+            "search_uuid": metadata.get("search_uuid"),
+            "latency": metadata.get("latency"),
+        }
+    }
+
+def search_searxng(
+    query: str,
+    instance_url: str,
+    max_results: int = 5,
+    categories: Optional[List[str]] = None,
+    engines: Optional[List[str]] = None,
+    language: str = "en",
+    time_range: Optional[str] = None,
+    safesearch: int = 0,
+) -> dict:
+    """Search using SearXNG (self-hosted privacy-first meta-search).
+
+    SearXNG excels at:
+    - Privacy-preserving search (no tracking, no profiling)
+    - Multi-source aggregation (70+ upstream engines)
+    - $0 API cost (self-hosted)
+    - Diverse perspectives from multiple search engines
+
+    Args:
+        query: Search query
+        instance_url: URL of your SearXNG instance (required)
+        max_results: Maximum results to return (default 5)
+        categories: Search categories (general, images, news, videos, etc.)
+        engines: Specific engines to use (google, bing, duckduckgo, etc.)
+        language: Language code (e.g., en, de, fr)
+        time_range: Filter by recency: day, week, month, year
+        safesearch: Content filter: 0=off, 1=moderate, 2=strict
+
+    Note:
+        Requires a self-hosted SearXNG instance with JSON format enabled.
+        See: https://docs.searxng.org/admin/installation.html
+    """
+    # Build URL with query parameters
+    params = {
+        "q": query,
+        "format": "json",
+        "language": language,
+        "safesearch": str(safesearch),
+    }
+
+    if categories:
+        params["categories"] = ",".join(categories)
+    if engines:
+        params["engines"] = ",".join(engines)
+    if time_range:
+        params["time_range"] = time_range
+
+    # Build URL — instance_url comes from operator-controlled config/env only
+    # (validated by _validate_searxng_url), not from agent/LLM input
+    base_url = instance_url.rstrip("/")
+    query_string = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
+    url = f"{base_url}/search?{query_string}"
+
+    headers = {
+        "User-Agent": DEFAULT_USER_AGENT,
+        "Accept": "application/json",
+    }
+
+    # Make GET request
+    req = Request(url, headers=headers, method="GET")
+
+    try:
+        with urlopen(req, timeout=30) as response:
+            data = _read_json_response(response)
+    except HTTPError as e:
+        error_body = _read_response_body(e).decode("utf-8") if e.fp else str(e)
+        try:
+            error_json = json.loads(error_body)
+            error_detail = error_json.get("error") or error_json.get("message") or error_body
+        except json.JSONDecodeError:
+            error_detail = error_body[:500]
+
+        error_messages = {
+            403: "JSON API disabled on this SearXNG instance. Enable 'json' in search.formats in settings.yml",
+            404: "SearXNG instance not found. Check your instance URL.",
+            500: "SearXNG server error. Check instance health.",
+            503: "SearXNG service unavailable."
+        }
+        friendly_msg = error_messages.get(e.code, f"SearXNG error: {error_detail}")
+        raise ProviderRequestError(f"{friendly_msg} (HTTP {e.code})", status_code=e.code, transient=e.code in TRANSIENT_HTTP_CODES)
+    except URLError as e:
+        reason = str(getattr(e, "reason", e))
+        is_timeout = "timed out" in reason.lower()
+        raise ProviderRequestError(f"Cannot reach SearXNG instance at {instance_url}. Error: {reason}", transient=is_timeout)
+    except TimeoutError:
+        raise ProviderRequestError("SearXNG request timed out after 30s. Check instance health.", transient=True)
+
+    # Parse results
+    raw_results = data.get("results", [])
+
+    # Normalize results to unified format
+    results = []
+    engines_used = set()
+    for i, item in enumerate(raw_results[:max_results]):
+        engine = item.get("engine", "unknown")
+        engines_used.add(engine)
+
+        results.append({
+            "title": item.get("title", ""),
+            "url": item.get("url", ""),
+            "snippet": item.get("content", ""),
+            "score": round(item.get("score", 1.0 - i * 0.05), 3),
+            "engine": engine,
+            "category": item.get("category", "general"),
+            "date": item.get("publishedDate"),
+        })
+
+    # Build answer from answers, infoboxes, or first result
+    answer = ""
+    if data.get("answers"):
+        answer = data["answers"][0] if isinstance(data["answers"][0], str) else str(data["answers"][0])
+    elif data.get("infoboxes"):
+        infobox = data["infoboxes"][0]
+        answer = infobox.get("content", "") or infobox.get("infobox", "")
+    elif results:
+        answer = results[0]["snippet"]
+
+    return {
+        "provider": "searxng",
+        "query": query,
+        "results": results,
+        "images": [],
+        "answer": answer,
+        "suggestions": data.get("suggestions", []),
+        "corrections": data.get("corrections", []),
+        "metadata": {
+            "number_of_results": data.get("number_of_results"),
+            "engines_used": list(engines_used),
+            "instance_url": instance_url,
         }
     }

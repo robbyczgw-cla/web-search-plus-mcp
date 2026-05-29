@@ -1,37 +1,24 @@
-"""Routing analysis helpers for Web Search Plus MCP."""
+"""Routing v2 query analysis for Web Search Plus."""
 
-import hashlib
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-try:  # pragma: no cover - import style depends on package/script execution
+try:
     from .config import DEFAULT_CONFIG, get_api_key
 except ImportError:  # pragma: no cover
     from config import DEFAULT_CONFIG, get_api_key  # type: ignore
+try:
+    from .provider_registry import DEFAULT_PROVIDER_PRIORITY
+except ImportError:  # pragma: no cover
+    from provider_registry import DEFAULT_PROVIDER_PRIORITY  # type: ignore
+try:
+    from .quality import _choose_tie_winner
+except ImportError:  # pragma: no cover
+    from quality import _choose_tie_winner  # type: ignore
 
 
 ROUTING_POLICY = "routing-v2"
 
-def _choose_tie_winner(query: str, winners: List[str], priority: List[str]) -> str:
-    """Break score ties deterministically per query.
-
-    Uses a stable hash of the query to distribute ties across providers while
-    keeping the same query reproducible across runs.
-    """
-    ordered_winners = [p for p in priority if p in winners]
-    if not ordered_winners:
-        ordered_winners = sorted(winners)
-    if len(ordered_winners) == 1:
-        return ordered_winners[0]
-    digest = hashlib.sha256(f"{query}|{'|'.join(ordered_winners)}".encode("utf-8")).hexdigest()
-    idx = int(digest[:8], 16) % len(ordered_winners)
-    return ordered_winners[idx]
-
-
-
-# =============================================================================
-# Intelligent Auto-Routing Engine
-# =============================================================================
 
 class QueryAnalyzer:
     """
@@ -951,7 +938,7 @@ class QueryAnalyzer:
         max_score = max(available.values())
 
         # Handle ties using deterministic per-query distribution
-        priority = self.auto_config.get("provider_priority", ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"])
+        priority = self.auto_config.get("provider_priority", list(DEFAULT_PROVIDER_PRIORITY))
         winners = [p for p, s in available.items() if s == max_score]
 
         if len(winners) > 1:
@@ -1033,7 +1020,6 @@ class QueryAnalyzer:
             }
         }
 
-
 def auto_route_provider(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Intelligently route query to the best provider.
@@ -1063,7 +1049,6 @@ def auto_route_provider(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
         }
     analyzer = QueryAnalyzer(config)
     return analyzer.route(query)
-
 
 def explain_routing(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -1122,9 +1107,6 @@ def explain_routing(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
             if get_api_key(p, config) and p not in config.get("auto_routing", {}).get("disabled_providers", []) and _provider_auto_allowed(p, config.get("auto_routing", {}))
         ]
     }
-
-
-
 
 def _provider_auto_allowed(provider: str, auto_config: Dict[str, Any]) -> bool:
     """Return whether a configured provider may be selected by auto-routing/fallback.

@@ -71,11 +71,40 @@ def test_serpbase_can_be_called_explicitly(monkeypatch):
 def test_server_schema_exposes_serpbase_last_and_auto_allow_metadata():
     provider_enum = next(t for t in asyncio.run(server.list_tools()) if t.name == "web_search").inputSchema["properties"]["provider"]["enum"]
 
-    assert provider_enum[-2:] == ["serpbase", "querit"]
+    assert provider_enum == [
+        "auto",
+        "serper",
+        "serpbase",
+        "brave",
+        "tavily",
+        "querit",
+        "linkup",
+        "exa",
+        "firecrawl",
+        "parallel",
+        "perplexity",
+        "kilo-perplexity",
+        "you",
+        "searxng",
+    ]
     assert server.SEARCH_PROVIDERS["serpbase"]["env"] == "SERPBASE_API_KEY"
     assert server.SEARCH_PROVIDERS["serpbase"]["auto_allow"] is False
     assert server.SEARCH_PROVIDERS["querit"]["auto_allow"] is False
-    assert server.ROUTING_PROVIDER_ORDER[-2:] == ["serpbase", "querit"]
+    assert server.ROUTING_PROVIDER_ORDER == [
+        "you",
+        "serper",
+        "exa",
+        "firecrawl",
+        "tavily",
+        "linkup",
+        "parallel",
+        "brave",
+        "serpbase",
+        "querit",
+        "kilo-perplexity",
+        "perplexity",
+        "searxng",
+    ]
 
     config = server._default_behavior_config()
     assert config["auto_routing"]["auto_allow"] == {

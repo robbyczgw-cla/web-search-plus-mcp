@@ -96,7 +96,7 @@ def test_parallel_is_explicit_only_by_default(monkeypatch):
 def test_server_parallel_metadata_and_default_provider_append():
     assert server.SEARCH_PROVIDERS["parallel"] == {
         "env": "PARALLEL_API_KEY",
-        "capabilities": ["search", "extract"],
+        "capabilities": ["search", "extract", "citations"],
         "auto_allow": False,
     }
     assert server.EXTRACT_PROVIDERS == ["tavily", "exa", "linkup", "parallel", "firecrawl", "you"]
