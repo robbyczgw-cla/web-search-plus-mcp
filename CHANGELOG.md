@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-05-29
+
+### Added
+- Sync Web Search Plus v2.3 provider registry into the MCP package so provider metadata, schemas, defaults, guarded auto-routing, and capability labels share one source of truth.
+- Add provider health/doctor, cache, retry, quality, routing, search, and extraction parity updates from the v2.3 engine family.
+
+### Changed
+- Generate MCP provider enums and server metadata from the shared registry instead of hand-maintained static lists.
+- Align provider ordering, auto-routing behavior, and guarded explicit-only providers with Web Search Plus v2.3.
+- Bump package/server version to `0.10.0`.
+
+### Tests
+- Add/refresh regression coverage for registry-derived schemas, SerpBase/guarded auto-allow behavior, Parallel metadata, HTTP content encoding, and compatibility shims.
+- Release validation includes compileall, Ruff, 44 pytest tests, wheel build, clean-venv install, MCP stdio handshake/list-tools, doctor, no-key error path, and live search/extract smoke tests.
+
 ## [0.9.0] - 2026-05-19
 
 ### Added

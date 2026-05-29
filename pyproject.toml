@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "web-search-plus-mcp"
 version = "0.10.0"
-description = "Multi-provider web search, Parallel-aware extraction, and onboarding for MCP clients"
+description = "Registry-backed multi-provider web search, extraction, quality reports, and onboarding for MCP clients"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"

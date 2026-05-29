@@ -14,14 +14,14 @@
 
 `web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the same provider family used by the Hermes/OpenClaw Web Search Plus tools.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`0.9.0`) while tracking the Web Search Plus v2.2 engine family. The plugin package is versioned separately as `hermes-web-search-plus v2.2.x`.
+Version note: `web-search-plus-mcp` uses its own MCP package version (`0.10.0`) while tracking the Web Search Plus v2.3 engine family. The plugin package is versioned separately as `hermes-web-search-plus v2.3.x`.
 
 ## ✨ Features
 
-- **13 search providers** — Serper, Brave, Tavily, Exa, Linkup, Firecrawl, Parallel, native Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, Querit
+- **13 search providers + auto-routing** — provider metadata, schemas, defaults, and guarded/auto behavior are generated from the shared Web Search Plus provider registry
 - **6 extract providers** — Tavily, Exa, Linkup, Parallel, Firecrawl, You.com
-- **Routing v2 auto-routing** — class-aware routing for multilingual/current, docs/API, arXiv, CVE/security, local/shopping, OSS discovery, and answer/synthesis queries
-- **Quality reports** — optional routing/result diagnostics
+- **Routing v2.3 auto-routing** — registry-backed routing for multilingual/current, docs/API, arXiv, CVE/security, local/shopping, OSS discovery, and answer/synthesis queries
+- **Quality reports + doctor checks** — optional routing/result diagnostics plus compact offline health checks for configured providers/cache
 - **Research mode** — opt-in multi-provider search + top-source extraction with a time budget
 - **Onboarding CLI** — `status`, `list`, `setup`, and persistent routing `config` helpers for MCP env/config wiring
 - **Zero-install run** — `uvx web-search-plus-mcp`
@@ -72,7 +72,7 @@ Persistent routing preferences live in `config.json` rather than `.env`:
 web-search-plus-mcp config show
 web-search-plus-mcp config set-default you        # strict fixed-provider mode
 web-search-plus-mcp config set-routing on         # restore Routing v2 auto-routing
-web-search-plus-mcp config set-priority you,serper,exa,firecrawl,tavily,linkup,parallel
+web-search-plus-mcp config set-priority you,serper,exa,firecrawl,tavily,linkup,parallel,brave
 web-search-plus-mcp config set-fallback serper
 web-search-plus-mcp config disable perplexity
 web-search-plus-mcp config enable perplexity
@@ -147,7 +147,7 @@ You can also place a `.env` file next to the package/project with the same varia
 
 ## 🛠 MCP Tool Reference
 
-This MCP server exposes stable `web_search` and `web_extract` tools. The old beta `web_answer` tool was removed to match Web Search Plus v2.1: use `web_search` for source discovery and let the MCP host synthesize from results when needed.
+This MCP server exposes stable `web_search` and `web_extract` tools. The old beta `web_answer` tool was removed to match Web Search Plus v2.1+: use `web_search` for source discovery and let the MCP host synthesize from results when needed.
 
 The Hermes plugin exposes the same stable capability as `web_search_plus` and `web_extract_plus`; the names differ because MCP and Hermes use different tool surfaces.
 

@@ -4,7 +4,7 @@
     "robbyczgw-cla"
   ],
   "name": "web-search-plus-mcp",
-  "description": "Multi-provider web search, Parallel-aware extraction, and onboarding for MCP server operators.",
+  "description": "Registry-backed multi-provider web search, extraction, quality reports, and onboarding for MCP server operators.",
   "repository": "https://github.com/robbyczgw-cla/web-search-plus-mcp",
   "homepage": "https://github.com/robbyczgw-cla/web-search-plus-mcp",
   "license": "MIT",
@@ -25,7 +25,7 @@
   "tools": [
     {
       "name": "web_search",
-      "description": "Search the web using Web Search Plus Routing v2 multi-provider routing. Supports You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, native Perplexity, Kilo Perplexity, SearXNG, SerpBase, and Querit. Brave, Parallel, SerpBase, Querit, Perplexity, and Kilo Perplexity are explicit-only by default and are not auto-routed unless auto_allow is changed.",
+      "description": "Search the web using Web Search Plus v2.3 registry-backed multi-provider routing. Supports You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, native Perplexity, Kilo Perplexity, SearXNG, SerpBase, and Querit. Brave, Parallel, SerpBase, Querit, Perplexity, and Kilo Perplexity are explicit-only by default and are not auto-routed unless auto_allow is changed.",
       "inputSchema": {
         "type": "object",
         "properties": {
