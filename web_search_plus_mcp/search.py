@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 2.3.0-mcp
+Version: 2.4.0-mcp
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
 Brave Search, SerpBase, Querit, Parallel, Perplexity, Kilo Perplexity, SearXNG.
 Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com.
