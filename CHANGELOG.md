@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-06-08
+
+### Added
+- Sync Web Search Plus v2.4 engine improvements: bounded random retry-backoff jitter (`RETRY_JITTER_FRACTION`) so concurrent or repeated retries against a recovering provider no longer synchronize into bursts.
+- Guard provider-health read-modify-write with a process lock (`_HEALTH_LOCK`) so concurrent in-process provider calls (parallel research mode) cannot lose cooldown updates.
+- Research mode now queries its providers concurrently via a thread pool instead of sequentially, so wall-clock cost tracks the slowest provider rather than the sum of all of them. Result ordering stays deterministic (preserved by provider submission order) and the time budget still gates which providers launch and whether extraction runs.
+
+### Changed
+- Bump package/server version to `0.11.0` and align metadata/User-Agent with the Web Search Plus v2.4 engine family.
+
+### Notes
+- Hermes-plugin-only changes from v2.4.0 (in-process search/extract entry points, `~/.hermes/.env` profile loading via `env_loader`) are intentionally not synced: the MCP package runs `search.py` as a subprocess and ships its own standalone `.env` loading and onboarding surface.
+
 ## [0.10.0] - 2026-05-29
 
 ### Added

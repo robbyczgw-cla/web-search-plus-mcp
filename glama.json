@@ -25,7 +25,7 @@
   "tools": [
     {
       "name": "web_search",
-      "description": "Search the web using Web Search Plus v2.3 registry-backed multi-provider routing. Supports You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, native Perplexity, Kilo Perplexity, SearXNG, SerpBase, and Querit. Brave, Parallel, SerpBase, Querit, Perplexity, and Kilo Perplexity are explicit-only by default and are not auto-routed unless auto_allow is changed.",
+      "description": "Search the web using Web Search Plus v2.4 registry-backed multi-provider routing. Supports You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, native Perplexity, Kilo Perplexity, SearXNG, SerpBase, and Querit. Brave, Parallel, SerpBase, Querit, Perplexity, and Kilo Perplexity are explicit-only by default and are not auto-routed unless auto_allow is changed.",
       "inputSchema": {
         "type": "object",
         "properties": {
