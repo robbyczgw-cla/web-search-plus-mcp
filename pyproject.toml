@@ -11,19 +11,9 @@ license = { file = "LICENSE" }
 requires-python = ">=3.10"
 dependencies = ["mcp>=1.0.0"]
 
-[project.optional-dependencies]
-ui = ["fastapi>=0.100.0", "uvicorn>=0.23.0", "python-multipart>=0.0.6"]
-
 [project.scripts]
 web-search-plus-mcp = "web_search_plus_mcp.server:cli_main"
 
 [project.urls]
 Homepage = "https://github.com/robbyczgw-cla/web-search-plus-mcp"
 Repository = "https://github.com/robbyczgw-cla/web-search-plus-mcp"
-
-[tool.hatch.build.targets.wheel]
-packages = ["web_search_plus_mcp"]
-include = [
-  "web_search_plus_mcp/static/*",
-  "web_search_plus_mcp/static/**/*",
-]
