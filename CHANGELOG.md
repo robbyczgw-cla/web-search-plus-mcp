@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-06-16
+
+### Fixed
+- `extract_plus` now respects `disabled_providers` from `config.json`. Previously only search routing honored the disabled-provider list; extraction used a hardcoded provider order, causing disabled providers to still be called during URL extraction. Explicit provider selection still tries the requested provider first, matching search semantics.
+
+### Changed
+- Bump package/server version to `0.12.0` and align metadata/User-Agent with the Web Search Plus v2.5.1 engine family.
+- Update README version note to track v2.5 engine family.
+
+### Tests
+- Add tests covering auto-mode extraction skip and explicit-provider fallback behavior when providers are disabled in config.
+
 ## [0.11.0] - 2026-06-08
 
 ### Added
