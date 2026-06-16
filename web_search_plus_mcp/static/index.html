@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Search Plus UI</title>
+  <style>
+    :root {
+      --bg: #f8f9fa;
+      --card: #ffffff;
+      --text: #212529;
+      --muted: #6c757d;
+      --border: #dee2e6;
+      --primary: #0d6efd;
+      --primary-hover: #0b5ed7;
+      --success: #198754;
+      --danger: #dc3545;
+      --warning: #ffc107;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 2rem;
+      box-shadow: var(--shadow);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { margin: 0; font-size: 1.4rem; }
+    header .version { color: var(--muted); font-size: 0.9rem; }
+    main { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      box-shadow: var(--shadow);
+    }
+    .card h2 { margin-top: 0; font-size: 1.1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+    .row { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border); }
+    .row:last-child { border-bottom: none; }
+    .provider-name { font-weight: 500; }
+    .badge {
+      font-size: 0.75rem;
+      padding: 0.15rem 0.4rem;
+      border-radius: 999px;
+      background: var(--border);
+      color: var(--muted);
+      margin-left: 0.4rem;
+    }
+    .badge.search { background: #d1e7dd; color: #0f5132; }
+    .badge.extract { background: #cfe2ff; color: #084298; }
+    label.toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+    }
+    input[type="checkbox"] { width: 1.1rem; height: 1.1rem; }
+    button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      font-size: 0.95rem;
+    }
+    button:hover { background: var(--primary-hover); }
+    button.secondary { background: var(--border); color: var(--text); }
+    button.secondary:hover { background: #ced4da; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .actions { display: flex; gap: 0.75rem; margin-top: 1rem; flex-wrap: wrap; }
+    .status { margin-top: 0.75rem; padding: 0.75rem; border-radius: var(--radius); display: none; }
+    .status.success { background: #d1e7dd; color: #0f5132; display: block; }
+    .status.error { background: #f8d7da; color: #842029; display: block; }
+    pre {
+      background: #f1f3f5;
+      padding: 0.75rem;
+      border-radius: var(--radius);
+      overflow-x: auto;
+      font-size: 0.85rem;
+      max-height: 300px;
+    }
+    .field { margin-bottom: 0.75rem; }
+    .field label { display: block; font-weight: 500; margin-bottom: 0.25rem; }
+    .field input, .field select {
+      width: 100%;
+      padding: 0.4rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.95rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Web Search Plus <span style="font-weight:400;">Local UI</span></h1>
+    <div class="version">v<span id="version">-</span></div>
+  </header>
+
+  <main>
+    <div id="message" class="status"></div>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Routing Configuration</h2>
+        <p class="muted">Disable providers you do not want selected automatically. Explicit provider selection still works.</p>
+        <div id="providers"></div>
+        <div class="actions">
+          <button id="save-btn">Save config.json</button>
+          <button id="reset-btn" class="secondary">Reset to defaults</button>
+        </div>
+        <p class="muted" id="config-path"></p>
+      </section>
+
+      <section class="card">
+        <h2>Configuration Notes</h2>
+        <p class="muted">Changes are written to your local <code>config.json</code>. A timestamped backup is created automatically before every save.</p>
+        <p class="muted">Provider keys stay in environment variables; this UI only edits routing preferences.</p>
+        <p class="muted" id="config-path"></p>
+      </section>
+
+      <section class="card">
+        <h2>Provider Health</h2>
+        <p class="muted">Last known health state from provider_health.json.</p>
+        <button id="refresh-health" class="secondary">Refresh</button>
+        <pre id="health-result">Loading...</pre>
+      </section>
+
+      <section class="card">
+        <h2>Doctor</h2>
+        <p class="muted">Offline configuration check. No live provider calls.</p>
+        <div class="actions">
+          <button id="doctor-btn" class="secondary">Run offline doctor</button>
+          <button id="doctor-live-btn" class="secondary">Run live doctor</button>
+        </div>
+        <pre id="doctor-result" style="display:none;"></pre>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    let csrfToken = null;
+    let allProviders = {};
+    let currentConfig = {};
+
+    function show(msg, type='success') {
+      const el = document.getElementById('message');
+      el.textContent = msg;
+      el.className = 'status ' + type;
+      setTimeout(() => el.className = 'status', 3000);
+    }
+
+    async function api(path, opts={}) {
+      const headers = { 'Content-Type': 'application/json', ...opts.headers };
+      if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+      const res = await fetch(path, { ...opts, headers });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`${res.status}: ${text}`);
+      }
+      return res.json();
+    }
+
+    async function init() {
+      try {
+        const csrf = await api('/api/csrf');
+        csrfToken = csrf.csrf_token;
+        const version = await api('/api/version');
+        document.getElementById('version').textContent = version.version;
+        await loadConfig();
+        await loadHealth();
+      } catch (err) {
+        show('Failed to initialize UI: ' + err.message, 'error');
+      }
+    }
+
+    async function loadConfig() {
+      const data = await api('/api/config');
+      currentConfig = data.config;
+      allProviders = await api('/api/providers');
+      document.getElementById('config-path').textContent = data.config_path;
+      renderProviders(data.defaults.provider_priority, data.defaults.disabled_providers || []);
+    }
+
+    function renderProviders(defaultPriority, defaultDisabled) {
+      const container = document.getElementById('providers');
+      const priority = (currentConfig.auto_routing && currentConfig.auto_routing.provider_priority) || defaultPriority;
+      const disabled = new Set((currentConfig.auto_routing && currentConfig.auto_routing.disabled_providers) || []);
+      container.innerHTML = '';
+      priority.forEach(name => {
+        const meta = allProviders[name] || { capabilities: [] };
+        const caps = meta.capabilities.map(c => `<span class="badge ${c}">${c}</span>`).join('');
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.innerHTML = `
+          <div><span class="provider-name">${name}</span>${caps}</div>
+          <label class="toggle">
+            <input type="checkbox" data-provider="${name}" ${disabled.has(name) ? '' : 'checked'}>
+            enabled
+          </label>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    async function loadHealth() {
+      const data = await api('/api/health');
+      document.getElementById('health-result').textContent = JSON.stringify(data, null, 2);
+    }
+
+    document.getElementById('save-btn').addEventListener('click', async () => {
+      const enabled = Array.from(document.querySelectorAll('input[data-provider]:checked')).map(i => i.dataset.provider);
+      const all = Array.from(document.querySelectorAll('input[data-provider]')).map(i => i.dataset.provider);
+      const disabled = all.filter(p => !enabled.includes(p));
+      const update = {
+        auto_routing: {
+          ...(currentConfig.auto_routing || {}),
+          disabled_providers: disabled,
+        }
+      };
+      try {
+        await api('/api/config', { method: 'POST', body: JSON.stringify(update) });
+        show('Configuration saved');
+        await loadConfig();
+      } catch (err) {
+        show('Save failed: ' + err.message, 'error');
+      }
+    });
+
+    document.getElementById('reset-btn').addEventListener('click', async () => {
+      if (!confirm('Reset routing preferences to defaults?')) return;
+      const update = { auto_routing: { disabled_providers: [] } };
+      try {
+        await api('/api/config', { method: 'POST', body: JSON.stringify(update) });
+        show('Reset to defaults');
+        await loadConfig();
+      } catch (err) {
+        show('Reset failed: ' + err.message, 'error');
+      }
+    });
+
+    document.getElementById('refresh-health').addEventListener('click', loadHealth);
+
+    async function runDoctor(live=false) {
+      try {
+        const data = await api('/api/doctor?live=' + live);
+        document.getElementById('doctor-result').style.display = 'block';
+        document.getElementById('doctor-result').textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        show('Doctor failed: ' + err.message, 'error');
+      }
+    }
+    document.getElementById('doctor-btn').addEventListener('click', () => runDoctor(false));
+    document.getElementById('doctor-live-btn').addEventListener('click', () => runDoctor(true));
+
+    init();
+  </script>
+</body>
+</html>
