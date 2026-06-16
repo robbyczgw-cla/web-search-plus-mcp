@@ -443,6 +443,10 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     setup.add_argument("--json", action="store_true")
     config_p = sub.add_parser("config", help="Inspect or change routing preferences in config.json")
     config_p.add_argument("--config-path", help=f"Override config path instead of {CONFIG_ENV_VAR}/default")
+    ui_p = sub.add_parser("ui", help="Run the local web UI (requires [ui] extras)")
+    ui_p.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
+    ui_p.add_argument("--port", type=int, default=8080, help="Bind port (default: 8080)")
+    ui_p.add_argument("--config-path", help=f"Override config path instead of {CONFIG_ENV_VAR}/default")
     config_sub = config_p.add_subparsers(dest="config_command", required=True)
     config_sub.add_parser("show", help="Show current routing preferences")
     set_default = config_sub.add_parser("set-default", help="Use one provider strictly when auto-routing is off")
@@ -552,6 +556,17 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         updated, _ = _load_behavior_config(path)
         print(json.dumps({"config_path": str(path), "default_provider": updated.get("defaults", {}).get("provider"), "routing_preferences": updated.get("auto_routing", {})}, indent=2, ensure_ascii=False))
         return 0
+    if args.command == "ui":
+        if args.config_path:
+            os.environ[CONFIG_ENV_VAR] = args.config_path
+        try:
+            from .ui import run_ui
+        except ImportError as exc:
+            raise SystemExit(
+                "The web UI requires the optional [ui] dependencies. "
+                "Install: pip install 'web-search-plus-mcp[ui]'"
+            ) from exc
+        return run_ui(host=args.host, port=args.port)
     parser.error("unknown command")
     return 2
 
