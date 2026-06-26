@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import re
+import sys
 from typing import Any, Dict, List, Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
@@ -1522,3 +1523,122 @@ def search_searxng(
             "instance_url": instance_url,
         }
     }
+
+
+_KEENABLE_TIME_RANGE = {"hour": "1h", "day": "1d", "week": "7d", "month": "1mo", "year": "1y"}
+
+
+_KEENABLE_PUBLIC_WARNED = False
+
+
+def _warn_keenable_public_once() -> None:
+    global _KEENABLE_PUBLIC_WARNED
+    if _KEENABLE_PUBLIC_WARNED:
+        return
+    _KEENABLE_PUBLIC_WARNED = True
+    print(json.dumps({
+        "warning": (
+            "Keenable keyless public endpoint in use: queries and fetched URLs are sent "
+            "to an unauthenticated shared service (https://keenable.ai) with no SLA. "
+            "Set KEENABLE_API_KEY for the authenticated endpoint."
+        )
+    }), file=sys.stderr)
+
+
+def _keenable_endpoint(api_url: str, api_key: Optional[str], public: bool) -> tuple:
+    """Return (endpoint, headers). A present key always uses the authenticated route;
+    with no key, the keyless /public route is used when public is enabled."""
+    headers = {"X-Keenable-Title": "web-search-plus-mcp"}
+    if api_key:
+        headers["X-API-Key"] = api_key
+        return api_url, headers
+    if public:
+        _warn_keenable_public_once()
+        return f"{api_url}/public", headers
+    raise ValueError("Keenable requires an API key or an enabled public endpoint")
+
+
+def search_keenable(
+    query: str,
+    api_key: Optional[str] = None,
+    max_results: int = 5,
+    time_range: Optional[str] = None,
+    include_domains: Optional[List[str]] = None,
+    public: bool = False,
+    api_url: str = "https://api.keenable.ai/v1/search",
+    timeout: int = 30,
+) -> dict:
+    """Search using Keenable's independent web index.
+
+    Uses the authenticated endpoint when api_key is set; with no key, public=True
+    selects the keyless /public endpoint.
+    """
+    body: Dict[str, Any] = {"query": query}
+    if time_range and time_range in _KEENABLE_TIME_RANGE:
+        body["published_after"] = _KEENABLE_TIME_RANGE[time_range]
+    if include_domains:
+        body["site"] = include_domains[0]
+
+    url, headers = _keenable_endpoint(api_url, api_key, public)
+    headers["Content-Type"] = "application/json"
+
+    data = make_request(url, headers, body, timeout=timeout)
+    results = []
+    for i, item in enumerate(data.get("results", [])[:max_results]):
+        item_url = item.get("url", "")
+        results.append({
+            "title": item.get("title") or _title_from_url(item_url),
+            "url": item_url,
+            "snippet": item.get("snippet") or item.get("description", ""),
+            "score": round(1.0 - i * 0.05, 3),
+            "date": item.get("published_at"),
+            "acquired_at": item.get("acquired_at"),
+        })
+
+    answer = results[0]["snippet"] if results else ""
+    return {
+        "provider": "keenable",
+        "query": query,
+        "results": results,
+        "images": [],
+        "answer": answer,
+        "metadata": {"number_of_results": data.get("number_of_results")},
+    }
+
+
+def extract_keenable(
+    urls: List[str],
+    api_key: Optional[str] = None,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    public: bool = False,
+    api_url: str = "https://api.keenable.ai/v1/fetch",
+    timeout: int = 30,
+) -> dict:
+    """Extract page content via Keenable's fetch endpoint (clean markdown).
+
+    Uses the authenticated endpoint when api_key is set; with no key, public=True
+    selects the keyless /public endpoint.
+    """
+    base_url, headers = _keenable_endpoint(api_url, api_key, public)
+
+    results: List[Dict[str, Any]] = []
+    for url in urls:
+        try:
+            endpoint = f"{base_url}?url={quote(url, safe='')}"
+            data = make_get_request(endpoint, headers, timeout=timeout)
+            content = data.get("content") or ""
+            results.append(_normalize_extract_result(
+                "keenable",
+                data.get("url") or url,
+                title=data.get("title", ""),
+                content=content,
+                raw_content=content,
+                author=data.get("author"),
+                description=data.get("description"),
+            ))
+        except Exception as e:
+            results.append(_normalize_extract_result("keenable", url, error=str(e)))
+    return {"provider": "keenable", "results": results}

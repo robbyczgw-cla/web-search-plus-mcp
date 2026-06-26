@@ -65,6 +65,7 @@ try:
     _validate_runtime_config,
     _validate_searxng_url,
     get_api_key,
+    keyless_public_allowed,
     load_config,
     validate_api_key,
 )
@@ -120,6 +121,7 @@ except ImportError:  # pragma: no cover
         _validate_runtime_config,
         _validate_searxng_url,
         get_api_key,
+        keyless_public_allowed,
         load_config,
         validate_api_key,
     )
@@ -482,6 +484,16 @@ def search_you(*args, **kwargs):
 def search_searxng(*args, **kwargs):
     _sync_provider_dependencies()
     return _providers.search_searxng(*args, **kwargs)
+
+
+def search_keenable(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.search_keenable(*args, **kwargs)
+
+
+def extract_keenable(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.extract_keenable(*args, **kwargs)
 
 
 
@@ -1251,6 +1263,18 @@ Full docs: See README.md and SKILL.md
                 language=args.language,
                 time_range=args.time_range,
                 safesearch=args.searxng_safesearch,
+            )
+        elif prov == "keenable":
+            keenable_config = config.get("keenable", {})
+            return search_keenable(
+                query=args.query,
+                api_key=key,
+                max_results=args.max_results,
+                time_range=args.time_range or args.freshness,
+                include_domains=args.include_domains,
+                public=keyless_public_allowed(prov, config),
+                api_url=keenable_config.get("search_url", "https://api.keenable.ai/v1/search"),
+                timeout=int(keenable_config.get("timeout", 30)),
             )
         else:
             raise ValueError(f"Unknown provider: {prov}")

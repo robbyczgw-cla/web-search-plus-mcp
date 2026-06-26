@@ -3,9 +3,9 @@
 from typing import Any, Dict, List, Optional
 
 try:
-    from .config import get_api_key, load_config
+    from .config import get_api_key, keyless_public_allowed, load_config
 except ImportError:  # pragma: no cover
-    from config import get_api_key, load_config  # type: ignore
+    from config import get_api_key, keyless_public_allowed, load_config  # type: ignore
 try:
     from .provider_health import (
         execute_provider_with_retry,
@@ -16,6 +16,7 @@ try:
     from .providers import (
         extract_exa,
         extract_firecrawl,
+        extract_keenable,
         extract_linkup,
         extract_parallel,
         extract_tavily,
@@ -31,6 +32,7 @@ except ImportError:  # pragma: no cover
     from providers import (  # type: ignore
         extract_exa,
         extract_firecrawl,
+        extract_keenable,
         extract_linkup,
         extract_parallel,
         extract_tavily,
@@ -78,7 +80,8 @@ def extract_plus(
             errors.append({"provider": prov, "error": f"Provider {prov} does not support extraction"})
             continue
         key = get_api_key(prov, config)
-        if not key:
+        keyless_allowed = keyless_public_allowed(prov, config)
+        if not key and not keyless_allowed:
             errors.append({"provider": prov, "error": "missing_api_key"})
             continue
         in_cooldown, remaining = provider_in_cooldown(prov)
@@ -99,6 +102,9 @@ def extract_plus(
                 if prov == "exa":
                     exa = config.get("exa", {})
                     return extract_exa(urls, key, output_format, include_images, include_raw_html, render_js, api_url=exa.get("contents_url", "https://api.exa.ai/contents"), timeout=int(exa.get("timeout", 30)))
+                if prov == "keenable":
+                    kn = config.get("keenable", {})
+                    return extract_keenable(urls, key, output_format, include_images, include_raw_html, render_js, public=keyless_allowed, api_url=kn.get("fetch_url", "https://api.keenable.ai/v1/fetch"), timeout=int(kn.get("timeout", 30)))
                 if prov == "parallel":
                     parallel = config.get("parallel", {})
                     return extract_parallel(

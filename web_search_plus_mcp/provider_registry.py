@@ -28,6 +28,7 @@ class ProviderSpec:
     free_tier: str = "API key required"
     signup_url: str = ""
     upstream_capabilities: Tuple[str, ...] = ()
+    keyless: bool = False
 
 
 _PROVIDER_SPECS = (
@@ -195,11 +196,24 @@ _PROVIDER_SPECS = (
         free_tier="Free if self-hosted",
         signup_url="https://docs.searxng.org/admin/installation.html",
     ),
+    ProviderSpec(
+        provider="keenable",
+        env_var="KEENABLE_API_KEY",
+        display_name="Keenable",
+        description="Independent web index with keyed endpoints plus an opt-in keyless public tier.",
+        config_section="keenable",
+        supports_search=True,
+        supports_extract=True,
+        capability_labels=("search", "extract", "keyless-public"),
+        free_tier="API key recommended; keyless public tier is opt-in/off by default",
+        signup_url="https://keenable.ai",
+        keyless=True,
+    ),
 )
 
 PROVIDER_SPECS: Dict[str, ProviderSpec] = {spec.provider: spec for spec in _PROVIDER_SPECS}
 SEARCH_PROVIDER_IDS = tuple(spec.provider for spec in _PROVIDER_SPECS if spec.supports_search)
-EXTRACT_PROVIDER_IDS = ("tavily", "exa", "linkup", "parallel", "firecrawl", "you")
+EXTRACT_PROVIDER_IDS = ("tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable")
 DEFAULT_PROVIDER_PRIORITY = (
     "you",
     "serper",
@@ -214,6 +228,7 @@ DEFAULT_PROVIDER_PRIORITY = (
     "kilo-perplexity",
     "perplexity",
     "searxng",
+    "keenable",
 )
 DEFAULT_AUTO_ALLOW = {
     spec.provider: False
@@ -231,6 +246,7 @@ def doctor_catalog() -> Dict[str, Dict[str, object]]:
             "env_var": spec.env_var,
             "search_capable": spec.supports_search,
             "extract_capable": spec.supports_extract,
+            "keyless": spec.keyless,
         }
         for provider, spec in PROVIDER_SPECS.items()
     }

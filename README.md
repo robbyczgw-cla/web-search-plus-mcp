@@ -14,12 +14,12 @@
 
 `web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the same provider family used by the Hermes/OpenClaw Web Search Plus tools.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`0.12.0`) while tracking the Web Search Plus v2.5 engine family. The plugin package is versioned separately as `hermes-web-search-plus v2.5.x`.
+Version note: `web-search-plus-mcp` uses its own MCP package version (`0.13.0`) while tracking the Web Search Plus v2.6.1 engine family. The plugin package is versioned separately as `hermes-web-search-plus v2.6.x`.
 
 ## ✨ Features
 
-- **13 search providers + auto-routing** — provider metadata, schemas, defaults, and guarded/auto behavior are generated from the shared Web Search Plus provider registry
-- **6 extract providers** — Tavily, Exa, Linkup, Parallel, Firecrawl, You.com
+- **14 search providers + auto-routing** — provider metadata, schemas, defaults, and guarded/auto behavior are generated from the shared Web Search Plus provider registry
+- **7 extract providers** — Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable
 - **Routing v2.3 auto-routing** — registry-backed routing for multilingual/current, docs/API, arXiv, CVE/security, local/shopping, OSS discovery, and answer/synthesis queries
 - **Quality reports + doctor checks** — optional routing/result diagnostics plus compact offline health checks for configured providers/cache
 - **Research mode** — opt-in multi-provider search + top-source extraction with a time budget
@@ -72,7 +72,7 @@ Persistent routing preferences live in `config.json` rather than `.env`:
 web-search-plus-mcp config show
 web-search-plus-mcp config set-default you        # strict fixed-provider mode
 web-search-plus-mcp config set-routing on         # restore Routing v2 auto-routing
-web-search-plus-mcp config set-priority you,serper,exa,firecrawl,tavily,linkup,parallel,brave
+web-search-plus-mcp config set-priority you,serper,exa,firecrawl,tavily,linkup,parallel,brave,keenable
 web-search-plus-mcp config set-fallback serper
 web-search-plus-mcp config disable perplexity
 web-search-plus-mcp config enable perplexity
@@ -135,6 +135,7 @@ You can also place a `.env` file next to the package/project with the same varia
 - **SearXNG** — privacy-first self-hosted meta-search
 - **SerpBase** — explicit-only Google SERP API (`SERPBASE_API_KEY`, `auto_allow=false`)
 - **Querit** — explicit-only multilingual, real-time AI search (`QUERIT_API_KEY`, `auto_allow=false`)
+- **Keenable** — independent web index with search and extraction (`KEENABLE_API_KEY`, or opt-in keyless public tier; off by default)
 
 ## 📄 Extract Providers
 
@@ -144,6 +145,39 @@ You can also place a `.env` file next to the package/project with the same varia
 - **Parallel** — fast excerpt-rich docs fallback with optional full-content extraction
 - **Firecrawl** — robust scrape fallback, useful for JS-heavy/blocked pages
 - **You.com** — LLM-ready snippets/content where available
+- **Keenable** — lowest-priority keyed or explicitly opted-in public fallback
+
+
+### Keenable keyless public access
+
+Keenable exposes authenticated endpoints via `KEENABLE_API_KEY`. It also has keyless `/public` endpoints, but those are **opt-in and disabled by default**. Without a key, Keenable is treated as unconfigured unless you explicitly enable public egress:
+
+```json
+{ "keenable": { "allow_public": true } }
+```
+
+or set:
+
+```bash
+KEENABLE_ALLOW_PUBLIC=1
+```
+
+Use an API key for private or production use. The public endpoint sends queries and fetched URLs to a shared unauthenticated service and stays the lowest-priority fallback.
+
+### GroktoCrawl / local Firecrawl-compatible backends
+
+The Firecrawl provider can target a local Firecrawl-v2-compatible backend by overriding its search and scrape URLs in `config.json`. For example, a local [GroktoCrawl](https://github.com/groktopus/groktocrawl) instance listening on `127.0.0.1:8080` can be used without adding a separate provider:
+
+```json
+{
+  "firecrawl": {
+    "api_url": "http://127.0.0.1:8080/v2/search",
+    "scrape_url": "http://127.0.0.1:8080/v2/scrape"
+  }
+}
+```
+
+Keep `FIRECRAWL_API_KEY` configured if your backend enforces bearer authentication; local development instances may ignore the header. This does not make GroktoCrawl the default and does not claim coverage for every Firecrawl endpoint.
 
 ## 🛠 MCP Tool Reference
 
@@ -158,7 +192,7 @@ Use for source discovery, current events, prices, weather, sports lineups, sched
 Parameters:
 
 - `query` — required search query
-- `provider` — `auto`, `serper`, `brave`, `tavily`, `exa`, `linkup`, `firecrawl`, `parallel`, `perplexity`, `kilo-perplexity`, `you`, `searxng`, `serpbase`, `querit`
+- `provider` — `auto`, `serper`, `brave`, `tavily`, `exa`, `linkup`, `firecrawl`, `parallel`, `perplexity`, `kilo-perplexity`, `you`, `searxng`, `serpbase`, `querit`, `keenable`
 - `count` — results to return, default `5`, max `20`
 - `depth` — Exa depth: `normal`, `deep`, `deep-reasoning`
 - `time_range` — `hour`, `day`, `week`, `month`, `year`

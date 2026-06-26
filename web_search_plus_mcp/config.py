@@ -143,6 +143,12 @@ DEFAULT_CONFIG = {
         "safesearch": 0,  # 0=off, 1=moderate, 2=strict
         "engines": None,  # Optional list of engines to use
         "language": "en"
+    },
+    "keenable": {
+        "search_url": "https://api.keenable.ai/v1/search",
+        "fetch_url": "https://api.keenable.ai/v1/fetch",
+        "timeout": 30,
+        "allow_public": False
     }
 }
 
@@ -297,6 +303,35 @@ def load_config() -> Dict[str, Any]:
     return config
 
 
+def is_truthy(value: Any) -> bool:
+    """Strict true-ish parser for opt-in public provider settings."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value == 1
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def keyless_public_env_var(provider: str) -> str:
+    return f"{provider.upper().replace('-', '_')}_ALLOW_PUBLIC"
+
+
+def keyless_public_allowed(provider: str, config: Dict[str, Any] = None) -> bool:
+    spec = PROVIDER_SPECS.get(provider)
+    if not (spec and spec.keyless):
+        return False
+    section = (config or {}).get(spec.config_section, {})
+    if isinstance(section, dict) and is_truthy(section.get("allow_public")):
+        return True
+    return is_truthy(os.environ.get(keyless_public_env_var(provider)))
+
+
+def provider_configured(provider: str, config: Dict[str, Any] = None) -> bool:
+    if provider == "keenable" and keyless_public_allowed(provider, config):
+        return True
+    return bool(get_api_key(provider, config))
+
+
 def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
     """Get API key for provider from config.json or environment.
 
@@ -430,6 +465,8 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
         return key
 
     if not key:
+        if keyless_public_allowed(provider, config):
+            return None
         spec = PROVIDER_SPECS[provider]
         env_var = spec.env_var
 
