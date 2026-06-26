@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-06-26
+
+### Added
+- Sync Keenable provider support from Web Search Plus v2.6.0: `keenable` search and extraction via `KEENABLE_API_KEY`, plus an opt-in keyless public tier that is off by default. Thanks @IlyaGusev for WSP #56.
+- Document GroktoCrawl / local Firecrawl-compatible backend usage through existing Firecrawl `api_url` and `scrape_url` overrides, with regression tests for custom endpoints. (#57)
+
+### Changed
+- Bump package/server version to `0.13.0` and align README, schemas, provider counts, and User-Agent with the Web Search Plus v2.6.1 engine family.
+- Add Keenable to generated provider metadata, MCP provider enums, auto-routing priority tail, and extraction fallback tail.
+
+### Notes
+- Upstream Web Search Plus v2.6.0 also included an in-process Hermes-plugin loader fix (#55 by @maksym-mishchenko). That loader path is not applicable to the standalone MCP server, so no code was ported; it is noted here for release-history completeness.
+
+### Tests
+- Add Keenable key/keyless configuration, search, extraction, public-warning, schema, and Firecrawl-compatible endpoint override tests.
+
 ## [0.12.0] - 2026-06-16
 
 ### Fixed

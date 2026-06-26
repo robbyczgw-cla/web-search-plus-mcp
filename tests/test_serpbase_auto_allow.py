@@ -86,6 +86,7 @@ def test_server_schema_exposes_serpbase_last_and_auto_allow_metadata():
         "kilo-perplexity",
         "you",
         "searxng",
+        "keenable",
     ]
     assert server.SEARCH_PROVIDERS["serpbase"]["env"] == "SERPBASE_API_KEY"
     assert server.SEARCH_PROVIDERS["serpbase"]["auto_allow"] is False
@@ -104,6 +105,7 @@ def test_server_schema_exposes_serpbase_last_and_auto_allow_metadata():
         "kilo-perplexity",
         "perplexity",
         "searxng",
+        "keenable",
     ]
 
     config = server._default_behavior_config()

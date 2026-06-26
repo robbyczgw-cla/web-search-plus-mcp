@@ -2,8 +2,8 @@
 """
 web-search-plus-mcp: Multi-provider web search MCP server.
 
-MCP wrapper around Web Search Plus Routing v2: 13 search providers,
-6 extraction providers, quality reports, guarded auto-routing, opt-in research mode,
+MCP wrapper around Web Search Plus Routing v2: 14 search providers,
+7 extraction providers, quality reports, guarded auto-routing, opt-in research mode,
 and Tavily-first extraction defaults.
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ from mcp.types import TextContent, Tool
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus")
@@ -250,7 +250,7 @@ async def list_tools() -> list[Tool]:
             description=(
                 "Search the web using Web Search Plus Routing v2 multi-provider routing. "
                 "Supports You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, "
-                "Brave, native Perplexity, Kilo Perplexity, SearXNG, SerpBase, and Querit. "
+                "Brave, native Perplexity, Kilo Perplexity, SearXNG, SerpBase, Querit, and Keenable. "
                 "Brave, Parallel, SerpBase, Querit, Perplexity, and Kilo Perplexity are explicit-only by default "
                 "and are not auto-routed unless auto_allow is changed."
             ),
@@ -285,7 +285,7 @@ async def list_tools() -> list[Tool]:
             name="web_extract",
             description=(
                 "Extract markdown or HTML from URLs using Web Search Plus extraction providers. "
-                "Supports Tavily, Exa, Linkup, Parallel, Firecrawl, and You.com. Auto mode tries Tavily first, then Exa, Linkup, Parallel, Firecrawl, and You.com."
+                "Supports Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, and Keenable. Auto mode tries Tavily first, then Exa, Linkup, Parallel, Firecrawl, You.com, and Keenable when configured."
             ),
             inputSchema={
                 "type": "object",
