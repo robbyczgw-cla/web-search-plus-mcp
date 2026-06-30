@@ -1403,9 +1403,18 @@ Full docs: See README.md and SKILL.md
             # Only continue collecting from lower-priority providers when fallback was needed.
             if not errors:
                 break
+        except ProviderConfigError as e:
+            # Missing/invalid local credentials are configuration errors, not
+            # provider health failures. Do not poison shared cooldown state for
+            # a provider the runtime never actually contacted.
+            errors.append({
+                "provider": current_provider,
+                "error": str(e),
+            })
+            continue
         except Exception as e:
             error_msg = str(e)
-            cooldown_info = mark_provider_failure(current_provider, error_msg)
+            cooldown_info = mark_provider_failure(current_provider, error_msg, retry_after=getattr(e, "retry_after", None))
             errors.append({
                 "provider": current_provider,
                 "error": error_msg,

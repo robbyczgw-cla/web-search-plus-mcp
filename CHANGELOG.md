@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-06-30
+
+### Security
+- Sync Web Search Plus v2.7.0 private/internal extraction target guard from upstream #61: `web_extract` now blocks loopback, RFC1918, CGNAT/shared-address ranges, IPv6 ULA/link-local/mapped-private addresses, multicast, cloud metadata hosts, and hostnames resolving to private/internal IPs before provider dispatch. Operator-configured provider endpoints (for example local Firecrawl-compatible backends) remain allowed; trusted intranet extraction requires explicit `extract.allow_private_urls: true`.
+
+### Fixed
+- Sync upstream #63 behavior: provider configuration errors such as missing API keys no longer mark providers unhealthy or place them into cooldown.
+
+### Changed
+- Bump package/server version to `0.14.0` and align README/changelog with the Web Search Plus v2.7.0 engine family where applicable.
+
+### Notes
+- Upstream #60 by @IlyaGusev added keyless-provider setup wizard and config rewrite preservation to the Hermes plugin. MCP already has its own onboarding/config surface and Keenable keyless semantics from v0.13.0, so no setup-wizard code was ported; attribution is carried forward for the synced release window.
+- Upstream #62 added `setup.py fastpath`, a public-Hermes diagnostic. That command is Hermes-plugin-specific and not applicable to the standalone MCP package.
+- Upstream #59 README hero/Querit URL cleanup and #64 release-prep changes are credited as release-window context; only MCP-relevant docs/version metadata changed here.
+
+### Tests
+- Add extract target safety coverage for private IPv4/IPv6 ranges, CGNAT/Tailscale-style addresses, cloud metadata, DNS rebinding/mixed DNS answers, explicit private-URL escape hatch, and local provider endpoint preservation.
+- Add regression coverage that explicit missing-key search failures do not call provider-health cooldown marking.
+
 ## [0.13.0] - 2026-06-26
 
 ### Added

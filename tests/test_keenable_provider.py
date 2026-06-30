@@ -136,5 +136,18 @@ class KeenableExtractTests(unittest.TestCase):
         self.assertEqual(headers["X-API-Key"], "keen_secret")
 
 
+class KeenableCooldownTests(unittest.TestCase):
+    def test_explicit_search_missing_key_does_not_cooldown_keenable(self):
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             mock.patch("web_search_plus_mcp.search.load_config", return_value={}), \
+             mock.patch("web_search_plus_mcp.search.provider_in_cooldown", return_value=(False, 0)), \
+             mock.patch("web_search_plus_mcp.search.mark_provider_failure") as mock_mark, \
+             mock.patch("sys.argv", ["search.py", "--query", "test", "--provider", "keenable", "--no-cache"]):
+            with self.assertRaises(SystemExit):
+                search.main()
+
+        mock_mark.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
