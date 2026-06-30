@@ -14,12 +14,12 @@
 
 `web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the same provider family used by the Hermes/OpenClaw Web Search Plus tools.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`0.13.0`) while tracking the Web Search Plus v2.6.1 engine family. The plugin package is versioned separately as `hermes-web-search-plus v2.6.x`.
+Version note: `web-search-plus-mcp` uses its own MCP package version (`0.14.0`) while tracking the Web Search Plus v2.7.0 engine family where applicable. The plugin package is versioned separately as `hermes-web-search-plus v2.7.x`; Hermes-only setup/fastpath commands are not exposed by the MCP server.
 
 ## ✨ Features
 
 - **14 search providers + auto-routing** — provider metadata, schemas, defaults, and guarded/auto behavior are generated from the shared Web Search Plus provider registry
-- **7 extract providers** — Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable
+- **7 extract providers with private-target protection** — Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable
 - **Routing v2.3 auto-routing** — registry-backed routing for multilingual/current, docs/API, arXiv, CVE/security, local/shopping, OSS discovery, and answer/synthesis queries
 - **Quality reports + doctor checks** — optional routing/result diagnostics plus compact offline health checks for configured providers/cache
 - **Research mode** — opt-in multi-provider search + top-source extraction with a time budget
@@ -164,6 +164,18 @@ KEENABLE_ALLOW_PUBLIC=1
 
 Use an API key for private or production use. The public endpoint sends queries and fetched URLs to a shared unauthenticated service and stays the lowest-priority fallback.
 
+### Private/internal extraction target guard
+
+`web_extract` blocks user-supplied target URLs that point at private or internal networks before any provider is called. This covers loopback, RFC1918, CGNAT/shared-address ranges, IPv6 local/mapped-private ranges, multicast, cloud metadata hosts, and hostnames resolving to private/internal IPs.
+
+Operator-configured provider endpoints are separate: local Firecrawl-compatible backends can still run on `127.0.0.1` through provider config. If you intentionally need to extract trusted intranet URLs, opt in explicitly:
+
+```json
+{ "extract": { "allow_private_urls": true } }
+```
+
+Leave this off for public/agent-controlled URL extraction.
+
 ### GroktoCrawl / local Firecrawl-compatible backends
 
 The Firecrawl provider can target a local Firecrawl-v2-compatible backend by overriding its search and scrape URLs in `config.json`. For example, a local [GroktoCrawl](https://github.com/groktopus/groktocrawl) instance listening on `127.0.0.1:8080` can be used without adding a separate provider:
@@ -217,7 +229,7 @@ Example MCP arguments:
 Parameters:
 
 - `urls` — required list of URLs
-- `provider` — `auto`, `tavily`, `exa`, `linkup`, `parallel`, `firecrawl`, `you`
+- `provider` — `auto`, `tavily`, `exa`, `linkup`, `parallel`, `firecrawl`, `you`, `keenable`
 - `format` — `markdown` or `html`
 - `include_images` — include image metadata when supported
 - `include_raw_html` — include raw HTML when supported
