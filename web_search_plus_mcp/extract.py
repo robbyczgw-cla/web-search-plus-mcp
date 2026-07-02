@@ -6,8 +6,10 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 try:
+    from .cache import store_web_text
     from .config import get_api_key, keyless_public_allowed, load_config
 except ImportError:  # pragma: no cover
+    from cache import store_web_text  # type: ignore
     from config import get_api_key, keyless_public_allowed, load_config  # type: ignore
 try:
     from .provider_health import (
@@ -114,6 +116,48 @@ def _validate_extract_urls(urls: List[str], config: Optional[Dict[str, Any]] = N
     return urls
 
 
+MCP_EXTRACT_PREVIEW_CHARS = 20_000
+_EXTRACT_TEXT_FIELDS = ("content", "markdown", "text", "raw_content")
+
+
+def _truncate_and_store_extracts(result: Dict[str, Any], preview_chars: int = MCP_EXTRACT_PREVIEW_CHARS) -> Dict[str, Any]:
+    """Keep MCP extract responses bounded while storing full text locally.
+
+    MCP clients receive a compact preview plus `stored_extract` metadata with a
+    local cache path. Under-cap content is returned unchanged.
+    """
+    res_list = result.get("results")
+    if not isinstance(res_list, list):
+        return result
+    stored_count = 0
+    for item in res_list:
+        if not isinstance(item, dict):
+            continue
+        url = item.get("url") or item.get("source_url") or ""
+        for field in _EXTRACT_TEXT_FIELDS:
+            text = item.get(field)
+            if not isinstance(text, str) or len(text) <= preview_chars:
+                continue
+            metadata = store_web_text(str(url or f"extract:{stored_count}"), text)
+            item[field] = text[:preview_chars].rstrip() + (
+                f"\n\n[TRUNCATED: full {field} stored in cache; "
+                f"original_chars={len(text)}]"
+            )
+            item["stored_extract"] = {
+                "field": field,
+                "preview_chars": preview_chars,
+                **metadata,
+            }
+            stored_count += 1
+            break
+    if stored_count:
+        result["extract_storage"] = {
+            "stored": stored_count,
+            "preview_chars": preview_chars,
+        }
+    return result
+
+
 EXTRACT_PROVIDER_PRIORITY = list(EXTRACT_PROVIDER_IDS)
 
 
@@ -189,7 +233,7 @@ def extract_plus(
                 you = config.get("you", {})
                 return extract_you(urls, key, output_format, include_images, include_raw_html, render_js, api_url=you.get("contents_url", "https://ydc-index.io/v1/contents"), timeout=int(you.get("timeout", 30)))
 
-            result = execute_provider_with_retry(prov, execute_extract)
+            result = _truncate_and_store_extracts(execute_provider_with_retry(prov, execute_extract))
             res_list = result.get("results") or []
             all_failed = bool(res_list) and all(r.get("error") for r in res_list)
             if all_failed:

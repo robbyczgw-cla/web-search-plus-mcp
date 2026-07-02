@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-07-02
+
+### Security
+- Sync Web Search Plus v2.8.1 authority-domain matcher hardening from upstream #68: canonical boosts now apply only to exact domains, true subdomains, or explicit label-prefix rules, blocking look-alike domains such as `nih.gov.evil.example` from inheriting trust.
+- Sync Web Search Plus v2.8.x HTTP provider hardening: corrupted gzip/deflate bodies, non-UTF-8 responses, invalid JSON, read interruptions, `socket.timeout`, and `Retry-After` on HTTP 429 are normalized into structured provider errors.
+
+### Added
+- Add MCP-specific extract preview/store handling for oversized extraction results. Large `content`, `markdown`, `text`, or `raw_content` fields are bounded in MCP responses and full text is stored under the local cache with `stored_extract` metadata.
+
+### Fixed
+- Derive `DEFAULT_USER_AGENT` from the package `__version__` so MCP releases cannot drift again; v0.14.0 still advertised `ClawdBot-WebSearchPlus-MCP/0.13.0`.
+
+### Changed
+- Bump package/server version to `0.15.0` and align README/changelog with the Web Search Plus v2.8.1 engine family where applicable.
+- Keep upstream #72 provider bench and #75 Hermes standalone-plugin import fix out of MCP by design: bench is CLI/provider-quota-sensitive and #75 does not apply to a normal installed MCP package.
+- Leave existing MCP `time_range` search plumbing behavior-preserving; upstream #71 freshness unification is not treated as a breaking schema rewrite in this release.
+
+### Tests
+- Add regression coverage for authority look-alike rejection, HTTP hardening and User-Agent version drift, and oversized extract store/preview behavior.
+
 ## [0.14.0] - 2026-06-30
 
 ### Security

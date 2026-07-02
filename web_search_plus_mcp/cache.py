@@ -14,6 +14,94 @@ CACHE_DIR = Path(os.environ.get("WSP_CACHE_DIR", os.path.join(os.path.dirname(os
 DEFAULT_CACHE_TTL = 3600  # 1 hour in seconds
 PROVIDER_HEALTH_FILENAME = "provider_health.json"
 
+WEB_TEXT_CACHE_DIRNAME = "web"
+MAX_STORED_TEXT_CHARS = 2_000_000
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write text through a temp file and atomic replace to avoid torn cache reads."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
+def _get_web_text_cache_path(url: str) -> Path:
+    """Return the stable full-text cache path for an extracted URL."""
+    key = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    return CACHE_DIR / WEB_TEXT_CACHE_DIRNAME / f"{key}.md"
+
+
+def _iter_web_text_cache_files():
+    """Yield stored web full-text files, tolerating a missing web cache dir."""
+    web_dir = CACHE_DIR / WEB_TEXT_CACHE_DIRNAME
+    if not web_dir.exists():
+        return iter(())
+    return web_dir.glob("*.md")
+
+
+def _iter_web_text_temp_files():
+    """Yield orphaned atomic-write temp files from the web full-text store."""
+    web_dir = CACHE_DIR / WEB_TEXT_CACHE_DIRNAME
+    if not web_dir.exists():
+        return iter(())
+    return web_dir.glob("*.tmp")
+
+
+def _web_text_cache_stats() -> Dict[str, Any]:
+    """Return count and size stats for stored extracted web text."""
+    entries = []
+    total_size = 0
+    for web_file in _iter_web_text_cache_files():
+        try:
+            total_size += web_file.stat().st_size
+            entries.append(web_file)
+        except IOError:
+            pass
+    return {
+        "web_text_entries": len(entries),
+        "web_text_size_bytes": total_size,
+        "web_text_size_kb": round(total_size / 1024, 2),
+        "web_text_cache_dir": str(CACHE_DIR / WEB_TEXT_CACHE_DIRNAME),
+    }
+
+
+def store_web_text(url: str, text: str, max_chars: int = MAX_STORED_TEXT_CHARS) -> Dict[str, Any]:
+    """Store cleaned extracted text under cache/web and return storage metadata."""
+    path = _get_web_text_cache_path(url)
+    original_chars = len(text)
+    capped = original_chars > max_chars
+    stored_text = text[:max_chars] if capped else text
+    if capped:
+        stored_text = stored_text.rstrip() + f"\n\n[TRUNCATED: stored text capped at {max_chars} characters]\n"
+    try:
+        _atomic_write_text(path, stored_text)
+    except IOError as e:
+        print(json.dumps({"web_text_cache_write_error": str(e)}), file=sys.stderr)
+        return {
+            "stored": False,
+            "path": str(path),
+            "capped": capped,
+            "original_chars": original_chars,
+            "stored_chars": len(stored_text),
+            "error": str(e),
+        }
+    return {
+        "stored": True,
+        "path": str(path),
+        "capped": capped,
+        "original_chars": original_chars,
+        "stored_chars": len(stored_text),
+    }
+
 
 def _build_cache_payload(query: str, provider: str, max_results: int, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Build normalized payload used for cache key hashing."""
@@ -41,7 +129,7 @@ def _get_cache_path(cache_key: str) -> Path:
 
 def _ensure_cache_dir() -> None:
     """Create cache directory if it doesn't exist."""
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
 
 
 def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
@@ -151,6 +239,14 @@ def cache_clear() -> Dict[str, Any]:
         except IOError:
             pass
 
+    for web_file in list(_iter_web_text_cache_files()) + list(_iter_web_text_temp_files()):
+        try:
+            size_freed += web_file.stat().st_size
+            web_file.unlink()
+            count += 1
+        except IOError:
+            pass
+
     return {
         "cleared": count,
         "size_freed_bytes": size_freed,
@@ -208,6 +304,8 @@ def cache_stats() -> Dict[str, Any]:
         except (json.JSONDecodeError, IOError):
             pass
 
+    web_text_stats = _web_text_cache_stats()
+
     return {
         "total_entries": len(entries),
         "total_size_bytes": total_size,
@@ -224,5 +322,6 @@ def cache_stats() -> Dict[str, Any]:
             "query": newest_query
         } if newest_time else None,
         "cache_dir": str(CACHE_DIR),
-        "exists": True
+        "exists": True,
+        **web_text_stats,
     }
