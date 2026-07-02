@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "web-search-plus-mcp"
-version = "0.14.0"
+version = "0.15.0"
 description = "Registry-backed multi-provider web search, extraction, quality reports, and onboarding for MCP clients"
 readme = "README.md"
 license = { file = "LICENSE" }
