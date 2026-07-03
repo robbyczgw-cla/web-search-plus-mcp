@@ -213,7 +213,9 @@ _PROVIDER_SPECS = (
 
 PROVIDER_SPECS: Dict[str, ProviderSpec] = {spec.provider: spec for spec in _PROVIDER_SPECS}
 SEARCH_PROVIDER_IDS = tuple(spec.provider for spec in _PROVIDER_SPECS if spec.supports_search)
-EXTRACT_PROVIDER_IDS = ("tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable")
+# Extraction fallback order: Tavily-first stays; serper's webpage scraper is a
+# last-resort fallback so a Serper-only setup still has extraction.
+EXTRACT_PROVIDER_IDS = ("tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper")
 DEFAULT_PROVIDER_PRIORITY = (
     "you",
     "serper",

@@ -61,7 +61,15 @@ DEFAULT_CONFIG = {
     "default_provider": None,
     "defaults": {
         "provider": "serper",
-        "max_results": 5
+        "max_results": 5,
+        # Global locale defaults for providers with country/language request
+        # parameters. country: ISO 3166-1 alpha-2 (e.g. "at"); language:
+        # ISO 639-1 code, or "auto" for conservative query language inference.
+        # Explicit per-provider sections in config.json still win.
+        "locale": {
+            "country": None,
+            "language": None,
+        },
     },
     "auto_routing": {
         "enabled": True,
@@ -79,9 +87,8 @@ DEFAULT_CONFIG = {
         "allow_private_urls": False,
     },
     "serper": {
-        "country": "us",
-        "language": "en",
-        "type": "search"
+        "type": "search",
+        "scrape_url": "https://scrape.serper.dev",
     },
     "brave": {
         "country": "US",

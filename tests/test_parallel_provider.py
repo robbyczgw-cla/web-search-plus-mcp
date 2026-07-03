@@ -99,7 +99,7 @@ def test_server_parallel_metadata_and_default_provider_append():
         "capabilities": ["search", "extract", "citations"],
         "auto_allow": False,
     }
-    assert server.EXTRACT_PROVIDERS == ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable"]
+    assert server.EXTRACT_PROVIDERS == ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper"]
     assert server._default_behavior_config()["auto_routing"]["auto_allow"]["parallel"] is False
 
     config = server._normalize_behavior_config({"auto_routing": {"provider_priority": ["tavily", "linkup"]}})

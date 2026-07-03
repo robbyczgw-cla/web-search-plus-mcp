@@ -87,6 +87,7 @@ try:
     select_research_providers,
 )
     from .provider_registry import SEARCH_PROVIDER_IDS, doctor_catalog
+    from .search_locale import provider_supports_locale, resolve_locale
     from .research import run_research_mode
     from . import providers as _providers
     from . import routing as _routing
@@ -143,6 +144,7 @@ except ImportError:  # pragma: no cover
         select_research_providers,
     )
     from provider_registry import SEARCH_PROVIDER_IDS, doctor_catalog  # type: ignore
+    from search_locale import provider_supports_locale, resolve_locale  # type: ignore
     from research import run_research_mode  # type: ignore
     import providers as _providers  # type: ignore
     import routing as _routing  # type: ignore
@@ -456,6 +458,11 @@ def extract_you(*args, **kwargs):
     return _providers.extract_you(*args, **kwargs)
 
 
+def extract_serper(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.extract_serper(*args, **kwargs)
+
+
 def extract_parallel(*args, **kwargs):
     _sync_provider_dependencies()
     return _providers.extract_parallel(*args, **kwargs)
@@ -549,6 +556,7 @@ def _sync_extract_dependencies() -> None:
     _extract.extract_tavily = extract_tavily
     _extract.extract_exa = extract_exa
     _extract.extract_you = extract_you
+    _extract.extract_serper = extract_serper
     _extract.extract_parallel = extract_parallel
 
 
@@ -772,15 +780,26 @@ Full docs: See README.md and SKILL.md
         help="Show detailed routing analysis (debug mode)"
     )
     
-    # Serper-specific
+    # Locale (providers with country/language request parameters). Left unset,
+    # defaults are resolved per provider/query by search_locale.resolve_locale.
     serper_config = config.get("serper", {})
-    parser.add_argument("--country", default=serper_config.get("country", "us"))
-    parser.add_argument("--language", default=serper_config.get("language", "en"))
+    parser.add_argument("--country", default=None)
+    parser.add_argument("--language", default=None)
     parser.add_argument(
         "--type", 
         dest="search_type", 
         default=serper_config.get("type", "search"),
         choices=["search", "news", "images", "videos", "places", "shopping"]
+    )
+    parser.add_argument(
+        "--search-type",
+        dest="search_type",
+        choices=["search", "news"],
+        help=(
+            "Unified search vertical. Providers that support the requested native "
+            "vertical serve it directly; all other providers run normal search and "
+            "metadata reports search_type.applied=false."
+        ),
     )
     parser.add_argument(
         "--time-range", 
@@ -1110,8 +1129,8 @@ Full docs: See README.md and SKILL.md
                 query=args.query,
                 api_key=key,
                 max_results=args.max_results,
-                country=args.country,
-                language=args.language,
+                country=locale_country,
+                language=locale_language,
                 search_type=args.search_type,
                 time_range=args.time_range,
                 include_images=args.images,
@@ -1122,8 +1141,8 @@ Full docs: See README.md and SKILL.md
                 query=args.query,
                 api_key=key,
                 max_results=args.max_results,
-                country=serpbase_config.get("country", args.country),
-                language=serpbase_config.get("language", args.language),
+                country=locale_country,
+                language=locale_language,
                 page=int(serpbase_config.get("page", 1)),
                 api_url=serpbase_config.get("api_url", "https://api.serpbase.dev/google/search"),
                 timeout=int(serpbase_config.get("timeout", 30)),
@@ -1134,8 +1153,8 @@ Full docs: See README.md and SKILL.md
                 query=args.query,
                 api_key=key,
                 max_results=args.max_results,
-                country=brave_config.get("country", args.country),
-                language=brave_config.get("search_lang", args.language),
+                country=locale_country,
+                language=locale_language,
                 time_range=args.time_range or args.freshness,
                 safesearch=brave_config.get("safesearch", "moderate"),
             )
@@ -1169,8 +1188,8 @@ Full docs: See README.md and SKILL.md
                 query=args.query,
                 api_key=key,
                 max_results=args.max_results,
-                language=args.language,
-                country=args.country,
+                language=locale_language,
+                country=locale_country,
                 time_range=args.time_range or args.freshness,
                 include_domains=args.include_domains,
                 exclude_domains=args.exclude_domains,
@@ -1203,7 +1222,7 @@ Full docs: See README.md and SKILL.md
                 query=args.query,
                 api_key=key,
                 max_results=args.max_results,
-                country=firecrawl_config.get("country", args.country),
+                country=locale_country,
                 time_range=args.time_range or args.freshness,
                 sources=args.firecrawl_sources,
                 include_domains=args.include_domains,
@@ -1242,8 +1261,8 @@ Full docs: See README.md and SKILL.md
                 query=args.query,
                 api_key=key,
                 max_results=args.max_results,
-                country=args.country,
-                language=args.language,
+                country=locale_country,
+                language=locale_language,
                 freshness=args.freshness,
                 safesearch=args.you_safesearch,
                 include_news=not args.no_news,
@@ -1260,7 +1279,7 @@ Full docs: See README.md and SKILL.md
                 max_results=args.max_results,
                 categories=args.categories,
                 engines=args.engines,
-                language=args.language,
+                language=locale_language,
                 time_range=args.time_range,
                 safesearch=args.searxng_safesearch,
             )
@@ -1282,8 +1301,14 @@ Full docs: See README.md and SKILL.md
     def execute_with_retry(prov: str) -> Dict[str, Any]:
         return execute_provider_with_retry(prov, lambda: execute_search(prov))
 
+    # Resolved locale for selected provider: config-first country, query-aware
+    # language. Defaults stay us/en for unconfigured setups.
+    locale_country, locale_language, _locale_meta = resolve_locale(
+        provider or "", config, args.query, cli_country=args.country, cli_language=args.language
+    )
+
     cache_context = {
-        "locale": f"{args.country}:{args.language}",
+        "locale": f"{locale_country}:{locale_language}",
         "freshness": args.freshness,
         "time_range": args.time_range,
         "include_domains": sorted(args.include_domains) if args.include_domains else None,
@@ -1462,6 +1487,25 @@ Full docs: See README.md and SKILL.md
                 result.setdefault("metadata", {})["intent_rerank"] = rerank_metadata
 
         result["routing"] = routing_info
+
+        if args.freshness:
+            result.setdefault("metadata", {})["freshness"] = _providers.freshness_metadata(
+                successful_provider or provider, args.freshness
+            )
+
+        requested_search_type = getattr(args, "search_type", None)
+        if requested_search_type in _providers.SEARCH_TYPE_VALUES and requested_search_type != "search":
+            result.setdefault("metadata", {})["search_type"] = _providers.search_type_metadata(
+                successful_provider or provider, requested_search_type
+            )
+
+        final_provider = successful_provider or provider
+        if provider_supports_locale(final_provider):
+            _, _, locale_meta = resolve_locale(
+                final_provider, config, args.query,
+                cli_country=args.country, cli_language=args.language,
+            )
+            result.setdefault("metadata", {})["locale"] = locale_meta
 
         if not cache_hit and not args.no_cache and args.query:
             cache_put(

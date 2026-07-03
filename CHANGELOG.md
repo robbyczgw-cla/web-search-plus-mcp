@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.16.0] - 2026-07-03
+
+### Synced from Web Search Plus v2.9.0
+- Port registry-aligned provider dispatch updates from upstream PR #79 where applicable to MCP.
+- Add Serper webpage scraper extraction support and include Serper in MCP extraction provider schema/fallback order (upstream PR #80).
+- Add Serper news/search_type and configurable locale defaults/query-aware locale resolution to the MCP search surface (upstream PR #80/#81).
+- Bump MCP package/server/User-Agent surfaces to v0.16.0 and align upstream Web Search Plus User-Agent baseline with v2.9.0 (upstream PR #82).
+- Refresh README/API docs for Serper extraction capability (upstream PR #84).
+
+### Attribution / no-port notes
+- Upstream PR #77 golden snapshot recorder is test/eval infrastructure and is credited but not ported wholesale.
+- Upstream PR #83 prepare_release.py is repository-specific release automation; MCP keeps its own version surfaces for now.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
