@@ -14,12 +14,12 @@
 
 `web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the same provider family used by the Hermes/OpenClaw Web Search Plus tools.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`0.15.0`) while tracking the Web Search Plus v2.8.1 engine family where applicable. The plugin package is versioned separately as `hermes-web-search-plus v2.8.x`; Hermes-only setup/fastpath commands are not exposed by the MCP server.
+Version note: `web-search-plus-mcp` uses its own MCP package version (`0.16.0`) while tracking the Web Search Plus v2.8.1 engine family where applicable. The plugin package is versioned separately as `hermes-web-search-plus v2.8.x`; Hermes-only setup/fastpath commands are not exposed by the MCP server.
 
 ## ✨ Features
 
 - **14 search providers + auto-routing** — provider metadata, schemas, defaults, and guarded/auto behavior are generated from the shared Web Search Plus provider registry
-- **7 extract providers with private-target protection** — Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable
+- **7 extract providers with private-target protection** — Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, Serper
 - **Routing v2.3 auto-routing** — registry-backed routing for multilingual/current, docs/API, arXiv, CVE/security, local/shopping, OSS discovery, and answer/synthesis queries
 - **Quality reports + doctor checks** — optional routing/result diagnostics plus compact offline health checks for configured providers/cache
 - **Research mode** — opt-in multi-provider search + top-source extraction with a time budget

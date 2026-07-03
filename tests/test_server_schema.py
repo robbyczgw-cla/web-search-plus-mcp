@@ -47,7 +47,7 @@ def test_web_extract_tool_is_exposed_with_tavily_first_capable_schema():
     props = tool.inputSchema["properties"]
 
     assert tool.inputSchema["required"] == ["urls"]
-    assert props["provider"]["enum"] == ["auto", "tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable"]
+    assert props["provider"]["enum"] == ["auto", "tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper"]
     assert props["render_js"]["type"] == "boolean"
     assert props["format"]["enum"] == ["markdown", "html"]
 
@@ -126,8 +126,8 @@ def test_web_extract_call_maps_mcp_args_to_cli(monkeypatch):
 
 
 def test_extract_auto_priority_is_tavily_exa_linkup_parallel_firecrawl_you():
-    assert search.EXTRACT_PROVIDER_PRIORITY == ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable"]
-    assert server.EXTRACT_PROVIDERS == ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable"]
+    assert search.EXTRACT_PROVIDER_PRIORITY == ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper"]
+    assert server.EXTRACT_PROVIDERS == ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper"]
 
 
 def test_cli_status_json_and_setup_dry_run(tmp_path, monkeypatch, capsys):

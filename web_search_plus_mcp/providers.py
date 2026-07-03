@@ -33,6 +33,61 @@ except ImportError:  # pragma: no cover
     from quality import _title_from_url  # type: ignore
 
 
+
+
+# =============================================================================
+# Unified recency/freshness metadata
+# =============================================================================
+
+FRESHNESS_VALUES = ("day", "week", "month", "year")
+PROVIDER_FRESHNESS_FORMATS = {
+    "serper": {"day": "qdr:d", "week": "qdr:w", "month": "qdr:m", "year": "qdr:y"},
+    "brave": {"day": "pd", "week": "pw", "month": "pm", "year": "py"},
+    "querit": {"day": "d1", "week": "w1", "month": "m1", "year": "y1"},
+    "firecrawl": {"day": "qdr:d", "week": "qdr:w", "month": "qdr:m", "year": "qdr:y"},
+    "keenable": {"day": "1d", "week": "7d", "month": "1mo", "year": "1y"},
+    "you": {"day": "day", "week": "week", "month": "month", "year": "year"},
+    "perplexity": {"day": "day", "week": "week", "month": "month", "year": "year"},
+    "kilo-perplexity": {"day": "day", "week": "week", "month": "month", "year": "year"},
+    "searxng": {"day": "day", "week": "week", "month": "month", "year": "year"},
+}
+
+
+def map_freshness_for_provider(provider: str, freshness: Optional[str]) -> Optional[str]:
+    if not freshness:
+        return None
+    return PROVIDER_FRESHNESS_FORMATS.get(provider, {}).get(freshness)
+
+
+def freshness_metadata(provider: str, requested: str) -> Dict[str, Any]:
+    native = map_freshness_for_provider(provider, requested)
+    if native is not None:
+        return {"requested": requested, "applied": True, "provider": provider, "native_value": native}
+    return {
+        "requested": requested,
+        "applied": False,
+        "provider": provider,
+        "reason": "provider {} does not support freshness".format(provider),
+    }
+
+# =============================================================================
+# Unified search type (web vs. news vertical)
+# =============================================================================
+
+SEARCH_TYPE_VALUES = ("search", "news")
+SEARCH_TYPE_PROVIDER_FORMATS = {"serper": {"search": "search", "news": "news"}}
+
+
+def search_type_metadata(provider: str, search_type: str) -> dict:
+    mapping = SEARCH_TYPE_PROVIDER_FORMATS.get(provider, {})
+    native_type = mapping.get(search_type)
+    return {
+        "requested": search_type,
+        "provider": provider,
+        "applied": native_type is not None,
+        "native_type": native_type,
+    }
+
 def search_serper(
     query: str,
     api_key: str,
@@ -72,15 +127,27 @@ def search_serper(
 
     data = make_request(endpoint, headers, body)
 
+    # /news answers carry results under "news" (title/link/snippet/date/source/
+    # imageUrl/position) instead of "organic"; reading only "organic" silently
+    # returns zero results for serper.type="news".
+    raw_items = data.get("news", []) if search_type == "news" else data.get("organic", [])
     results = []
-    for i, item in enumerate(data.get("organic", [])[:max_results]):
-        results.append({
+    for i, item in enumerate(raw_items[:max_results]):
+        result = {
             "title": item.get("title", ""),
             "url": item.get("link", ""),
             "snippet": item.get("snippet", ""),
             "score": round(1.0 - i * 0.1, 2),
             "date": item.get("date"),
-        })
+        }
+        if search_type == "news":
+            if item.get("source") is not None:
+                result["source"] = item.get("source")
+            if item.get("imageUrl"):
+                result["thumbnail"] = item.get("imageUrl")
+            if item.get("position") is not None:
+                result["position"] = item.get("position")
+        results.append(result)
 
     answer = ""
     if data.get("answerBox", {}).get("answer"):
@@ -1642,3 +1709,53 @@ def extract_keenable(
         except Exception as e:
             results.append(_normalize_extract_result("keenable", url, error=str(e)))
     return {"provider": "keenable", "results": results}
+
+
+def extract_serper(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://scrape.serper.dev",
+    timeout: int = 30,
+) -> dict:
+    """Extract page content via Serper's webpage scraper.
+
+    Request/response shape verified against Serper API clients: POST
+    ``{"url": ..., "includeMarkdown": true}`` with the X-API-KEY header;
+    the answer carries ``text`` plus optional ``markdown``, ``metadata``,
+    ``jsonld`` and ``credits``. The endpoint accepts one URL per call, so
+    multi-URL requests loop with per-URL error items (extract_keenable
+    pattern). The scraper returns no raw HTML; html/raw-html/render-js
+    options are accepted for tool compatibility but have no upstream effect.
+    The endpoint is operator-overridable via config ``serper.scrape_url``.
+    """
+    headers = {"X-API-KEY": api_key, "Content-Type": "application/json"}
+    results: List[Dict[str, Any]] = []
+    for url in urls:
+        try:
+            data = make_request(api_url, headers, {"url": url, "includeMarkdown": True}, timeout=timeout)
+            if data.get("error"):
+                results.append(_normalize_extract_result("serper", url, error=str(data.get("error"))))
+                continue
+            # Field names are parsed tolerantly in case Serper renames them.
+            markdown = data.get("markdown") or ""
+            text = data.get("text") or data.get("content") or ""
+            content = markdown or text
+            metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+            title = metadata.get("title") or data.get("title") or ""
+            results.append(_normalize_extract_result(
+                "serper",
+                url,
+                title=title,
+                content=content,
+                raw_content=content,
+                metadata=metadata or None,
+                jsonld=data.get("jsonld"),
+                credits=data.get("credits"),
+            ))
+        except Exception as e:
+            results.append(_normalize_extract_result("serper", url, error=str(e)))
+    return {"provider": "serper", "results": results}

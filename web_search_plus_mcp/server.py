@@ -3,7 +3,7 @@
 web-search-plus-mcp: Multi-provider web search MCP server.
 
 MCP wrapper around Web Search Plus Routing v2: 14 search providers,
-7 extraction providers, quality reports, guarded auto-routing, opt-in research mode,
+8 extraction providers, quality reports, guarded auto-routing, opt-in research mode,
 and Tavily-first extraction defaults.
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ from mcp.types import TextContent, Tool
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
-__version__ = "0.15.0"
+__version__ = "0.16.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus")
@@ -272,6 +272,10 @@ async def list_tools() -> list[Tool]:
                         "default": "normal",
                     },
                     "time_range": {"type": "string", "enum": ["hour", "day", "week", "month", "year"], "description": "Recency filter."},
+                    "freshness": {"type": "string", "enum": ["day", "week", "month", "year"], "description": "Unified recency filter alias for providers that support freshness."},
+                    "search_type": {"type": "string", "enum": ["search", "news"], "default": "search", "description": "Search vertical. Serper serves news natively; other providers report unsupported metadata."},
+                    "country": {"type": "string", "description": "ISO 3166-1 alpha-2 country override (e.g. at, fr)."},
+                    "language": {"type": "string", "description": "ISO 639-1 language override (e.g. de), or auto via config defaults."},
                     "include_domains": {"type": "array", "items": {"type": "string"}, "description": "Restrict to these domains."},
                     "exclude_domains": {"type": "array", "items": {"type": "string"}, "description": "Exclude these domains."},
                     "mode": {"type": "string", "enum": ["normal", "research"], "default": "normal", "description": "normal fast path or opt-in research mode."},
@@ -285,7 +289,7 @@ async def list_tools() -> list[Tool]:
             name="web_extract",
             description=(
                 "Extract markdown or HTML from URLs using Web Search Plus extraction providers. "
-                "Supports Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, and Keenable. Auto mode tries Tavily first, then Exa, Linkup, Parallel, Firecrawl, You.com, and Keenable when configured."
+                "Supports Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, and Serper. Auto mode tries Tavily first, then Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, and Serper when configured."
             ),
             inputSchema={
                 "type": "object",
@@ -336,6 +340,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if depth != "normal":
             cmd.extend(["--exa-depth", depth])
         _append_optional(cmd, "--time-range", arguments.get("time_range"))
+        _append_optional(cmd, "--freshness", arguments.get("freshness"))
+        _append_optional(cmd, "--search-type", arguments.get("search_type"))
+        _append_optional(cmd, "--country", arguments.get("country"))
+        _append_optional(cmd, "--language", arguments.get("language"))
         _append_list(cmd, "--include-domains", arguments.get("include_domains"))
         _append_list(cmd, "--exclude-domains", arguments.get("exclude_domains"))
         mode = arguments.get("mode", "normal")

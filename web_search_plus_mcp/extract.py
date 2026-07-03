@@ -24,6 +24,7 @@ try:
         extract_keenable,
         extract_linkup,
         extract_parallel,
+        extract_serper,
         extract_tavily,
         extract_you,
     )
@@ -40,6 +41,7 @@ except ImportError:  # pragma: no cover
         extract_keenable,
         extract_linkup,
         extract_parallel,
+        extract_serper,
         extract_tavily,
         extract_you,
     )
@@ -229,6 +231,13 @@ def extract_plus(
                         client_model=parallel.get("client_model"),
                         max_chars_total=int(parallel.get("max_chars_total", 12000)),
                         max_chars_per_result=int(parallel.get("max_chars_per_result", 6000)),
+                    )
+                if prov == "serper":
+                    sp = config.get("serper", {})
+                    return extract_serper(
+                        urls, key, output_format, include_images, include_raw_html, render_js,
+                        api_url=sp.get("scrape_url", "https://scrape.serper.dev"),
+                        timeout=int(sp.get("timeout", 30)),
                     )
                 you = config.get("you", {})
                 return extract_you(urls, key, output_format, include_images, include_raw_html, render_js, api_url=you.get("contents_url", "https://ydc-index.io/v1/contents"), timeout=int(you.get("timeout", 30)))
