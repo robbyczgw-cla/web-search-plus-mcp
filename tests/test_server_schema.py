@@ -171,6 +171,11 @@ def test_cli_config_commands_persist_routing_preferences(tmp_path, monkeypatch, 
     assert payload["routing_preferences"]["provider_priority"][:4] == ["tavily", "linkup", "kilo-perplexity", "brave"]
     assert set(payload["routing_preferences"]["provider_priority"]) == set(server.ROUTING_PROVIDER_ORDER)
 
+    assert server.cli_main(["config", "set-extract-priority", "serper,parallel"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["routing_preferences"]["extract_provider_priority"][:2] == ["serper", "parallel"]
+    assert set(payload["routing_preferences"]["extract_provider_priority"]) == set(server.EXTRACT_PROVIDERS)
+
     assert server.cli_main(["config", "disable", "perplexity"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert "perplexity" in payload["routing_preferences"]["disabled_providers"]

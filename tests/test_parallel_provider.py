@@ -67,7 +67,8 @@ def test_parallel_extract_normalizes_full_content_and_errors(monkeypatch):
     assert captured["api_url"] == "https://api.parallel.ai/v1/extract"
     assert captured["headers"]["x-api-key"] == "parallel-test-key"
     assert captured["body"]["urls"] == ["https://example.com"]
-    assert captured["body"]["advanced_settings"]["full_content"] == {"max_chars_per_result": 6000}
+    assert captured["body"]["max_chars_total"] == 120000
+    assert captured["body"]["advanced_settings"]["full_content"] == {"max_chars_per_result": 60000}
     assert captured["body"]["client_model"] == "gpt-5"
     assert captured["timeout"] == 60
     assert result["provider"] == "parallel"

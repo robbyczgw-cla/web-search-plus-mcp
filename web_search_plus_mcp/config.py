@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
-    from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS
+    from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 except ImportError:  # pragma: no cover
-    from provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS  # type: ignore
+    from provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS  # type: ignore
 
 
 CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
@@ -77,6 +77,7 @@ DEFAULT_CONFIG = {
         # Low-trust / experimental providers can stay configured for explicit use
         # without being selected automatically.
         "provider_priority": list(DEFAULT_PROVIDER_PRIORITY),
+        "extract_provider_priority": list(EXTRACT_PROVIDER_IDS),
         "disabled_providers": [],
         "auto_allow": dict(DEFAULT_AUTO_ALLOW),
         "confidence_threshold": 0.3,  # Below this, note low confidence
@@ -125,8 +126,8 @@ DEFAULT_CONFIG = {
         "timeout": 45,
         "extract_timeout": 60,
         "client_model": None,
-        "max_chars_total": 12000,
-        "max_chars_per_result": 6000
+        "max_chars_total": 120000,
+        "max_chars_per_result": 60000
     },
     "kilo-perplexity": {
         "api_url": "https://api.kilo.ai/api/gateway/chat/completions",
@@ -224,6 +225,36 @@ def _append_missing_default_providers(providers: List[str]) -> List[str]:
     return merged
 
 
+def _normalize_extract_provider_list_config(value: Any) -> List[str]:
+    if isinstance(value, str):
+        raw_values = [item.strip() for item in value.split(",")]
+    elif isinstance(value, list):
+        raw_values = [str(item).strip() for item in value]
+    else:
+        raise ValueError("extract provider list must be a string or list")
+    providers = []
+    seen = set()
+    extract_providers = set(EXTRACT_PROVIDER_IDS)
+    for raw in raw_values:
+        if not raw:
+            continue
+        provider = _normalize_routing_provider_config(raw)
+        if provider not in extract_providers:
+            raise ValueError(f"provider does not support extraction: {provider}")
+        if provider in seen:
+            continue
+        seen.add(provider)
+        providers.append(provider)
+    if not providers:
+        raise ValueError("extract provider list cannot be empty")
+    return providers
+
+
+def _append_missing_extract_providers(providers: List[str]) -> List[str]:
+    seen = set(providers)
+    return list(providers) + [provider for provider in EXTRACT_PROVIDER_IDS if provider not in seen]
+
+
 def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     auto = config.get("auto_routing", {})
     if not isinstance(auto, dict):
@@ -240,6 +271,11 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     if auto.get("provider_priority"):
         priority = _normalize_routing_provider_list_config(auto["provider_priority"])
         auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
+    if auto.get("extract_provider_priority"):
+        extract_priority = _normalize_extract_provider_list_config(auto["extract_provider_priority"])
+        auto["extract_provider_priority"] = _append_missing_extract_providers(extract_priority)
+    else:
+        auto["extract_provider_priority"] = list(EXTRACT_PROVIDER_IDS)
     if "disabled_providers" in auto:
         disabled = auto.get("disabled_providers") or []
         if disabled:

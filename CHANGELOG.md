@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.17.0] - 2026-07-10
+
+### Security
+- Sync the Web Search Plus v2.9.1 cache-ownership fix: cache stats and clear now recognize only complete WSP search-cache envelopes, preserving `provider_stats.json`, `provider_health.json`, host-written usage state, unrelated/corrupt JSON, and invalid UTF-8 files byte-for-byte.
+
+### Added
+- Add independent `auto_routing.extract_provider_priority` configuration for `web_extract(provider="auto")`, including `web-search-plus-mcp config set-extract-priority ...` and status/config output. Partial lists append missing extract-capable providers in registry order; search priority remains independent. Synced from upstream #89 by @robbyczgw-cla.
+
+### Changed
+- Raise Parallel extraction's default full-content budget from 6k to 60k characters per result and from 12k to 120k total, while preserving explicit config overrides. Synced from upstream #86 by @robbyczgw-cla.
+- Bump package, server, User-Agent, lockfile, README, and build metadata to `0.17.0`, aligned with Web Search Plus v2.9.1 plus the post-release extract-priority feature.
+
+### Attribution / no-port notes
+- Upstream v2.9.1 release PR #88 by @robbyczgw-cla supplied the cache-safety maintenance and release inventory. Hermes-only release tooling/version surfaces remain intentionally outside the MCP package.
+
 ## [0.16.0] - 2026-07-03
 
 ### Synced from Web Search Plus v2.9.0
