@@ -4,7 +4,7 @@ web-search-plus-mcp: Multi-provider web search MCP server.
 
 MCP wrapper around Web Search Plus Routing v2: 14 search providers,
 8 extraction providers, quality reports, guarded auto-routing, opt-in research mode,
-and Tavily-first extraction defaults.
+and independently configurable search/extraction priorities.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from mcp.types import TextContent, Tool
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
-__version__ = "0.16.0"
+__version__ = "0.17.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus")
@@ -70,6 +70,7 @@ def _default_behavior_config() -> dict[str, Any]:
             "enabled": True,
             "fallback_provider": "serper",
             "provider_priority": ROUTING_PROVIDER_ORDER[:],
+            "extract_provider_priority": EXTRACT_PROVIDERS[:],
             "disabled_providers": [],
             "auto_allow": dict(DEFAULT_AUTO_ALLOW),
             "confidence_threshold": 0.3,
@@ -119,6 +120,33 @@ def _append_missing_default_providers(providers: list[str]) -> list[str]:
     return merged
 
 
+def _normalize_extract_provider_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        raw = [part.strip() for part in value.split(",")]
+    elif isinstance(value, list):
+        raw = [str(part).strip() for part in value]
+    else:
+        raise ValueError("extract provider list must be a list or comma-separated string")
+    normalized: list[str] = []
+    for provider in raw:
+        if not provider:
+            continue
+        canonical = _canonical_provider(provider)
+        if canonical not in EXTRACT_PROVIDERS:
+            if canonical in SEARCH_PROVIDERS:
+                raise ValueError(f"provider does not support extraction: {canonical}")
+            raise ValueError(f"unknown provider: {provider}")
+        if canonical not in normalized:
+            normalized.append(canonical)
+    if not normalized:
+        raise ValueError("extract provider list cannot be empty")
+    return normalized
+
+
+def _append_missing_extract_providers(providers: list[str]) -> list[str]:
+    return list(providers) + [provider for provider in EXTRACT_PROVIDERS if provider not in providers]
+
+
 def _normalize_behavior_config(config: dict[str, Any]) -> dict[str, Any]:
     normalized = _merge_dict(_default_behavior_config(), config or {})
     defaults = normalized.setdefault("defaults", {})
@@ -134,6 +162,8 @@ def _normalize_behavior_config(config: dict[str, Any]) -> dict[str, Any]:
     auto["fallback_provider"] = fallback
     priority = _normalize_provider_list(auto.get("provider_priority", ROUTING_PROVIDER_ORDER), allow_empty=False)
     auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
+    extract_priority = _normalize_extract_provider_list(auto.get("extract_provider_priority", EXTRACT_PROVIDERS))
+    auto["extract_provider_priority"] = _append_missing_extract_providers(extract_priority)
     auto["disabled_providers"] = _normalize_provider_list(auto.get("disabled_providers", []), allow_empty=True)
     raw_auto_allow = auto.get("auto_allow") or {}
     if not isinstance(raw_auto_allow, dict):
@@ -289,7 +319,8 @@ async def list_tools() -> list[Tool]:
             name="web_extract",
             description=(
                 "Extract markdown or HTML from URLs using Web Search Plus extraction providers. "
-                "Supports Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, and Serper. Auto mode tries Tavily first, then Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, and Serper when configured."
+                "Supports Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, and Serper. "
+                "Auto mode follows auto_routing.extract_provider_priority; the public default remains Tavily-first."
             ),
             inputSchema={
                 "type": "object",
@@ -457,8 +488,10 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     set_default.add_argument("provider")
     set_routing = config_sub.add_parser("set-routing", help="Turn auto-routing on or off")
     set_routing.add_argument("state", choices=["on", "off"])
-    set_priority = config_sub.add_parser("set-priority", help="Set comma-separated provider priority")
+    set_priority = config_sub.add_parser("set-priority", help="Set comma-separated search provider priority")
     set_priority.add_argument("providers")
+    set_extract_priority = config_sub.add_parser("set-extract-priority", help="Set comma-separated extraction provider priority")
+    set_extract_priority.add_argument("providers")
     set_fallback = config_sub.add_parser("set-fallback", help="Set fallback provider")
     set_fallback.add_argument("provider")
     disable_provider = config_sub.add_parser("disable", aliases=["disable-provider"], help="Disable a provider in auto-routing")
@@ -535,6 +568,8 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             config.setdefault("auto_routing", {})["enabled"] = args.state == "on"
         elif args.config_command == "set-priority":
             config.setdefault("auto_routing", {})["provider_priority"] = _normalize_provider_list(args.providers, allow_empty=False)
+        elif args.config_command == "set-extract-priority":
+            config.setdefault("auto_routing", {})["extract_provider_priority"] = _normalize_extract_provider_list(args.providers)
         elif args.config_command == "set-fallback":
             provider = _canonical_provider(args.provider)
             if provider not in SEARCH_PROVIDERS:

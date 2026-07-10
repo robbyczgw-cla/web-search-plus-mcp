@@ -14,12 +14,12 @@
 
 `web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the same provider family used by the Hermes/OpenClaw Web Search Plus tools.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`0.16.0`) while tracking the Web Search Plus v2.8.1 engine family where applicable. The plugin package is versioned separately as `hermes-web-search-plus v2.8.x`; Hermes-only setup/fastpath commands are not exposed by the MCP server.
+Version note: `web-search-plus-mcp` uses its own MCP package version (`0.17.0`) while tracking Web Search Plus v2.9.1 plus the post-release configurable extract-priority feature. The Hermes plugin is versioned separately; Hermes-only setup/fastpath and release commands are not exposed by the MCP server.
 
 ## ✨ Features
 
 - **14 search providers + auto-routing** — provider metadata, schemas, defaults, and guarded/auto behavior are generated from the shared Web Search Plus provider registry
-- **7 extract providers with private-target protection** — Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, Serper
+- **8 extract providers with private-target protection** — Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, Serper
 - **Routing v2.3 auto-routing** — registry-backed routing for multilingual/current, docs/API, arXiv, CVE/security, local/shopping, OSS discovery, and answer/synthesis queries
 - **Quality reports + doctor checks** — optional routing/result diagnostics plus compact offline health checks for configured providers/cache
 - **Research mode** — opt-in multi-provider search + top-source extraction with a time budget
@@ -73,6 +73,7 @@ web-search-plus-mcp config show
 web-search-plus-mcp config set-default you        # strict fixed-provider mode
 web-search-plus-mcp config set-routing on         # restore Routing v2 auto-routing
 web-search-plus-mcp config set-priority you,serper,exa,firecrawl,tavily,linkup,parallel,brave,keenable
+web-search-plus-mcp config set-extract-priority serper,tavily,exa,linkup,parallel,firecrawl,you,keenable
 web-search-plus-mcp config set-fallback serper
 web-search-plus-mcp config disable perplexity
 web-search-plus-mcp config enable perplexity
@@ -81,7 +82,7 @@ web-search-plus-mcp config set-threshold 0.45
 web-search-plus-mcp config reset --yes
 ```
 
-Use `--config-path /path/to/config.json` or `WEB_SEARCH_PLUS_CONFIG=/path/to/config.json` for isolated MCP host installs. Provider secrets stay in environment variables; routing behavior stays in `config.json`.
+Use `--config-path /path/to/config.json` or `WEB_SEARCH_PLUS_CONFIG=/path/to/config.json` for isolated MCP host installs. Provider secrets stay in environment variables; routing behavior stays in `config.json`. Search and extraction priorities are independent. If an extraction priority lists only selected providers, the remaining extract-capable providers are appended in the public registry order.
 
 Other presets:
 
@@ -139,14 +140,16 @@ You can also place a `.env` file next to the package/project with the same varia
 
 ## 📄 Extract Providers
 
-- **Tavily** — default first choice; fastest reliable extraction in the v2.1 benchmark
+- **Tavily** — public default first choice; fastest reliable extraction in the v2.1 benchmark
 - **Exa** — fast contents API, strong for docs/academic pages
 - **Linkup** — clean markdown and source-grounded fetches
-- **Parallel** — fast excerpt-rich docs fallback with optional full-content extraction
+- **Parallel** — docs-focused fallback with full-content defaults of 60k characters per result / 120k total
 - **Firecrawl** — robust scrape fallback, useful for JS-heavy/blocked pages
 - **You.com** — LLM-ready snippets/content where available
-- **Keenable** — lowest-priority keyed or explicitly opted-in public fallback
+- **Keenable** — keyed or explicitly opted-in public extraction
+- **Serper** — fast webpage scraper extraction
 
+`auto_routing.extract_provider_priority` can override the auto-extraction order without changing search routing. Explicit provider calls still try the requested provider first.
 
 ### Keenable keyless public access
 
@@ -162,7 +165,7 @@ or set:
 KEENABLE_ALLOW_PUBLIC=1
 ```
 
-Use an API key for private or production use. The public endpoint sends queries and fetched URLs to a shared unauthenticated service and stays the lowest-priority fallback.
+Use an API key for private or production use. The public endpoint sends queries and fetched URLs to a shared unauthenticated service and remains near the tail of the public default fallback order unless the operator configures a different extraction priority.
 
 ### Private/internal extraction target guard
 
