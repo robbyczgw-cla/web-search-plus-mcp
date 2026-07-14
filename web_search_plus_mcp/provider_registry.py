@@ -29,6 +29,17 @@ class ProviderSpec:
     signup_url: str = ""
     upstream_capabilities: Tuple[str, ...] = ()
     keyless: bool = False
+    search_output_semantics: str | None = "source_results"
+    extract_output_semantics: str | None = "source_text"
+    provider_fields_allowlist: Tuple[str, ...] = ()
+    rejected_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        allowed = {"source_results", "source_text"}
+        if self.supports_search and self.search_output_semantics not in allowed:
+            raise ValueError(f"{self.provider}: search mode is not source-only")
+        if self.supports_extract and self.extract_output_semantics not in allowed:
+            raise ValueError(f"{self.provider}: extract mode is not source-only")
 
 
 _PROVIDER_SPECS = (
@@ -36,11 +47,11 @@ _PROVIDER_SPECS = (
         provider="serper",
         env_var="SERPER_API_KEY",
         display_name="Serper",
-        description="Google-like SERP results for facts, shopping, local and news queries.",
+        description="Google-like SERP results for facts, shopping, local and news queries, plus webpage scraping.",
         config_section="serper",
         supports_search=True,
-        supports_extract=False,
-        capability_labels=("search", "news", "shopping", "local"),
+        supports_extract=True,
+        capability_labels=("search", "news", "shopping", "local", "extract"),
         free_tier="2,500 one-time credits",
         signup_url="https://serper.dev/api-key",
     ),
@@ -62,12 +73,12 @@ _PROVIDER_SPECS = (
         provider="brave",
         env_var="BRAVE_API_KEY",
         display_name="Brave Search",
-        description="Independent general web index; explicit/guarded by default after Routing v2 reliability testing.",
+        description="Independent general web index in the Routing v2 default pool.",
         config_section="brave",
         supports_search=True,
         supports_extract=False,
         capability_labels=("search", "news", "local"),
-        auto_allowed_by_default=False,
+        auto_allowed_by_default=True,
         free_tier="$5 free monthly credits",
         signup_url="https://api.search.brave.com/app/keys",
     ),
@@ -95,7 +106,7 @@ _PROVIDER_SPECS = (
         capability_labels=("search", "multilingual"),
         auto_allowed_by_default=False,
         free_tier="1,000 free searches/month",
-        signup_url="https://querit.com",
+        signup_url="https://www.querit.ai",
     ),
     ProviderSpec(
         provider="linkup",
@@ -150,26 +161,28 @@ _PROVIDER_SPECS = (
         provider="perplexity",
         env_var="PERPLEXITY_API_KEY",
         display_name="Perplexity",
-        description="Direct answer-style search when configured directly.",
+        description="Rejected legacy answer endpoint; no source-only mode is registered.",
         config_section="perplexity",
-        supports_search=True,
+        supports_search=False,
         supports_extract=False,
-        capability_labels=("search", "answer"),
+        capability_labels=(),
         auto_allowed_by_default=False,
         signup_url="https://www.perplexity.ai/settings/api",
+        rejected_reason="no_verified_source_only_endpoint",
     ),
     ProviderSpec(
         provider="kilo-perplexity",
         env_var="KILOCODE_API_KEY",
         display_name="Kilo Code Perplexity bridge",
-        description="Perplexity-compatible access through Kilo Code when configured.",
+        description="Rejected legacy answer bridge; no source-only mode is registered.",
         config_section="kilo-perplexity",
-        supports_search=True,
+        supports_search=False,
         supports_extract=False,
-        capability_labels=("search", "answer"),
+        capability_labels=(),
         auto_allowed_by_default=False,
         free_tier="Depends on Kilo account",
         signup_url="https://kilo.ai",
+        rejected_reason="no_verified_source_only_endpoint",
     ),
     ProviderSpec(
         provider="you",
@@ -200,12 +213,12 @@ _PROVIDER_SPECS = (
         provider="keenable",
         env_var="KEENABLE_API_KEY",
         display_name="Keenable",
-        description="Independent web index with keyed endpoints plus an opt-in keyless public tier.",
+        description="Independent web index for search and extraction; works keyless, optional key raises rate limits.",
         config_section="keenable",
         supports_search=True,
         supports_extract=True,
-        capability_labels=("search", "extract", "keyless-public"),
-        free_tier="API key recommended; keyless public tier is opt-in/off by default",
+        capability_labels=("search", "extract"),
+        free_tier="Keyless public tier; optional key for higher limits",
         signup_url="https://keenable.ai",
         keyless=True,
     ),
@@ -214,8 +227,29 @@ _PROVIDER_SPECS = (
 PROVIDER_SPECS: Dict[str, ProviderSpec] = {spec.provider: spec for spec in _PROVIDER_SPECS}
 SEARCH_PROVIDER_IDS = tuple(spec.provider for spec in _PROVIDER_SPECS if spec.supports_search)
 # Extraction fallback order: Tavily-first stays; serper's webpage scraper is a
-# last-resort fallback so a Serper-only setup still has extraction.
-EXTRACT_PROVIDER_IDS = ("tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper")
+# last-resort fallback at the end of the list.
+EXTRACT_PROVIDER_PRIORITY = (
+    "tavily",
+    "exa",
+    "linkup",
+    "parallel",
+    "firecrawl",
+    "you",
+    "keenable",
+    "serper",
+)
+_EXTRACT_CAPABLE_PROVIDERS = {
+    spec.provider for spec in _PROVIDER_SPECS if spec.supports_extract
+}
+if set(EXTRACT_PROVIDER_PRIORITY) != _EXTRACT_CAPABLE_PROVIDERS:
+    raise RuntimeError(
+        "EXTRACT_PROVIDER_PRIORITY must list every extract-capable provider exactly once"
+    )
+EXTRACT_PROVIDER_IDS = tuple(
+    provider
+    for provider in EXTRACT_PROVIDER_PRIORITY
+    if provider in _EXTRACT_CAPABLE_PROVIDERS
+)
 DEFAULT_PROVIDER_PRIORITY = (
     "you",
     "serper",
@@ -223,12 +257,10 @@ DEFAULT_PROVIDER_PRIORITY = (
     "firecrawl",
     "tavily",
     "linkup",
-    "parallel",
     "brave",
+    "parallel",
     "serpbase",
     "querit",
-    "kilo-perplexity",
-    "perplexity",
     "searxng",
     "keenable",
 )
@@ -239,6 +271,14 @@ DEFAULT_AUTO_ALLOW = {
 }
 PROVIDER_ENV_KEYS = tuple(spec.env_var for spec in _PROVIDER_SPECS)
 EXTRACT_PROVIDER_ENV_KEYS = tuple(spec.env_var for spec in _PROVIDER_SPECS if spec.supports_extract)
+KEYLESS_PROVIDER_IDS = tuple(spec.provider for spec in _PROVIDER_SPECS if spec.keyless)
+KEYLESS_EXTRACT_PROVIDER_IDS = tuple(
+    spec.provider for spec in _PROVIDER_SPECS if spec.keyless and spec.supports_extract
+)
+
+
+def keyless_public_env_var(provider: str) -> str:
+    return f"{PROVIDER_SPECS[provider].config_section.upper()}_ALLOW_PUBLIC"
 
 
 def doctor_catalog() -> Dict[str, Dict[str, object]]:
@@ -248,7 +288,6 @@ def doctor_catalog() -> Dict[str, Dict[str, object]]:
             "env_var": spec.env_var,
             "search_capable": spec.supports_search,
             "extract_capable": spec.supports_extract,
-            "keyless": spec.keyless,
         }
         for provider, spec in PROVIDER_SPECS.items()
     }

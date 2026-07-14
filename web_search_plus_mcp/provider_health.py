@@ -11,18 +11,17 @@ from typing import Any, Dict, Optional, Tuple
 
 try:
     from .cache import CACHE_DIR
-except ImportError:  # pragma: no cover
-    from cache import CACHE_DIR  # type: ignore
+except ImportError:  # pragma: no cover - direct script execution
+    from cache import CACHE_DIR
 try:
     from .http_client import ProviderRequestError
-except ImportError:  # pragma: no cover
-    from http_client import ProviderRequestError  # type: ignore
+except ImportError:  # pragma: no cover - direct script execution
+    from http_client import ProviderRequestError
 
 
 PROVIDER_HEALTH_FILE = CACHE_DIR / "provider_health.json"
 COOLDOWN_STEPS_SECONDS = [60, 300, 1500, 3600]  # 1m -> 5m -> 25m -> 1h cap
 RETRY_BACKOFF_SECONDS = [1, 3, 9]
-
 # Add up to this fraction of the base delay as random jitter so concurrent or
 # repeated retries against a recovering provider do not synchronize into bursts.
 RETRY_JITTER_FRACTION = 0.5

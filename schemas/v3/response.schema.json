@@ -1,0 +1,1590 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://websearchplus.xyz/schema/v3/response.schema.json",
+  "title": "ResponseV3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "request_id",
+    "execution_id",
+    "capability",
+    "status",
+    "results",
+    "observations",
+    "policy_actions",
+    "source_diversity",
+    "provider_attempts",
+    "routing_receipt",
+    "cache_status",
+    "limits_applied",
+    "dedup_clusters",
+    "warnings"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "3.0"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "execution_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capability": {
+      "$ref": "#/$defs/Capability"
+    },
+    "status": {
+      "$ref": "#/$defs/ResponseStatus"
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ResultV3"
+      }
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ObservationV3"
+      }
+    },
+    "policy_actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PolicyActionV3"
+      }
+    },
+    "source_diversity": {
+      "$ref": "#/$defs/SourceDiversityV3"
+    },
+    "engine": {
+      "$ref": "#/$defs/EngineV3"
+    },
+    "provider_attempts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ProviderAttemptV3"
+      }
+    },
+    "routing_receipt": {
+      "$ref": "#/$defs/RoutingReceipt"
+    },
+    "cache_status": {
+      "$ref": "#/$defs/CacheStatus"
+    },
+    "limits_applied": {
+      "$ref": "#/$defs/LimitsAppliedV3"
+    },
+    "stored_content": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/StoredContentV3"
+      }
+    },
+    "dedup_clusters": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/WarningV3"
+      }
+    },
+    "error": {
+      "$ref": "#/$defs/ErrorV3"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "error"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "degraded"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "warnings": {
+            "contains": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "$ref": "#/$defs/DegradedReason"
+                }
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "Capability": {
+      "type": "string",
+      "enum": [
+        "search",
+        "extract"
+      ]
+    },
+    "ResponseStatus": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "degraded",
+        "failed"
+      ]
+    },
+    "DegradedReason": {
+      "type": "string",
+      "enum": [
+        "wsp.cache.served_stale",
+        "wsp.content.truncated",
+        "wsp.extract.urls_omitted",
+        "wsp.extract.partial",
+        "wsp.budget.limited",
+        "wsp.independence.method_degraded"
+      ]
+    },
+    "ErrorClass": {
+      "type": "string",
+      "enum": [
+        "invalid_request",
+        "unsupported",
+        "config",
+        "auth",
+        "quota",
+        "rate_limit",
+        "transient",
+        "timeout",
+        "provider_contract",
+        "content",
+        "security",
+        "budget",
+        "cancelled",
+        "internal"
+      ]
+    },
+    "AttemptOutcome": {
+      "type": "string",
+      "enum": [
+        "success",
+        "partial",
+        "skipped",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "SkipReason": {
+      "type": "string",
+      "enum": [
+        "disabled",
+        "unsupported_capability",
+        "not_configured",
+        "missing_credentials",
+        "auth_blocked",
+        "quota_blocked",
+        "rate_limited",
+        "circuit_open",
+        "budget_blocked",
+        "policy_excluded",
+        "deadline_exceeded"
+      ]
+    },
+    "FallbackReason": {
+      "type": "string",
+      "enum": [
+        "none",
+        "selected_failed",
+        "selected_skipped",
+        "insufficient_results",
+        "partial_content",
+        "budget_chain"
+      ]
+    },
+    "CandidateDecision": {
+      "type": "string",
+      "enum": [
+        "selected",
+        "attempted_failed",
+        "attempted_no_selection",
+        "skipped",
+        "not_attempted",
+        "origin_selected"
+      ]
+    },
+    "CandidateReasonCode": {
+      "type": "string",
+      "enum": [
+        "classic_selected",
+        "fallback_selected",
+        "attempt_failed",
+        "insufficient_results",
+        "blocked_auth",
+        "blocked_quota",
+        "circuit_open",
+        "budget_denied",
+        "provider_unavailable",
+        "not_attempted_after_success",
+        "cache_origin_selected"
+      ]
+    },
+    "CacheDisposition": {
+      "type": "string",
+      "enum": [
+        "fresh_hit",
+        "stale_hit",
+        "miss",
+        "bypassed",
+        "unavailable"
+      ]
+    },
+    "CircuitState": {
+      "type": "string",
+      "enum": [
+        "closed",
+        "open",
+        "half_open",
+        "blocked_auth",
+        "blocked_quota",
+        "unknown"
+      ]
+    },
+    "ErrorV3": {
+      "type": "object",
+      "properties": {
+        "error_class": {
+          "$ref": "#/$defs/ErrorClass"
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^wsp\\.[a-z0-9_]+(?:\\.[a-z0-9_]+)*$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "http_status": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599
+        },
+        "retry_after_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "details": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "error_class",
+        "code",
+        "message",
+        "retryable"
+      ]
+    },
+    "ProviderTryErrorV3": {
+      "type": "object",
+      "properties": {
+        "error_class": {
+          "$ref": "#/$defs/ErrorClass"
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^wsp\\.[a-z0-9_]+(?:\\.[a-z0-9_]+)*$"
+        },
+        "http_status": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 100,
+          "maximum": 599
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "retry_after_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "error_class",
+        "code",
+        "http_status",
+        "retryable",
+        "retry_after_ms"
+      ]
+    },
+    "ProviderTryV3": {
+      "type": "object",
+      "properties": {
+        "try_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "success",
+            "error"
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderTryErrorV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "try_number",
+        "started_at",
+        "duration_ms",
+        "outcome",
+        "error"
+      ]
+    },
+    "ProviderAttemptV3": {
+      "type": "object",
+      "properties": {
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capability": {
+          "$ref": "#/$defs/Capability"
+        },
+        "outcome": {
+          "$ref": "#/$defs/AttemptOutcome"
+        },
+        "retry_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "result_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "$ref": "#/$defs/ErrorV3"
+        },
+        "skip_reason": {
+          "$ref": "#/$defs/SkipReason"
+        },
+        "budget_decision": {
+          "type": "string",
+          "enum": [
+            "allowed",
+            "reserved",
+            "blocked",
+            "unknown"
+          ]
+        },
+        "circuit_state_before": {
+          "$ref": "#/$defs/CircuitState"
+        },
+        "circuit_state_after": {
+          "$ref": "#/$defs/CircuitState"
+        },
+        "endpoint_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "attempted",
+            "skipped"
+          ]
+        },
+        "tries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderTryV3"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "attempt_id",
+        "provider",
+        "capability",
+        "outcome",
+        "retry_count",
+        "result_count",
+        "circuit_state_before",
+        "circuit_state_after",
+        "endpoint_id",
+        "decision",
+        "tries"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "required": [
+              "error"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "skipped"
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "required": [
+              "skip_reason"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "skipped"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          },
+          "then": {
+            "required": [
+              "skip_reason"
+            ],
+            "properties": {
+              "tries": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "attempted"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          },
+          "then": {
+            "properties": {
+              "tries": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "UrlV3": {
+      "type": "object",
+      "properties": {
+        "observed": {
+          "type": "string",
+          "format": "uri"
+        },
+        "canonical": {
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "observed",
+        "canonical"
+      ]
+    },
+    "ProviderScoreV3": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "number"
+        },
+        "semantics": {
+          "type": "string",
+          "enum": [
+            "provider_local_relevance",
+            "unknown"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "semantics"
+      ]
+    },
+    "PublishedAtV3": {
+      "type": "object",
+      "properties": {
+        "raw": {
+          "type": "string"
+        },
+        "normalized": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "raw",
+        "normalized"
+      ]
+    },
+    "ObservationV3": {
+      "type": "object",
+      "properties": {
+        "observation_id": {
+          "type": "string",
+          "pattern": "^obs_"
+        },
+        "provider_attempt_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider_result_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "endpoint_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "search_result",
+            "extracted_document"
+          ]
+        },
+        "url": {
+          "$ref": "#/$defs/UrlV3"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "snippet": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider_rank": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "provider_score": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderScoreV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "published_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PublishedAtV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider_fields": {
+          "type": "object",
+          "maxProperties": 1,
+          "additionalProperties": {
+            "type": "object"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "observation_id",
+        "provider_attempt_id",
+        "provider_result_index",
+        "provider",
+        "endpoint_id",
+        "kind",
+        "url",
+        "title",
+        "snippet",
+        "text",
+        "provider_rank",
+        "provider_score",
+        "published_at",
+        "provider_fields"
+      ]
+    },
+    "SegmentV3": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end",
+        "text"
+      ]
+    },
+    "ProjectedProvenanceV3": {
+      "type": "object",
+      "properties": {
+        "observation_id": {
+          "type": "string",
+          "pattern": "^obs_"
+        },
+        "source_field": {
+          "type": "string",
+          "enum": [
+            "title",
+            "snippet",
+            "text"
+          ]
+        },
+        "transformations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "whitespace_norm",
+              "deterministic_truncation",
+              "mechanical_segmentation",
+              "image_base64_replace"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "observation_id",
+        "source_field",
+        "transformations"
+      ]
+    },
+    "ProjectedTextV3": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "text_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "provider",
+            "engine"
+          ]
+        },
+        "provenance": {
+          "$ref": "#/$defs/ProjectedProvenanceV3"
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SegmentV3"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "text_sha256",
+        "origin",
+        "provenance",
+        "segments"
+      ]
+    },
+    "ResultV3": {
+      "type": "object",
+      "properties": {
+        "result_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "search_result",
+            "extracted_document"
+          ]
+        },
+        "engine_rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "representative_observation_id": {
+          "type": "string",
+          "pattern": "^obs_"
+        },
+        "observation_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^obs_"
+          }
+        },
+        "dedup_cluster_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "$ref": "#/$defs/UrlV3"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectedTextV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "snippet": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectedTextV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectedTextV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "result_id",
+        "kind",
+        "engine_rank",
+        "representative_observation_id",
+        "observation_ids",
+        "dedup_cluster_id",
+        "url",
+        "title",
+        "snippet",
+        "text"
+      ]
+    },
+    "CacheStatus": {
+      "type": "object",
+      "properties": {
+        "disposition": {
+          "$ref": "#/$defs/CacheDisposition"
+        },
+        "entry_id": {
+          "type": "string"
+        },
+        "age_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ttl_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "served_stale": {
+          "type": "boolean"
+        },
+        "source_contract_version": {
+          "type": "string",
+          "enum": [
+            "3.0",
+            "2.x"
+          ]
+        },
+        "origin_execution_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "write_error": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "disposition"
+      ]
+    },
+    "CandidateDecisionV3": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "position": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "decision": {
+          "$ref": "#/$defs/CandidateDecision"
+        },
+        "reason_code": {
+          "$ref": "#/$defs/CandidateReasonCode"
+        },
+        "attempt_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "position",
+        "decision",
+        "reason_code",
+        "attempt_id"
+      ],
+      "oneOf": [
+        {
+          "properties": {
+            "decision": {
+              "const": "selected"
+            },
+            "reason_code": {
+              "enum": [
+                "classic_selected",
+                "fallback_selected"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "decision": {
+              "const": "attempted_failed"
+            },
+            "reason_code": {
+              "const": "attempt_failed"
+            },
+            "attempt_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "decision": {
+              "const": "attempted_no_selection"
+            },
+            "reason_code": {
+              "const": "insufficient_results"
+            },
+            "attempt_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "decision": {
+              "const": "skipped"
+            },
+            "reason_code": {
+              "enum": [
+                "blocked_auth",
+                "blocked_quota",
+                "circuit_open",
+                "budget_denied",
+                "provider_unavailable"
+              ]
+            },
+            "attempt_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "decision": {
+              "const": "not_attempted"
+            },
+            "reason_code": {
+              "enum": [
+                "provider_unavailable",
+                "not_attempted_after_success"
+              ]
+            },
+            "attempt_id": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "decision": {
+              "const": "origin_selected"
+            },
+            "reason_code": {
+              "const": "cache_origin_selected"
+            },
+            "attempt_id": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "CacheOriginReceiptV3": {
+      "type": "object",
+      "properties": {
+        "execution_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policy_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policy_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_order": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "selected_provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fallback_reason": {
+          "$ref": "#/$defs/FallbackReason"
+        },
+        "candidate_decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CandidateDecisionV3"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "execution_id",
+        "policy_id",
+        "policy_revision",
+        "candidate_order",
+        "selected_provider",
+        "fallback_reason",
+        "candidate_decisions"
+      ]
+    },
+    "ShadowObservationV3": {
+      "type": "object",
+      "properties": {
+        "observed": {
+          "type": "boolean",
+          "const": true
+        },
+        "policy_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policy_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "selected_provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "affected_execution": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "observed",
+        "policy_id",
+        "policy_revision",
+        "selected_provider",
+        "affected_execution"
+      ]
+    },
+    "RoutingReceipt": {
+      "type": "object",
+      "properties": {
+        "policy_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policy_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "classic",
+            "shadow"
+          ]
+        },
+        "candidate_order": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "selected_provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fallback_reason": {
+          "$ref": "#/$defs/FallbackReason"
+        },
+        "shadow": {
+          "type": "object"
+        },
+        "authority": {
+          "type": "string",
+          "const": "classic"
+        },
+        "execution_scope": {
+          "type": "string",
+          "const": "current"
+        },
+        "candidate_decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CandidateDecisionV3"
+          }
+        },
+        "cache_origin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CacheOriginReceiptV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shadow_observation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShadowObservationV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "policy_id",
+        "policy_revision",
+        "mode",
+        "candidate_order",
+        "selected_provider",
+        "fallback_reason"
+      ],
+      "dependentRequired": {
+        "authority": [
+          "authority",
+          "execution_scope",
+          "candidate_decisions",
+          "cache_origin",
+          "shadow_observation"
+        ],
+        "execution_scope": [
+          "authority",
+          "execution_scope",
+          "candidate_decisions",
+          "cache_origin",
+          "shadow_observation"
+        ],
+        "candidate_decisions": [
+          "authority",
+          "execution_scope",
+          "candidate_decisions",
+          "cache_origin",
+          "shadow_observation"
+        ],
+        "cache_origin": [
+          "authority",
+          "execution_scope",
+          "candidate_decisions",
+          "cache_origin",
+          "shadow_observation"
+        ],
+        "shadow_observation": [
+          "authority",
+          "execution_scope",
+          "candidate_decisions",
+          "cache_origin",
+          "shadow_observation"
+        ]
+      }
+    },
+    "SourceDiversityV3": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "method_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "method_degraded": {
+          "type": "boolean"
+        },
+        "provider_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_family_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unique_cluster_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "method_version",
+        "method_degraded",
+        "provider_count",
+        "host_count",
+        "source_family_count",
+        "unique_cluster_count"
+      ]
+    },
+    "ExtractLimitsV3": {
+      "type": "object",
+      "properties": {
+        "requested_url_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "processed_urls": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "omitted_urls": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "omitted_url_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_urls": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "max_context_chars": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 200000
+        },
+        "context_chars_returned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "requested_url_count",
+        "processed_urls",
+        "omitted_urls",
+        "omitted_url_count",
+        "max_urls",
+        "max_context_chars",
+        "context_chars_returned",
+        "truncated"
+      ]
+    },
+    "LimitsAppliedV3": {
+      "type": "object",
+      "properties": {
+        "max_results": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "extract": {
+          "$ref": "#/$defs/ExtractLimitsV3"
+        }
+      },
+      "additionalProperties": false
+    },
+    "StoredContentReferenceV3": {
+      "type": "object",
+      "properties": {
+        "store": {
+          "const": "web_text_v3"
+        },
+        "key": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "media_type": {
+          "const": "text/markdown"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "store",
+        "key",
+        "media_type"
+      ]
+    },
+    "StoredContentV3": {
+      "type": "object",
+      "properties": {
+        "observation_id": {
+          "type": "string",
+          "pattern": "^obs_"
+        },
+        "storage_attempted": {
+          "const": true
+        },
+        "storage_succeeded": {
+          "type": "boolean"
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StoredContentReferenceV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "full_text_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "full_text_chars": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "observation_id",
+        "storage_attempted",
+        "storage_succeeded",
+        "reference",
+        "full_text_sha256",
+        "full_text_chars"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "storage_succeeded": {
+                "const": true
+              }
+            },
+            "required": [
+              "storage_succeeded"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reference": {
+                "$ref": "#/$defs/StoredContentReferenceV3"
+              },
+              "full_text_sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "full_text_chars": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "reference": {
+                "type": "null"
+              },
+              "full_text_sha256": {
+                "type": "null"
+              },
+              "full_text_chars": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "PolicyActionV3": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "excluded",
+            "reranked",
+            "demoted",
+            "selected_as_representative",
+            "truncated_by_limit"
+          ]
+        },
+        "observation_id": {
+          "type": "string",
+          "pattern": "^obs_"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "spam_domain",
+            "intent_authority",
+            "domain_diversity",
+            "dedup_representative",
+            "max_results",
+            "max_content_bytes",
+            "max_context_chars"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "observation_id",
+        "reason"
+      ]
+    },
+    "EngineV3": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "build_commit": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "build_commit"
+      ]
+    },
+    "WarningV3": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^wsp\\.[a-z0-9_]+(?:\\.[a-z0-9_]+)*$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string"
+        },
+        "details": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ]
+    }
+  }
+}

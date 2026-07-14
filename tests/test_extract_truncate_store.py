@@ -1,7 +1,9 @@
 from pathlib import Path
 
 import web_search_plus_mcp.cache as cache
-import web_search_plus_mcp.extract as extract
+from web_search_plus_mcp.bounded_context_v3 import FullTextStore, apply_bounded_context, prepare_extract_request
+from web_search_plus_mcp.contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
+from web_search_plus_mcp.runtime_v3 import observations_from_legacy, project_results_from_observations
 
 
 def test_store_web_text_caps_and_writes_under_cache(tmp_path, monkeypatch):
@@ -20,25 +22,42 @@ def test_store_web_text_caps_and_writes_under_cache(tmp_path, monkeypatch):
     assert "TRUNCATED" in stored
 
 
-def test_truncate_and_store_extracts_bounds_large_mcp_payload(tmp_path, monkeypatch):
-    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
-    monkeypatch.setattr(extract, "store_web_text", cache.store_web_text)
-    full_text = "A" * 500
-    result = {
-        "provider": "tavily",
-        "results": [
-            {"url": "https://example.com/large", "content": full_text},
-            {"url": "https://example.com/small", "content": "small"},
-        ],
-    }
+def test_v3_bounded_context_truncates_and_stores_full_text_truthfully(tmp_path):
+    full_text = "A" * 2500
+    raw = [{"url": "https://example.com/large", "title": "Large", "content": full_text}]
+    observations = observations_from_legacy(
+        {"results": raw}, "tavily", Capability.EXTRACT, "attempt_test"
+    )
+    response = ResponseV3(
+        request_id="req_test",
+        execution_id="exec_test",
+        capability=Capability.EXTRACT,
+        status=ResponseStatus.OK,
+        results=project_results_from_observations(observations, raw),
+        observations=observations,
+        policy_actions=[],
+        provider_attempts=[],
+        routing_receipt={
+            "policy_id": "classic",
+            "policy_revision": "test",
+            "mode": "classic",
+            "candidate_order": ["tavily"],
+            "selected_provider": "tavily",
+            "fallback_reason": "none",
+        },
+        cache_status={"disposition": "miss"},
+    )
+    request = RequestV3.extract(["https://example.com/large"], max_context_chars=1000)
+    plan = prepare_extract_request(request, {})
+    bounded = apply_bounded_context(
+        response,
+        request,
+        plan,
+        store=FullTextStore(tmp_path),
+    ).to_dict()
 
-    bounded = extract._truncate_and_store_extracts(result, preview_chars=12)
-
-    assert bounded["extract_storage"] == {"stored": 1, "preview_chars": 12}
-    large = bounded["results"][0]
-    assert large["content"].startswith("A" * 12)
-    assert len(large["content"]) < len(full_text)
-    assert large["stored_extract"]["stored"] is True
-    assert large["stored_extract"]["field"] == "content"
-    assert Path(large["stored_extract"]["path"]).exists()
-    assert bounded["results"][1] == {"url": "https://example.com/small", "content": "small"}
+    assert bounded["limits_applied"]["extract"]["truncated"] is True
+    assert bounded["limits_applied"]["extract"]["max_context_chars"] == 1000
+    assert len(bounded["results"][0]["text"]["text"]) <= 1000
+    assert bounded["stored_content"][0]["storage_succeeded"] is True
+    assert bounded["stored_content"][0]["reference"]["store"] == "web_text_v3"

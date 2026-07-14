@@ -5,19 +5,250 @@ from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from .config import DEFAULT_CONFIG, get_api_key
-except ImportError:  # pragma: no cover
-    from config import DEFAULT_CONFIG, get_api_key  # type: ignore
+except ImportError:  # pragma: no cover - direct script execution
+    from config import DEFAULT_CONFIG, get_api_key
 try:
-    from .provider_registry import DEFAULT_PROVIDER_PRIORITY
-except ImportError:  # pragma: no cover
-    from provider_registry import DEFAULT_PROVIDER_PRIORITY  # type: ignore
+    from .provider_registry import DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS
+except ImportError:  # pragma: no cover - direct script execution
+    from provider_registry import DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS
+try:
+    from .provider_stats import performance_adjustments
+except ImportError:  # pragma: no cover - direct script execution
+    from provider_stats import performance_adjustments
 try:
     from .quality import _choose_tie_winner
-except ImportError:  # pragma: no cover
-    from quality import _choose_tie_winner  # type: ignore
+except ImportError:  # pragma: no cover - direct script execution
+    from quality import _choose_tie_winner
 
 
 ROUTING_POLICY = "routing-v2"
+
+
+def iter_all_selectable_provider_modes() -> Tuple[str, ...]:
+    """Enumerate every search mode that routing/fallback is allowed to select."""
+    return tuple(
+        provider
+        for provider, spec in PROVIDER_SPECS.items()
+        if spec.supports_search
+        and not spec.rejected_reason
+        and spec.search_output_semantics == "source_results"
+    )
+
+
+# Ordered routing-class rules from the qualitative 25-query benchmark.
+# Each entry maps a class name to one or more regex pattern groups; a class
+# matches when every group matches the lowercased query. Entries are evaluated
+# top to bottom and the first match wins, so order is part of the behavior.
+# Synthesis/briefing queries should prefer broad real-time/search providers,
+# but Web Search Plus no longer exposes a separate answer tool.
+ROUTING_CLASS_RULES: List[Tuple[str, Tuple[str, ...]]] = [
+    ("briefing_synthesis", (
+        r'\b(difference|differences|unterschiede|vergleich|compare|comparison|brief(?:ing)?|summari[sz]e|zusammenfass(?:en|ung)|was sind|what are)\b',
+    )),
+    ("security_advisory", (
+        r'\b(advisory|security advisory|cve|mitigation|openssl|openssh|vulnerability|zero[-\s]?day)\b',
+    )),
+    ("patents", (
+        r'\b(patent|patents|patentscope|espacenet|uspto|google patents)\b',
+    )),
+    ("policy_pdf", (
+        r'\b(pdf|whitepaper|code of practice)\b',
+        r'\b(nist|eu ai act|regulation|regulatory|policy|commission|government|official|rmf)\b',
+    )),
+    ("official_regulatory", (
+        r'\b(eu ai act|european commission|regulation|regulatory|obligations?)\b',
+    )),
+    ("finance_earnings_official", (
+        r'\b(nvidia|earnings|gross margin|investor relations|guidance|10-[qk]|eps|revenue|quarterly results?)\b',
+    )),
+    ("finance_investor_monthly", (
+        r'\b(investor monthly|monthly factsheet|monthly report|aum|fund flows?)\b',
+    )),
+    ("reddit_community", (
+        r'\bsite:\s*reddit\.com\b|\br/\w+|\breddit\s+(thread|post|community|users?|discussion|comments?)\b',
+    )),
+    ("shopping_reviews_local", (
+        r'\b(geizhals|preis|prices?|buy|kaufen|österreich|austria|shop|händler|deal|angebot)\b',
+        r'\b(sony|denon|iphone|samsung|bose|kef|marantz|yamaha|lg|asus|laptop|tv|headphones?|speaker|receiver|avc|wh-|[a-z]{1,5}[-\s]?\d{3,}[a-z0-9-]*)\b',
+        r'\b(review(s)?|test|tests?|vergleich|best|beste|under|unter|erfahrungen)\b',
+    )),
+    ("shopping_specs", (
+        r'\b(geizhals|preis|prices?|buy|kaufen|österreich|austria|shop|händler|deal|angebot)\b',
+        r'\b(sony|denon|iphone|samsung|bose|kef|marantz|yamaha|lg|asus|laptop|tv|headphones?|speaker|receiver|avc|wh-|[a-z]{1,5}[-\s]?\d{3,}[a-z0-9-]*)\b',
+    )),
+    ("community_forum", (
+        r'\b(forum|forums|community|discussion|comments?|erfahrungen|review(s)?|measurements?|head-fi|audiosciencereview|hifi-forum)\b',
+    )),
+    ("academic_arxiv", (
+        r'\barxiv\b|\bpaper(s)?\b|\bscaling laws\b|\brandomi[sz]ed trial\b|\bprimary sources?\b',
+    )),
+    ("github_docs", (
+        r'\b(github\b|repo(sitory)?\b|plugin docs\b)',
+    )),
+    ("official_docs", (
+        r'\b(official docs?|official documentation|api reference|developer docs?|official manual)\b',
+    )),
+    ("official_vendor_release", (
+        r'\b(official|release|announcement|launch|changelog|release notes?)\b',
+        r'\b(mistral|anthropic|openai|google|meta|nvidia|apple|microsoft|claude|gemini|llama)\b',
+    )),
+    ("docs_api", (
+        r'\b(python|pydantic|node\.js|api docs?|documentation|docs|changelog|release notes?|taskgroup|basemodel)\b',
+    )),
+    ("official_regulatory", (
+        r'\b(official|regulatory filing|public authority)\b',
+    )),
+    ("local_at", (
+        r'\b(graz|öffnungszeiten|adresse|restaurants?|vegan|hifi team)\b',
+    )),
+    ("sports_current", (
+        r'\b(bundesliga|standings?|fixtures?|tabelle|punkte|spieltag|matchday|lineups?|scores?|sturm|salzburg|lask)\b|\b(league|liga|standings?|points?)\s+table\b',
+    )),
+    ("weather_local", (
+        r'\b(wetter|weather|forecast|regen|rain)\b',
+    )),
+    ("oss_discovery", (
+        r'\b(alternatives? to|open source|self hosted|competitors?|similar to)\b',
+    )),
+]
+
+# Fallback classes assigned when no rule above matches.
+MULTILINGUAL_ROUTING_CLASS = "multilingual_current"
+DEFAULT_ROUTING_CLASS = "general"
+
+# Script/language-aware boosts for current queries in non-en/de languages:
+# You performed best as the safe fast default, with Exa/Firecrawl/Linkup
+# useful by script. Kept modest so strong class rules win.
+LANGUAGE_HINT_PROVIDER_BOOSTS: Dict[str, List[Tuple[str, float]]] = {
+    "zh": [("exa", 7.0), ("you", 6.0), ("firecrawl", 4.0), ("linkup", 3.0), ("serper", 2.5)],
+    "ar": [("you", 8.0), ("linkup", 5.0), ("serper", 4.0), ("firecrawl", 2.0)],
+    "default": [("you", 8.0), ("exa", 5.0), ("firecrawl", 4.0), ("linkup", 3.0), ("tavily", 2.0)],
+}
+
+# ---------------------------------------------------------------------------
+# Conservative query-language inference for locale resolution
+# ---------------------------------------------------------------------------
+# Extends the routing language_hint mechanic (QueryAnalyzer._detect_language_hint)
+# for search_locale.resolve_locale. The routing hint is deliberately trigger-happy
+# (a single stopword is enough to bias provider boosts); locale resolution instead
+# counts distinct stopword/character signals per language and only reports a
+# language when the evidence is unambiguous. Short keyword or technical queries
+# (for example "PostgreSQL 17 release notes") produce no inference on purpose.
+
+# Minimum number of distinct signals before a language inference is trusted.
+LANGUAGE_INFERENCE_MIN_MATCHES = 2
+
+# Common function/search words per supported language. Words shared between
+# languages (e.g. "que" in es/fr/pt) may appear in several sets; the strict
+# single-winner rule in infer_query_language keeps those from mis-firing.
+LANGUAGE_INFERENCE_STOPWORDS: Dict[str, frozenset] = {
+    "en": frozenset({
+        "the", "and", "what", "how", "where", "when", "which", "who",
+        "best", "near", "hours", "open", "with", "from", "for", "are",
+        "is", "was", "does", "latest", "today", "new",
+    }),
+    "de": frozenset({
+        "der", "die", "das", "und", "oder", "nicht", "ist", "sind",
+        "ein", "eine", "einen", "mit", "für", "von", "wie", "wo", "was",
+        "warum", "welche", "beste", "besten", "gibt", "öffnungszeiten",
+        "heute", "morgen", "preis", "kaufen", "günstig", "nähe",
+    }),
+    "es": frozenset({
+        "el", "los", "las", "una", "unos", "que", "qué", "cómo", "dónde",
+        "cuál", "por", "para", "con", "mejores", "mejor", "cerca", "hoy",
+        "horario", "horarios", "abierto", "abiertos", "tiendas",
+        "restaurantes", "precio", "precios", "donde", "como",
+    }),
+    "fr": frozenset({
+        "le", "les", "des", "une", "du", "où", "quel", "quelle", "quels",
+        "quelles", "meilleur", "meilleure", "meilleurs", "meilleures",
+        "horaires", "ouvert", "ouverts", "ouverture", "aujourd", "hui",
+        "près", "proche", "avec", "pour", "prix", "cher", "que",
+    }),
+    "it": frozenset({
+        "il", "lo", "gli", "che", "come", "dove", "quale", "quali",
+        "migliori", "migliore", "orari", "orario", "aperto", "aperti",
+        "vicino", "con", "oggi", "prezzo", "prezzi", "negozi",
+        "ristoranti", "della", "delle",
+    }),
+    "pt": frozenset({
+        "os", "do", "dos", "das", "um", "uma", "que", "como", "onde",
+        "qual", "quais", "melhores", "melhor", "horários", "aberto",
+        "perto", "hoje", "preço", "lojas", "com", "você", "para",
+        "restaurantes",
+    }),
+    "nl": frozenset({
+        "het", "een", "waar", "hoe", "welke", "beste", "goedkoop",
+        "goedkoopste", "vandaag", "morgen", "openingstijden", "winkel",
+        "winkels", "dichtbij", "buurt", "naar", "zijn", "niet", "voor",
+    }),
+}
+
+# Distinctive characters that count as one additional signal per language.
+LANGUAGE_INFERENCE_CHAR_HINTS: Dict[str, str] = {
+    "de": "äöüß",
+    "es": "ñ¿¡",
+    "pt": "ãõ",
+    "fr": "œ",
+}
+
+
+def infer_query_language(query: str) -> Optional[str]:
+    """Infer the query language conservatively for locale defaults.
+
+    Returns an ISO 639-1 code from LANGUAGE_INFERENCE_STOPWORDS when at least
+    LANGUAGE_INFERENCE_MIN_MATCHES distinct signals point to a single language
+    that strictly beats every other candidate. Returns None when the evidence
+    is missing or ambiguous so callers fall back to their configured default
+    (for example "Wiener Kaffeehaus Öffnungszeiten" infers "de", while a terse
+    technical query such as "DAC R2R NOS" infers nothing).
+    """
+    if not query:
+        return None
+    lowered = query.lower()
+    words = set(re.findall(r"\w+", lowered))
+    counts: Dict[str, int] = {}
+    for language, stopwords in LANGUAGE_INFERENCE_STOPWORDS.items():
+        count = len(words & stopwords)
+        count += sum(1 for char in LANGUAGE_INFERENCE_CHAR_HINTS.get(language, "") if char in lowered)
+        if count:
+            counts[language] = count
+    if not counts:
+        return None
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    best_language, best_count = ranked[0]
+    if best_count < LANGUAGE_INFERENCE_MIN_MATCHES:
+        return None
+    if len(ranked) > 1 and ranked[1][1] == best_count:
+        return None
+    return best_language
+
+
+# Conservative class-aware provider boosts (positive) and penalties (negative)
+# from the qualitative routing benchmark, applied on top of the signal scores.
+ROUTING_CLASS_PROVIDER_BOOSTS: Dict[str, List[Tuple[str, float]]] = {
+    "shopping_at": [("serper", 8.0), ("firecrawl", 6.0), ("linkup", 4.0), ("you", 2.0), ("exa", -2.0)],
+    "local_at": [("firecrawl", 8.0), ("serper", 6.0), ("linkup", 4.0), ("you", 2.0)],
+    "official_vendor_release": [("you", 14.0), ("linkup", 10.0), ("exa", 7.0), ("serper", 4.0), ("firecrawl", 3.0)],
+    "official_docs": [("exa", 12.0), ("you", 7.0), ("firecrawl", 5.0), ("serper", 3.0), ("tavily", 2.0)],
+    "policy_pdf": [("linkup", 10.0), ("exa", 8.0), ("serper", 7.0), ("firecrawl", 6.0), ("you", 4.0)],
+    "official_regulatory": [("exa", 8.0), ("firecrawl", 6.0), ("serper", 5.0), ("you", 3.0)],
+    "sports_current": [("you", 8.0), ("serper", 6.0), ("linkup", 5.0), ("tavily", 2.0)],
+    "github_docs": [("exa", 10.0), ("you", 6.0), ("firecrawl", 5.0), ("serper", 4.0)],
+    "docs_api": [("serper", 6.0), ("exa", 5.0), ("you", 4.0), ("firecrawl", 3.0), ("tavily", 3.0)],
+    "academic_arxiv": [("exa", 12.0), ("serper", 3.0), ("linkup", 2.0), ("you", 1.5)],
+    "oss_discovery": [("exa", 8.0), ("firecrawl", 5.0), ("tavily", 4.0), ("you", 3.0)],
+    "reddit_community": [("serper", 10.0), ("firecrawl", 8.0), ("tavily", 6.0), ("exa", -20.0)],
+    "security_advisory": [("serper", 10.0), ("exa", 8.0), ("linkup", 5.0), ("you", 2.0), ("firecrawl", -20.0)],
+    "finance_earnings_official": [("linkup", 14.0), ("you", 9.0), ("exa", 7.0), ("serper", 6.0), ("firecrawl", 4.0)],
+    "finance_investor_monthly": [("linkup", 12.0), ("serper", 7.0), ("you", 5.0), ("exa", 4.0)],
+    "community_forum": [("firecrawl", 10.0), ("serper", 8.0), ("tavily", 5.0), ("you", 4.0), ("exa", -18.0)],
+    "shopping_specs": [("serper", 9.0), ("firecrawl", 6.0), ("linkup", 4.0), ("you", 2.0), ("exa", -2.0)],
+    "shopping_reviews_local": [("serper", 9.0), ("firecrawl", 7.0), ("you", 4.0), ("tavily", 3.0), ("exa", -4.0)],
+    "patents": [("exa", 10.0), ("serper", 7.0), ("linkup", 4.0), ("you", 3.0)],
+    "weather_local": [("serper", 8.0), ("firecrawl", 6.0), ("you", 2.0)],
+    "briefing_synthesis": [("you", 16.0), ("tavily", 4.0), ("linkup", 3.0), ("exa", 2.0)],
+}
 
 
 class QueryAnalyzer:
@@ -649,56 +880,12 @@ class QueryAnalyzer:
     def _detect_routing_class(self, query: str, language_hint: str) -> str:
         """Coarse class labels from the qualitative 25-query benchmark."""
         q = query.lower()
-        # Synthesis/briefing queries should prefer broad real-time/search providers,
-        # but Web Search Plus no longer exposes a separate answer tool.
-        if re.search(r'\b(difference|differences|unterschiede|vergleich|compare|comparison|brief(?:ing)?|summari[sz]e|zusammenfass(?:en|ung)|was sind|what are)\b', q):
-            return "briefing_synthesis"
-        if re.search(r'\b(advisory|security advisory|cve|mitigation|openssl|openssh|vulnerability|zero[-\s]?day)\b', q):
-            return "security_advisory"
-        if re.search(r'\b(patent|patents|patentscope|espacenet|uspto|google patents)\b', q):
-            return "patents"
-        if re.search(r'\b(pdf|whitepaper|code of practice)\b', q) and re.search(r'\b(nist|eu ai act|regulation|regulatory|policy|commission|government|official|rmf)\b', q):
-            return "policy_pdf"
-        if re.search(r'\b(eu ai act|european commission|regulation|regulatory|obligations?)\b', q):
-            return "official_regulatory"
-        if re.search(r'\b(nvidia|earnings|gross margin|investor relations|guidance|10-[qk]|eps|revenue|quarterly results?)\b', q):
-            return "finance_earnings_official"
-        if re.search(r'\b(investor monthly|monthly factsheet|monthly report|aum|fund flows?)\b', q):
-            return "finance_investor_monthly"
-        if re.search(r'\bsite:\s*reddit\.com\b|\br/\w+|\breddit\s+(thread|post|community|users?|discussion|comments?)\b', q):
-            return "reddit_community"
-        if (
-            re.search(r'\b(geizhals|preis|prices?|buy|kaufen|österreich|austria|shop|händler|deal|angebot)\b', q)
-            and re.search(r'\b(sony|denon|iphone|samsung|bose|kef|marantz|yamaha|lg|asus|laptop|tv|headphones?|speaker|receiver|avc|wh-|[a-z]{1,5}[-\s]?\d{3,}[a-z0-9-]*)\b', q)
-        ):
-            if re.search(r'\b(review(s)?|test|tests?|vergleich|best|beste|under|unter|erfahrungen)\b', q):
-                return "shopping_reviews_local"
-            return "shopping_specs"
-        if re.search(r'\b(forum|forums|community|discussion|comments?|erfahrungen|review(s)?|measurements?|head-fi|audiosciencereview|hifi-forum)\b', q):
-            return "community_forum"
-        if re.search(r'\barxiv\b|\bpaper(s)?\b|\bscaling laws\b|\brandomi[sz]ed trial\b|\bprimary sources?\b', q):
-            return "academic_arxiv"
-        if re.search(r'\b(github\b|repo(sitory)?\b|plugin docs\b)', q):
-            return "github_docs"
-        if re.search(r'\b(official docs?|official documentation|api reference|developer docs?|official manual)\b', q):
-            return "official_docs"
-        if re.search(r'\b(official|release|announcement|launch|changelog|release notes?)\b', q) and re.search(r'\b(mistral|anthropic|openai|google|meta|nvidia|apple|microsoft|claude|gemini|llama)\b', q):
-            return "official_vendor_release"
-        if re.search(r'\b(python|pydantic|node\.js|api docs?|documentation|docs|changelog|release notes?|taskgroup|basemodel)\b', q):
-            return "docs_api"
-        if re.search(r'\b(official|regulatory filing|public authority)\b', q):
-            return "official_regulatory"
-        if re.search(r'\b(graz|öffnungszeiten|adresse|restaurants?|vegan|hifi team)\b', q):
-            return "local_at"
-        if re.search(r'\b(bundesliga|standings?|fixtures?|tabelle|punkte|spieltag|matchday|lineups?|scores?|sturm|salzburg|lask)\b|\b(league|liga|standings?|points?)\s+table\b', q):
-            return "sports_current"
-        if re.search(r'\b(wetter|weather|forecast|regen|rain)\b', q):
-            return "weather_local"
-        if re.search(r'\b(alternatives? to|open source|self hosted|competitors?|similar to)\b', q):
-            return "oss_discovery"
+        for routing_class, patterns in ROUTING_CLASS_RULES:
+            if all(re.search(pattern, q) for pattern in patterns):
+                return routing_class
         if language_hint not in {"en", "de"}:
-            return "multilingual_current"
-        return "general"
+            return MULTILINGUAL_ROUTING_CLASS
+        return DEFAULT_ROUTING_CLASS
 
     def _apply_vnext_routing_boosts(
         self,
@@ -722,56 +909,14 @@ class QueryAnalyzer:
         # Script/language-aware current queries: You performed best as the safe fast default,
         # with Exa/Firecrawl/Linkup useful by script. Keep this modest so strong class rules win.
         if language_hint not in {"en", "de"}:
-            if language_hint == "zh":
-                boost_many([("exa", 7.0), ("you", 6.0), ("firecrawl", 4.0), ("linkup", 3.0), ("serper", 2.5)])
-            elif language_hint == "ar":
-                boost_many([("you", 8.0), ("linkup", 5.0), ("serper", 4.0), ("firecrawl", 2.0)])
-            else:
-                boost_many([("you", 8.0), ("exa", 5.0), ("firecrawl", 4.0), ("linkup", 3.0), ("tavily", 2.0)])
+            boost_many(LANGUAGE_HINT_PROVIDER_BOOSTS.get(
+                language_hint, LANGUAGE_HINT_PROVIDER_BOOSTS["default"]
+            ))
             boost("you", min(recency_score, 3.0))
 
-        if routing_class == "shopping_at":
-            boost_many([("serper", 8.0), ("firecrawl", 6.0), ("linkup", 4.0), ("you", 2.0), ("exa", -2.0)])
-        elif routing_class == "local_at":
-            boost_many([("firecrawl", 8.0), ("serper", 6.0), ("linkup", 4.0), ("you", 2.0)])
-        elif routing_class == "official_vendor_release":
-            boost_many([("you", 14.0), ("linkup", 10.0), ("exa", 7.0), ("serper", 4.0), ("firecrawl", 3.0)])
-        elif routing_class == "official_docs":
-            boost_many([("exa", 12.0), ("you", 7.0), ("firecrawl", 5.0), ("serper", 3.0), ("tavily", 2.0)])
-        elif routing_class == "policy_pdf":
-            boost_many([("linkup", 10.0), ("exa", 8.0), ("serper", 7.0), ("firecrawl", 6.0), ("you", 4.0)])
-        elif routing_class == "official_regulatory":
-            boost_many([("exa", 8.0), ("firecrawl", 6.0), ("serper", 5.0), ("you", 3.0)])
-        elif routing_class == "sports_current":
-            boost_many([("you", 8.0), ("serper", 6.0), ("linkup", 5.0), ("tavily", 2.0)])
-        elif routing_class == "github_docs":
-            boost_many([("exa", 10.0), ("you", 6.0), ("firecrawl", 5.0), ("serper", 4.0)])
-        elif routing_class == "docs_api":
-            boost_many([("serper", 6.0), ("exa", 5.0), ("you", 4.0), ("firecrawl", 3.0), ("tavily", 3.0)])
-        elif routing_class == "academic_arxiv":
-            boost_many([("exa", 12.0), ("serper", 3.0), ("linkup", 2.0), ("you", 1.5)])
-        elif routing_class == "oss_discovery":
-            boost_many([("exa", 8.0), ("firecrawl", 5.0), ("tavily", 4.0), ("you", 3.0)])
-        elif routing_class == "reddit_community":
-            boost_many([("serper", 10.0), ("firecrawl", 8.0), ("tavily", 6.0), ("exa", -20.0)])
-        elif routing_class == "security_advisory":
-            boost_many([("serper", 10.0), ("exa", 8.0), ("linkup", 5.0), ("you", 2.0), ("firecrawl", -20.0)])
-        elif routing_class == "finance_earnings_official":
-            boost_many([("linkup", 14.0), ("you", 9.0), ("exa", 7.0), ("serper", 6.0), ("firecrawl", 4.0)])
-        elif routing_class == "finance_investor_monthly":
-            boost_many([("linkup", 12.0), ("serper", 7.0), ("you", 5.0), ("exa", 4.0)])
-        elif routing_class == "community_forum":
-            boost_many([("firecrawl", 10.0), ("serper", 8.0), ("tavily", 5.0), ("you", 4.0), ("exa", -18.0)])
-        elif routing_class == "shopping_specs":
-            boost_many([("serper", 9.0), ("firecrawl", 6.0), ("linkup", 4.0), ("you", 2.0), ("exa", -2.0)])
-        elif routing_class == "shopping_reviews_local":
-            boost_many([("serper", 9.0), ("firecrawl", 7.0), ("you", 4.0), ("tavily", 3.0), ("exa", -4.0)])
-        elif routing_class == "patents":
-            boost_many([("exa", 10.0), ("serper", 7.0), ("linkup", 4.0), ("you", 3.0)])
-        elif routing_class == "weather_local":
-            boost_many([("serper", 8.0), ("firecrawl", 6.0), ("you", 2.0)])
-        elif routing_class == "briefing_synthesis":
-            boost_many([("you", 16.0), ("tavily", 4.0), ("linkup", 3.0), ("exa", 2.0)])
+        class_boosts = ROUTING_CLASS_PROVIDER_BOOSTS.get(routing_class)
+        if class_boosts:
+            boost_many(class_boosts)
 
     def analyze(self, query: str) -> Dict[str, Any]:
         """
@@ -854,8 +999,7 @@ class QueryAnalyzer:
             "querit": (research_score * 0.65) + (rag_score * 0.35) + (recency_score * 0.45),
             "linkup": linkup_source_score + (rag_score * 0.7) + (research_score * 0.45) + (recency_score * 0.35),
             "exa": discovery_score + (1.0 if re.search(r"\b(similar|alternatives?|examples?)\b", query, re.IGNORECASE) else 0.0) + (exa_deep_score * 0.5) + (exa_deep_reasoning_score * 0.5),
-            "perplexity": direct_answer_score + (local_news_score * 0.4) + (recency_score * 0.55),
-            "kilo-perplexity": direct_answer_score + (local_news_score * 0.4) + (recency_score * 0.55),
+
             "you": rag_score + (recency_score * 0.25),  # You.com good for real-time + RAG
             "searxng": privacy_score,  # SearXNG for privacy/multi-source queries
             "firecrawl": discovery_score + (research_score * 0.35) + (recency_score * 0.25),
@@ -877,8 +1021,7 @@ class QueryAnalyzer:
             "querit": research_matches,
             "linkup": linkup_source_matches + rag_matches + research_matches,
             "exa": discovery_matches + exa_deep_matches + exa_deep_reasoning_matches,
-            "perplexity": direct_answer_matches,
-            "kilo-perplexity": direct_answer_matches,
+
             "you": rag_matches,
             "searxng": privacy_matches,
             "firecrawl": discovery_matches + research_matches,
@@ -934,6 +1077,19 @@ class QueryAnalyzer:
                 "auto_allow_excluded": auto_excluded,
             }
 
+        # Adaptive routing: blend in bounded, learned performance adjustments
+        # (latency / success / empty-result history of real calls). Only when
+        # query-class signals matched at all — performance memory breaks close
+        # calls but never invents a winner out of silence.
+        adaptive_adjustments: Dict[str, float] = {}
+        if max(available.values()) > 0 and self.auto_config.get("adaptive_routing", True):
+            adaptive_adjustments = performance_adjustments(list(available))
+            if adaptive_adjustments:
+                available = {
+                    p: max(0.0, s + adaptive_adjustments.get(p, 0.0))
+                    for p, s in available.items()
+                }
+
         # Find the winner
         max_score = max(available.values())
 
@@ -982,15 +1138,8 @@ class QueryAnalyzer:
                 # (user might want similar search)
                 pass  # Keep current winner but note it
 
-        # Determine Exa search depth when routed to Exa
+        # Exa is permanently constrained to source-result mode in WSP 3.0.
         exa_depth = "normal"
-        if winner == "exa":
-            deep_r_score = analysis.get("exa_deep_reasoning_score", 0)
-            deep_score = analysis.get("exa_deep_score", 0)
-            if deep_r_score >= 4.0:
-                exa_depth = "deep-reasoning"
-            elif deep_score >= 4.0:
-                exa_depth = "deep"
 
         # Build detailed routing result
         threshold = self.auto_config.get("confidence_threshold", 0.3)
@@ -1003,6 +1152,7 @@ class QueryAnalyzer:
             "routing_policy": ROUTING_POLICY,
             "exa_depth": exa_depth,
             "scores": {p: round(s, 2) for p, s in available.items()},
+            "adaptive_adjustments": adaptive_adjustments,
             "winning_score": round(max_score, 2),
             "top_signals": [
                 {"matched": s["matched"], "weight": s["weight"]}
@@ -1103,8 +1253,14 @@ def explain_routing(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
             if matches
         },
         "available_providers": [
-            p for p in ["serper", "serpbase", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "you", "searxng"]
-            if get_api_key(p, config) and p not in config.get("auto_routing", {}).get("disabled_providers", []) and _provider_auto_allowed(p, config.get("auto_routing", {}))
+            provider
+            for provider in iter_all_selectable_provider_modes()
+            if get_api_key(provider, config)
+            and provider
+            not in config.get("auto_routing", {}).get("disabled_providers", [])
+            and _provider_auto_allowed(
+                provider, config.get("auto_routing", {})
+            )
         ]
     }
 
