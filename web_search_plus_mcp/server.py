@@ -2,9 +2,9 @@
 """
 web-search-plus-mcp: Multi-provider web search MCP server.
 
-MCP wrapper around Web Search Plus Routing v2: 14 search providers,
-8 extraction providers, quality reports, guarded auto-routing, opt-in research mode,
-and independently configurable search/extraction priorities.
+MCP wrapper around the Web Search Plus v3 source-only runtime: 12 search
+providers, 8 extraction providers, evidence-rich responses, bounded extraction,
+guarded auto-routing, and opt-in research mode.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from mcp.types import TextContent, Tool
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
-__version__ = "0.17.0"
+__version__ = "1.0.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus")
@@ -47,6 +47,7 @@ PRESETS = {
 
 CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
 PROVIDER_ALIASES = {"kilo_perplexity": "kilo-perplexity"}
+RETIRED_ANSWER_PROVIDERS = {"perplexity", "kilo-perplexity"}
 ROUTING_PROVIDER_ORDER = list(DEFAULT_PROVIDER_PRIORITY)
 
 
@@ -88,7 +89,9 @@ def _merge_dict(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any
     return merged
 
 
-def _normalize_provider_list(value: Any, *, allow_empty: bool = True) -> list[str]:
+def _normalize_provider_list(
+    value: Any, *, allow_empty: bool = True, drop_retired: bool = False
+) -> list[str]:
     if value is None:
         return []
     if isinstance(value, str):
@@ -102,6 +105,8 @@ def _normalize_provider_list(value: Any, *, allow_empty: bool = True) -> list[st
         if not provider:
             continue
         canonical = _canonical_provider(provider)
+        if canonical in RETIRED_ANSWER_PROVIDERS and drop_retired:
+            continue
         if canonical not in SEARCH_PROVIDERS:
             raise ValueError(f"unknown provider: {provider}")
         if canonical not in normalized:
@@ -147,30 +152,49 @@ def _append_missing_extract_providers(providers: list[str]) -> list[str]:
     return list(providers) + [provider for provider in EXTRACT_PROVIDERS if provider not in providers]
 
 
-def _normalize_behavior_config(config: dict[str, Any]) -> dict[str, Any]:
+def _normalize_behavior_config(
+    config: dict[str, Any], *, migrate_retired: bool = False
+) -> dict[str, Any]:
     normalized = _merge_dict(_default_behavior_config(), config or {})
     defaults = normalized.setdefault("defaults", {})
     default_provider = _canonical_provider(str(defaults.get("provider", "serper")))
+    if default_provider in RETIRED_ANSWER_PROVIDERS and migrate_retired:
+        default_provider = "serper"
     if default_provider not in SEARCH_PROVIDERS:
         raise ValueError(f"unknown default provider: {defaults.get('provider')}")
     defaults["provider"] = default_provider
     auto = normalized.setdefault("auto_routing", {})
     auto["enabled"] = bool(auto.get("enabled", True))
     fallback = _canonical_provider(str(auto.get("fallback_provider", "serper")))
+    if fallback in RETIRED_ANSWER_PROVIDERS and migrate_retired:
+        fallback = "serper"
     if fallback not in SEARCH_PROVIDERS:
         raise ValueError(f"unknown fallback provider: {auto.get('fallback_provider')}")
     auto["fallback_provider"] = fallback
-    priority = _normalize_provider_list(auto.get("provider_priority", ROUTING_PROVIDER_ORDER), allow_empty=False)
+    priority = _normalize_provider_list(
+        auto.get("provider_priority", ROUTING_PROVIDER_ORDER),
+        allow_empty=False,
+        drop_retired=migrate_retired,
+    )
     auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
     extract_priority = _normalize_extract_provider_list(auto.get("extract_provider_priority", EXTRACT_PROVIDERS))
     auto["extract_provider_priority"] = _append_missing_extract_providers(extract_priority)
-    auto["disabled_providers"] = _normalize_provider_list(auto.get("disabled_providers", []), allow_empty=True)
+    auto["disabled_providers"] = _normalize_provider_list(
+        auto.get("disabled_providers", []),
+        allow_empty=True,
+        drop_retired=migrate_retired,
+    )
     raw_auto_allow = auto.get("auto_allow") or {}
     if not isinstance(raw_auto_allow, dict):
         raise ValueError("auto_allow must be an object mapping provider names to booleans")
     normalized_auto_allow = dict(_default_behavior_config()["auto_routing"]["auto_allow"])
     for provider, allowed in raw_auto_allow.items():
-        normalized_auto_allow[_canonical_provider(str(provider))] = bool(allowed)
+        canonical = _canonical_provider(str(provider))
+        if canonical in RETIRED_ANSWER_PROVIDERS and migrate_retired:
+            continue
+        if canonical not in SEARCH_PROVIDERS:
+            raise ValueError(f"unknown auto_allow provider: {provider}")
+        normalized_auto_allow[canonical] = bool(allowed)
     auto["auto_allow"] = normalized_auto_allow
     threshold = auto.get("confidence_threshold", 0.3)
     try:
@@ -189,7 +213,15 @@ def _load_behavior_config(path: Optional[Path] = None) -> tuple[dict[str, Any], 
         return _default_behavior_config(), None
     try:
         data = json.loads(path.read_text())
-        return _normalize_behavior_config(data), None
+        serialized = json.dumps(data, sort_keys=True)
+        retired_present = any(provider in serialized for provider in RETIRED_ANSWER_PROVIDERS)
+        normalized = _normalize_behavior_config(data, migrate_retired=True)
+        warning = (
+            "Retired answer-only providers were ignored by the source-only 1.0 runtime."
+            if retired_present
+            else None
+        )
+        return normalized, warning
     except Exception as exc:
         broken = path.with_name(path.name + f".broken-{int(__import__('time').time())}")
         try:
@@ -278,11 +310,9 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="web_search",
             description=(
-                "Search the web using Web Search Plus Routing v2 multi-provider routing. "
-                "Supports You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, "
-                "Brave, native Perplexity, Kilo Perplexity, SearXNG, SerpBase, Querit, and Keenable. "
-                "Brave, Parallel, SerpBase, Querit, Perplexity, and Kilo Perplexity are explicit-only by default "
-                "and are not auto-routed unless auto_allow is changed."
+                "Source-only web search through the Web Search Plus v3 runtime. "
+                "Routes across 12 source-result providers and returns additive v3 evidence, "
+                "routing receipts, provider attempts, cache provenance, and typed errors."
             ),
             inputSchema={
                 "type": "object",
@@ -298,7 +328,7 @@ async def list_tools() -> list[Tool]:
                     "depth": {
                         "type": "string",
                         "enum": ["normal", "deep", "deep-reasoning"],
-                        "description": "Exa depth: normal, deep synthesis, or deep-reasoning.",
+                        "description": "Exa depth: normal, deep multi-source search, or deep-reasoning.",
                         "default": "normal",
                     },
                     "time_range": {"type": "string", "enum": ["hour", "day", "week", "month", "year"], "description": "Recency filter."},
@@ -318,9 +348,9 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="web_extract",
             description=(
-                "Extract markdown or HTML from URLs using Web Search Plus extraction providers. "
-                "Supports Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, and Serper. "
-                "Auto mode follows auto_routing.extract_provider_priority; the public default remains Tavily-first."
+                "Source-only URL extraction through 8 Web Search Plus v3 providers. "
+                "Responses preserve bounded-context limits, truncation warnings, evidence, "
+                "and page-on-demand stored-content references."
             ),
             inputSchema={
                 "type": "object",
@@ -339,7 +369,104 @@ async def list_tools() -> list[Tool]:
     return tools
 
 
-async def _run_cmd(cmd: list[str], timeout: int) -> list[TextContent]:
+def _field_text(value: Any) -> str:
+    if isinstance(value, dict):
+        value = value.get("text")
+    return value if isinstance(value, str) else ""
+
+
+def _field_url(value: Any) -> str:
+    if isinstance(value, dict):
+        value = value.get("canonical") or value.get("observed")
+    return value if isinstance(value, str) else ""
+
+
+def _typed_error_payload(
+    *,
+    code: str,
+    message: str,
+    error_class: str,
+    provider: Optional[str] = None,
+    retryable: bool = False,
+) -> dict[str, Any]:
+    error_v3 = {
+        "error_class": error_class,
+        "code": code,
+        "message": message,
+        "retryable": retryable,
+        "provider": provider,
+    }
+    return {
+        "contract_version": "3.0",
+        "status": "failed",
+        "provider": provider,
+        "results": [],
+        "error": message,
+        "error_v3": error_v3,
+    }
+
+
+def _project_v3_payload(
+    payload: dict[str, Any],
+    *,
+    capability: str,
+    query: Optional[str] = None,
+    urls: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    """Project canonical v3 output to the stable MCP shape, additively."""
+    projected = {key: value for key, value in payload.items() if key not in {"results", "error"}}
+    receipt = payload.get("routing_receipt") or {}
+    provider = receipt.get("selected_provider")
+    if not provider:
+        attempts = payload.get("provider_attempts") or []
+        provider = next(
+            (item.get("provider") for item in attempts if item.get("outcome") == "success"),
+            None,
+        )
+    projected["provider"] = provider
+    if query is not None:
+        projected["query"] = query
+    if urls is not None:
+        projected["urls"] = list(urls)
+
+    results = []
+    for item in payload.get("results") or []:
+        if not isinstance(item, dict):
+            continue
+        url = _field_url(item.get("url"))
+        if capability == "extract":
+            result = {"url": url, "content": _field_text(item.get("text"))}
+        else:
+            result = {
+                "title": _field_text(item.get("title")),
+                "url": url,
+                "snippet": _field_text(item.get("snippet")),
+            }
+        results.append(result)
+    projected["results"] = results
+
+    error_value = payload.get("error")
+    error_v3 = error_value if isinstance(error_value, dict) else payload.get("error_v3")
+    if isinstance(error_v3, dict):
+        projected["error"] = (
+            error_value.strip()
+            if isinstance(error_value, str) and error_value.strip()
+            else str(error_v3.get("message") or "Web Search Plus request failed")
+        )
+        projected["error_v3"] = error_v3
+    elif isinstance(error_value, str) and error_value.strip():
+        projected["error"] = error_value.strip()
+    return projected
+
+
+async def _run_cmd(
+    cmd: list[str],
+    timeout: int,
+    *,
+    capability: str,
+    query: Optional[str] = None,
+    urls: Optional[list[str]] = None,
+) -> list[TextContent]:
     result = await asyncio.to_thread(
         subprocess.run,
         cmd,
@@ -348,24 +475,52 @@ async def _run_cmd(cmd: list[str], timeout: int) -> list[TextContent]:
         env=os.environ.copy(),
         timeout=timeout,
     )
-    output = result.stdout.strip() if result.returncode == 0 else f"Error: {result.stderr.strip()}"
-    return [TextContent(type="text", text=output)]
+    raw = (result.stdout if result.returncode == 0 else result.stderr).strip()
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        payload = _typed_error_payload(
+            code=(
+                "wsp.subprocess.invalid_response"
+                if result.returncode == 0
+                else "wsp.subprocess.failed"
+            ),
+            message=(
+                "Web Search Plus subprocess returned an invalid response."
+                if result.returncode == 0
+                else "Web Search Plus subprocess failed."
+            ),
+            error_class="internal",
+        )
+    if isinstance(payload, dict) and payload.get("contract_version") == "3.0":
+        payload = _project_v3_payload(payload, capability=capability, query=query, urls=urls)
+    return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
 
 
 @app.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name == "web_search":
         query = arguments["query"]
+        provider = _canonical_provider(arguments.get("provider", "auto"))
+        if provider in RETIRED_ANSWER_PROVIDERS:
+            payload = _typed_error_payload(
+                code="wsp.provider.source_only_required",
+                message=f"Provider '{provider}' is unavailable because Web Search Plus 3.0 is source-only.",
+                error_class="unsupported",
+                provider=provider,
+            )
+            return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
         cmd = [
             sys.executable,
             str(SEARCH_SCRIPT),
             "--query",
             query,
             "--provider",
-            _canonical_provider(arguments.get("provider", "auto")),
+            provider,
             "--max-results",
             str(arguments.get("count", 5)),
             "--compact",
+            "--contract-v3",
         ]
         depth = arguments.get("depth", "normal")
         if depth != "normal":
@@ -382,7 +537,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             cmd.extend(["--mode", mode, "--research-time-budget", str(arguments.get("research_time_budget", 55.0))])
         if _as_bool(arguments.get("quality_report", False)):
             cmd.append("--quality-report")
-        return await _run_cmd(cmd, timeout=75)
+        return await _run_cmd(cmd, timeout=75, capability="search", query=query)
 
     if name == "web_extract":
         urls = arguments["urls"]
@@ -398,6 +553,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             "--format",
             arguments.get("format", "markdown"),
             "--compact",
+            "--contract-v3",
         ]
         if _as_bool(arguments.get("include_images", False)):
             cmd.append("--extract-images")
@@ -405,7 +561,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             cmd.append("--include-raw-html")
         if _as_bool(arguments.get("render_js", False)):
             cmd.append("--render-js")
-        return await _run_cmd(cmd, timeout=90)
+        return await _run_cmd(cmd, timeout=90, capability="extract", urls=urls)
 
     raise ValueError(f"Unknown tool: {name}")
 
@@ -498,6 +654,12 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     disable_provider.add_argument("provider")
     enable_provider = config_sub.add_parser("enable", aliases=["enable-provider"], help="Re-enable a provider in auto-routing")
     enable_provider.add_argument("provider")
+    set_auto_allow = config_sub.add_parser(
+        "set-auto-allow",
+        help="Allow or block a guarded provider from participating in auto-routing",
+    )
+    set_auto_allow.add_argument("provider")
+    set_auto_allow.add_argument("state", choices=["on", "off"])
     set_threshold = config_sub.add_parser("set-threshold", help="Set confidence threshold from 0 to 1")
     set_threshold.add_argument("threshold", type=float)
     reset = config_sub.add_parser("reset", help="Reset routing preferences to defaults")
@@ -589,6 +751,13 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
                 raise SystemExit(f"Unknown provider: {args.provider}")
             disabled = _normalize_provider_list(config.setdefault("auto_routing", {}).get("disabled_providers", []))
             config["auto_routing"]["disabled_providers"] = [p for p in disabled if p != provider]
+        elif args.config_command == "set-auto-allow":
+            provider = _canonical_provider(args.provider)
+            if provider not in SEARCH_PROVIDERS:
+                raise SystemExit(f"Unknown provider: {args.provider}")
+            config.setdefault("auto_routing", {}).setdefault("auto_allow", {})[
+                provider
+            ] = args.state == "on"
         elif args.config_command == "set-threshold":
             config.setdefault("auto_routing", {})["confidence_threshold"] = args.threshold
         _write_behavior_config(config, path)

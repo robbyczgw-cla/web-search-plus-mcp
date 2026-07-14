@@ -63,7 +63,7 @@ def test_serpbase_can_be_called_explicitly(monkeypatch):
     assert captured["body"] == {"q": "example", "hl": "de", "gl": "at", "page": 2}
     assert captured["timeout"] == 12
     assert result["provider"] == "serpbase"
-    assert result["answer"] == "Answer"
+    assert "answer" not in result
     assert result["results"][0]["url"] == "https://example.com/page?keep=1"
     assert result["related_searches"] == ["example related"]
 
@@ -82,8 +82,6 @@ def test_server_schema_exposes_serpbase_last_and_auto_allow_metadata():
         "exa",
         "firecrawl",
         "parallel",
-        "perplexity",
-        "kilo-perplexity",
         "you",
         "searxng",
         "keenable",
@@ -98,12 +96,10 @@ def test_server_schema_exposes_serpbase_last_and_auto_allow_metadata():
         "firecrawl",
         "tavily",
         "linkup",
-        "parallel",
         "brave",
+        "parallel",
         "serpbase",
         "querit",
-        "kilo-perplexity",
-        "perplexity",
         "searxng",
         "keenable",
     ]
@@ -112,28 +108,22 @@ def test_server_schema_exposes_serpbase_last_and_auto_allow_metadata():
     assert config["auto_routing"]["auto_allow"] == {
         "serpbase": False,
         "querit": False,
-        "brave": False,
-        "kilo-perplexity": False,
-        "perplexity": False,
         "parallel": False,
     }
 
 
-def test_server_normalizes_auto_allow_provider_aliases():
+def test_server_normalizes_source_only_auto_allow_preferences():
     config = server._normalize_behavior_config({
         "auto_routing": {
-            "provider_priority": ["kilo_perplexity", "serpbase", "querit"],
+            "provider_priority": ["serpbase", "querit", "brave"],
             "auto_allow": {"serpbase": True, "querit": False},
         }
     })
 
-    assert config["auto_routing"]["provider_priority"][:3] == ["kilo-perplexity", "serpbase", "querit"]
+    assert config["auto_routing"]["provider_priority"][:3] == ["serpbase", "querit", "brave"]
     assert set(config["auto_routing"]["provider_priority"]) == set(server.ROUTING_PROVIDER_ORDER)
     assert config["auto_routing"]["auto_allow"] == {
         "serpbase": True,
         "querit": False,
-        "brave": False,
-        "kilo-perplexity": False,
-        "perplexity": False,
         "parallel": False,
     }

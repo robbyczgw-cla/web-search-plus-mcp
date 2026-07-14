@@ -4,7 +4,7 @@
     "robbyczgw-cla"
   ],
   "name": "web-search-plus-mcp",
-  "description": "Registry-backed multi-provider web search, extraction, quality reports, and onboarding for MCP server operators.",
+  "description": "Source-only multi-provider web search and bounded extraction with registry-backed routing, quality reports, and operator onboarding.",
   "repository": "https://github.com/robbyczgw-cla/web-search-plus-mcp",
   "homepage": "https://github.com/robbyczgw-cla/web-search-plus-mcp",
   "license": "MIT",
@@ -25,7 +25,7 @@
   "tools": [
     {
       "name": "web_search",
-      "description": "Search the web using Web Search Plus v2.4 registry-backed multi-provider routing. Supports You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, native Perplexity, Kilo Perplexity, SearXNG, SerpBase, and Querit. Brave, Parallel, SerpBase, Querit, Perplexity, and Kilo Perplexity are explicit-only by default and are not auto-routed unless auto_allow is changed.",
+      "description": "Source-only web search through the Web Search Plus v3 runtime. Routes across 12 source-result providers and returns additive v3 evidence, routing receipts, provider attempts, cache provenance, and typed errors.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -38,18 +38,17 @@
             "enum": [
               "auto",
               "serper",
+              "serpbase",
               "brave",
               "tavily",
-              "exa",
+              "querit",
               "linkup",
+              "exa",
               "firecrawl",
               "parallel",
-              "perplexity",
-              "kilo-perplexity",
               "you",
               "searxng",
-              "serpbase",
-              "querit"
+              "keenable"
             ],
             "description": "Force a specific provider, or use auto-routing.",
             "default": "auto"
@@ -68,7 +67,7 @@
               "deep",
               "deep-reasoning"
             ],
-            "description": "Exa depth: normal, deep synthesis, or deep-reasoning.",
+            "description": "Exa depth: normal, deep multi-source search, or deep-reasoning.",
             "default": "normal"
           },
           "time_range": {
@@ -81,6 +80,33 @@
               "year"
             ],
             "description": "Recency filter."
+          },
+          "freshness": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "year"
+            ],
+            "description": "Unified recency filter alias for providers that support freshness."
+          },
+          "search_type": {
+            "type": "string",
+            "enum": [
+              "search",
+              "news"
+            ],
+            "default": "search",
+            "description": "Search vertical. Serper serves news natively; other providers report unsupported metadata."
+          },
+          "country": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 country override (e.g. at, fr)."
+          },
+          "language": {
+            "type": "string",
+            "description": "ISO 639-1 language override (e.g. de), or auto via config defaults."
           },
           "include_domains": {
             "type": "array",
@@ -125,7 +151,7 @@
     },
     {
       "name": "web_extract",
-      "description": "Extract markdown or HTML from URLs using Web Search Plus extraction providers. Supports Tavily, Exa, Linkup, Parallel, Firecrawl, and You.com. Auto mode tries Tavily first, then Exa, Linkup, Parallel, Firecrawl, and You.com.",
+      "description": "Source-only URL extraction through 8 Web Search Plus v3 providers. Responses preserve bounded-context limits, truncation warnings, evidence, and page-on-demand stored-content references.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -145,7 +171,9 @@
               "linkup",
               "parallel",
               "firecrawl",
-              "you"
+              "you",
+              "keenable",
+              "serper"
             ],
             "default": "auto"
           },
@@ -185,18 +213,17 @@
     "routingConfigCli": true,
     "providers": [
       "serper",
+      "serpbase",
       "brave",
       "tavily",
-      "exa",
+      "querit",
       "linkup",
+      "exa",
       "firecrawl",
       "parallel",
-      "perplexity",
-      "kilo-perplexity",
       "you",
       "searxng",
-      "serpbase",
-      "querit"
+      "keenable"
     ],
     "extractProviders": [
       "tavily",
@@ -204,7 +231,9 @@
       "linkup",
       "parallel",
       "firecrawl",
-      "you"
+      "you",
+      "keenable",
+      "serper"
     ]
   }
 }

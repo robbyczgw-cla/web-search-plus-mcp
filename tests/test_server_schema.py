@@ -15,7 +15,7 @@ def tool_by_name(name):
     return next(tool for tool in tools if tool.name == name)
 
 
-def test_web_search_schema_exposes_v17_providers_and_controls():
+def test_web_search_schema_exposes_v1_source_providers_and_controls():
     tool = tool_by_name("web_search")
     props = tool.inputSchema["properties"]
 
@@ -30,8 +30,6 @@ def test_web_search_schema_exposes_v17_providers_and_controls():
         "exa",
         "firecrawl",
         "parallel",
-        "perplexity",
-        "kilo-perplexity",
         "you",
         "searxng",
         "keenable",
@@ -92,6 +90,7 @@ def test_web_search_call_maps_mcp_args_to_cli(monkeypatch):
     assert "--mode" in cmd and "research" in cmd
     assert "--quality-report" in cmd
     assert "--research-time-budget" in cmd and "12" in cmd
+    assert "--contract-v3" in cmd
     assert result[0].text == '{"ok": true}'
 
 
@@ -121,6 +120,7 @@ def test_web_extract_call_maps_mcp_args_to_cli(monkeypatch):
     assert "--extract-images" in cmd
     assert "--include-raw-html" in cmd
     assert "--render-js" in cmd
+    assert "--contract-v3" in cmd
     assert seen["timeout"] == 90
     assert result[0].text == '{"results": []}'
 
@@ -166,9 +166,9 @@ def test_cli_config_commands_persist_routing_preferences(tmp_path, monkeypatch, 
     payload = json.loads(capsys.readouterr().out)
     assert payload["routing_preferences"]["enabled"] is True
 
-    assert server.cli_main(["config", "set-priority", "tavily,linkup,kilo-perplexity,brave"]) == 0
+    assert server.cli_main(["config", "set-priority", "tavily,linkup,brave"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["routing_preferences"]["provider_priority"][:4] == ["tavily", "linkup", "kilo-perplexity", "brave"]
+    assert payload["routing_preferences"]["provider_priority"][:3] == ["tavily", "linkup", "brave"]
     assert set(payload["routing_preferences"]["provider_priority"]) == set(server.ROUTING_PROVIDER_ORDER)
 
     assert server.cli_main(["config", "set-extract-priority", "serper,parallel"]) == 0
@@ -176,13 +176,21 @@ def test_cli_config_commands_persist_routing_preferences(tmp_path, monkeypatch, 
     assert payload["routing_preferences"]["extract_provider_priority"][:2] == ["serper", "parallel"]
     assert set(payload["routing_preferences"]["extract_provider_priority"]) == set(server.EXTRACT_PROVIDERS)
 
-    assert server.cli_main(["config", "disable", "perplexity"]) == 0
+    assert server.cli_main(["config", "disable", "parallel"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert "perplexity" in payload["routing_preferences"]["disabled_providers"]
+    assert "parallel" in payload["routing_preferences"]["disabled_providers"]
 
-    assert server.cli_main(["config", "enable", "perplexity"]) == 0
+    assert server.cli_main(["config", "enable", "parallel"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert "perplexity" not in payload["routing_preferences"]["disabled_providers"]
+    assert "parallel" not in payload["routing_preferences"]["disabled_providers"]
+
+    assert server.cli_main(["config", "set-auto-allow", "parallel", "on"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["routing_preferences"]["auto_allow"]["parallel"] is True
+
+    assert server.cli_main(["config", "set-auto-allow", "parallel", "off"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["routing_preferences"]["auto_allow"]["parallel"] is False
 
     assert server.cli_main(["config", "set-threshold", "0.45"]) == 0
     payload = json.loads(capsys.readouterr().out)
@@ -244,11 +252,11 @@ def test_search_runtime_honors_strict_fixed_provider_mode(tmp_path, monkeypatch,
 
     def fake_brave(**kwargs):
         calls.append("brave")
-        return {"provider": "brave", "results": [{"title": "B", "url": "https://example.com", "snippet": "ok"}]}
+        return {"provider": "brave", "query": kwargs.get("query"), "results": [{"title": "B", "url": "https://example.com", "snippet": "ok"}]}
 
     def fake_tavily(**kwargs):
         calls.append("tavily")
-        return {"provider": "tavily", "results": []}
+        return {"provider": "tavily", "query": kwargs.get("query"), "results": []}
 
     monkeypatch.setattr(search, "search_brave", fake_brave)
     monkeypatch.setattr(search, "search_tavily", fake_tavily)

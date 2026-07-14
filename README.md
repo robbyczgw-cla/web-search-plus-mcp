@@ -1,31 +1,43 @@
 # 🔍 web-search-plus-mcp
 
 <p align="center">
-  <img src="docs/assets/web-search-plus-logo.png" alt="web search plus logo" width="180">
+  <img src="https://raw.githubusercontent.com/badlogic/web-search-plus-mcp/main/docs/assets/web-search-plus-logo.png" alt="Web Search Plus" width="180">
 </p>
 
 [![PyPI version](https://img.shields.io/pypi/v/web-search-plus-mcp.svg)](https://pypi.org/project/web-search-plus-mcp/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![MCP](https://img.shields.io/badge/MCP-compatible-green.svg)](https://modelcontextprotocol.io/)
+[![CI](https://github.com/robbyczgw-cla/web-search-plus-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/robbyczgw-cla/web-search-plus-mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Glama](https://glama.ai/mcp/servers/robbyczgw-cla/web-search-plus-mcp/badge)](https://glama.ai/mcp/servers/robbyczgw-cla/web-search-plus-mcp)
 
-**Multi-provider web search and Parallel-aware URL extraction for MCP clients.**
+**Source-only multi-provider web search and bounded URL extraction for MCP clients.**
 
-`web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the same provider family used by the Hermes/OpenClaw Web Search Plus tools.
+`web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the source-only provider and evidence contract of Web Search Plus 3.0 without depending on the Hermes plugin runtime.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`0.17.0`) while tracking Web Search Plus v2.9.1 plus the post-release configurable extract-priority feature. The Hermes plugin is versioned separately; Hermes-only setup/fastpath and release commands are not exposed by the MCP server.
+Version note: `web-search-plus-mcp` uses its own MCP package version (`1.0.0`) while tracking the source-only Web Search Plus v3.0.1 engine. The Hermes plugin is versioned separately; its plugin-loader, setup, Console, and release commands are not exposed by the standalone MCP server.
 
 ## ✨ Features
 
-- **14 search providers + auto-routing** — provider metadata, schemas, defaults, and guarded/auto behavior are generated from the shared Web Search Plus provider registry
+- **12 search providers + auto-routing** — source-result providers only; answer-only endpoints are rejected instead of being presented as search
 - **8 extract providers with private-target protection** — Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, Serper
-- **Routing v2.3 auto-routing** — registry-backed routing for multilingual/current, docs/API, arXiv, CVE/security, local/shopping, OSS discovery, and answer/synthesis queries
+- **Additive v3 evidence contract** — source observations, provider attempts, routing receipts, cache provenance, typed errors, and deterministic legacy projections
+- **Bounded extraction context** — long pages return a bounded preview plus a page-on-demand reference to the stored full text
+- **Classic Routing v2 authority** — registry-backed routing for multilingual/current, docs/API, arXiv, CVE/security, local/shopping, and OSS discovery
 - **Quality reports + doctor checks** — optional routing/result diagnostics plus compact offline health checks for configured providers/cache
 - **Research mode** — opt-in multi-provider search + top-source extraction with a time budget
 - **Onboarding CLI** — `status`, `list`, `setup`, and persistent routing `config` helpers for MCP env/config wiring
 - **Zero-install run** — `uvx web-search-plus-mcp`
 - **MCP-native** — stdio server exposing stable `web_search` and `web_extract` tools
+
+## What changes in 1.0
+
+- Native Perplexity and Kilo Perplexity answer endpoints are removed from the public provider enums because they do not expose a verified source-only mode.
+- The two MCP tool names and their legacy result fields remain stable. v3 evidence, attempts, receipts, limits, stored-content references, warnings, and typed errors are additive.
+- Existing config entries for retired answer providers are ignored in provider lists; retired default/fallback values are replaced in memory with `serper` and reported as a migration warning.
+- The MCP server keeps its stdio/subprocess boundary. Hermes-specific in-process plugin loading and Operator Console surfaces are intentionally not ported.
+
+See [Migrating to 1.0](docs/MIGRATION_1_0.md) before upgrading an existing 0.x installation.
 
 ## 🚀 Quick Start
 
@@ -61,7 +73,7 @@ Write a starter `.env` template and print a canonical MCP stdio snippet:
 web-search-plus-mcp setup --preset starter
 ```
 
-The recommended starter preset is **You.com + Serper + Linkup**. It gives a practical Routing v2 baseline for fast current search, Google-style discovery, and extraction workflows without wiring every provider on day one.
+The recommended starter preset is **You.com + Serper + Linkup**. It gives a practical source-only baseline for fast current search, Google-style discovery, and extraction workflows without wiring every provider on day one.
 
 
 `status` returns a non-zero exit code when no search provider is configured, which makes it usable as a config check in scripts.
@@ -71,13 +83,13 @@ Persistent routing preferences live in `config.json` rather than `.env`:
 ```bash
 web-search-plus-mcp config show
 web-search-plus-mcp config set-default you        # strict fixed-provider mode
-web-search-plus-mcp config set-routing on         # restore Routing v2 auto-routing
+web-search-plus-mcp config set-routing on         # restore auto-routing
 web-search-plus-mcp config set-priority you,serper,exa,firecrawl,tavily,linkup,parallel,brave,keenable
 web-search-plus-mcp config set-extract-priority serper,tavily,exa,linkup,parallel,firecrawl,you,keenable
 web-search-plus-mcp config set-fallback serper
-web-search-plus-mcp config disable perplexity
-web-search-plus-mcp config enable perplexity
-web-search-plus-mcp config disable kilo-perplexity
+web-search-plus-mcp config disable parallel
+web-search-plus-mcp config enable parallel
+web-search-plus-mcp config set-auto-allow parallel on
 web-search-plus-mcp config set-threshold 0.45
 web-search-plus-mcp config reset --yes
 ```
@@ -123,7 +135,7 @@ You can also place a `.env` file next to the package/project with the same varia
 
 ## 🔎 Search Providers
 
-- **You.com** — fast Routing v2 core provider for current, multilingual, and answer-shaped snippets
+- **You.com** — fast source-result provider for current and multilingual search
 - **Serper** — Google-style facts, news, shopping, local queries
 - **Exa** — semantic discovery, GitHub/docs, arXiv/academic, and OSS discovery
 - **Firecrawl** — web search plus scrape-ready content
@@ -131,8 +143,6 @@ You can also place a `.env` file next to the package/project with the same varia
 - **Tavily** — research and analysis
 - **Linkup** — source-backed grounding/citations
 - **Brave** — explicit-only independent web index by default (`BRAVE_API_KEY`, `auto_allow=false`)
-- **Perplexity** — explicit-only native Perplexity API synthesized answers (`PERPLEXITY_API_KEY`, `sonar-pro`, `auto_allow=false`)
-- **Kilo Perplexity** — explicit-only Perplexity via Kilo gateway (`KILOCODE_API_KEY`, `perplexity/sonar-pro`, `auto_allow=false`)
 - **SearXNG** — privacy-first self-hosted meta-search
 - **SerpBase** — explicit-only Google SERP API (`SERPBASE_API_KEY`, `auto_allow=false`)
 - **Querit** — explicit-only multilingual, real-time AI search (`QUERIT_API_KEY`, `auto_allow=false`)
@@ -196,7 +206,7 @@ Keep `FIRECRAWL_API_KEY` configured if your backend enforces bearer authenticati
 
 ## 🛠 MCP Tool Reference
 
-This MCP server exposes stable `web_search` and `web_extract` tools. The old beta `web_answer` tool was removed to match Web Search Plus v2.1+: use `web_search` for source discovery and let the MCP host synthesize from results when needed.
+This MCP server exposes exactly two stable, source-only tools: `web_search` and `web_extract`. Use `web_search` for source discovery and let the MCP host synthesize from those sources when needed; the server itself does not generate answers or truth claims.
 
 The Hermes plugin exposes the same stable capability as `web_search_plus` and `web_extract_plus`; the names differ because MCP and Hermes use different tool surfaces.
 
@@ -207,10 +217,13 @@ Use for source discovery, current events, prices, weather, sports lineups, sched
 Parameters:
 
 - `query` — required search query
-- `provider` — `auto`, `serper`, `brave`, `tavily`, `exa`, `linkup`, `firecrawl`, `parallel`, `perplexity`, `kilo-perplexity`, `you`, `searxng`, `serpbase`, `querit`, `keenable`
+- `provider` — `auto`, `serper`, `serpbase`, `brave`, `tavily`, `querit`, `linkup`, `exa`, `firecrawl`, `parallel`, `you`, `searxng`, `keenable`
 - `count` — results to return, default `5`, max `20`
 - `depth` — Exa depth: `normal`, `deep`, `deep-reasoning`
 - `time_range` — `hour`, `day`, `week`, `month`, `year`
+- `freshness` — unified `day`, `week`, `month`, or `year` recency request
+- `search_type` — `search` or Serper-native `news`
+- `country` / `language` — explicit locale overrides
 - `include_domains` / `exclude_domains` — domain allow/deny lists
 - `mode` — `normal` or `research`
 - `quality_report` — include routing/result diagnostics
@@ -232,7 +245,7 @@ Example MCP arguments:
 Parameters:
 
 - `urls` — required list of URLs
-- `provider` — `auto`, `tavily`, `exa`, `linkup`, `parallel`, `firecrawl`, `you`, `keenable`
+- `provider` — `auto`, `tavily`, `exa`, `linkup`, `parallel`, `firecrawl`, `you`, `keenable`, `serper`
 - `format` — `markdown` or `html`
 - `include_images` — include image metadata when supported
 - `include_raw_html` — include raw HTML when supported
@@ -248,14 +261,14 @@ Example MCP arguments:
 }
 ```
 
-## 🧠 Routing v2 Examples
+## 🧠 Classic Routing v2 examples
 
 - `東京 AI ニュース 今日` → You.com multilingual/current search
 - `arXiv 2024 LLM scaling laws` → Exa academic discovery
 - `CVE-2025 openssl advisory` → Serper security/current search
 - `best bookshelf speakers under 1000 EUR Austria` → Serper/Firecrawl shopping/local search
 - `open source alternatives to Linear` → Exa/Firecrawl OSS discovery
-- `summarize the tradeoffs of RAG vs fine-tuning` → You.com with synthesis hint metadata for the MCP host
+- `recent RAG vs fine-tuning benchmark sources` → source-result discovery; the MCP host may synthesize from returned sources
 
 Guarded providers can still be called explicitly. To let one participate in `provider="auto"`, opt in:
 
@@ -263,6 +276,17 @@ Guarded providers can still be called explicitly. To let one participate in `pro
 web-search-plus-mcp config set-auto-allow parallel on
 web-search-plus-mcp config set-auto-allow parallel off
 ```
+
+## Development
+
+```bash
+python -m pip install -e ".[test]"
+python -m pytest tests/ -q -p no:cacheprovider
+ruff check .
+python -m build
+```
+
+The GitHub Actions workflow runs the test suite on Python 3.10, 3.11, and 3.12, then verifies Ruff, byte-compilation, wheel creation, and source-distribution creation.
 
 ## Credits
 

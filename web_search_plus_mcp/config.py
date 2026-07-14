@@ -82,11 +82,32 @@ DEFAULT_CONFIG = {
         "auto_allow": dict(DEFAULT_AUTO_ALLOW),
         "confidence_threshold": 0.3,  # Below this, note low confidence
     },
+    "routing": {
+        # Fail-closed operator policy boundary. Shadow intent is accepted only
+        # when this ceiling is explicitly changed to "shadow".
+        "policy_mode": "classic",
+    },
+    "web": {
+        # Maximum cleaned characters returned inline per extracted result before
+        # truncate-and-store keeps the full text on disk for page-on-demand.
+        "extract_char_limit": 15000,
+    },
     "extract": {
         # Target URLs supplied to extract_plus are blocked when they resolve to
         # private/internal networks. Operators can opt in for trusted intranet use.
         "allow_private_urls": False,
     },
+    "bounded_context": {
+        # Operator ceiling; callers may request less but never more.
+        "max_urls": 10,
+        # Native-v3 per-call default remains 60k codepoints; hard max is 200k.
+        "max_context_chars": 60000,
+        "full_text_ttl_seconds": 604800,
+        "full_text_max_bytes": 268435456,
+    },
+    # Note: provider country/language keys are intentionally absent from the
+    # built-in defaults so search_locale.resolve_locale can treat a present
+    # key as an explicit user override from config.json.
     "serper": {
         "type": "search",
         "scrape_url": "https://scrape.serper.dev",
@@ -116,10 +137,7 @@ DEFAULT_CONFIG = {
         "depth": "normal",
         "verbosity": "standard"
     },
-    "perplexity": {
-        "api_url": "https://api.perplexity.ai/chat/completions",
-        "model": "sonar-pro"
-    },
+
     "parallel": {
         "api_url": "https://api.parallel.ai/v1/search",
         "extract_url": "https://api.parallel.ai/v1/extract",
@@ -129,10 +147,7 @@ DEFAULT_CONFIG = {
         "max_chars_total": 120000,
         "max_chars_per_result": 60000
     },
-    "kilo-perplexity": {
-        "api_url": "https://api.kilo.ai/api/gateway/chat/completions",
-        "model": "perplexity/sonar-pro"
-    },
+
     "firecrawl": {
         "api_url": "https://api.firecrawl.dev/v2/search",
         "country": "US",
@@ -300,7 +315,41 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
         auto["confidence_threshold"] = threshold
     if config.get("default_provider") and config["default_provider"] in set(auto.get("disabled_providers", [])):
         raise ValueError("default_provider cannot be disabled")
+    routing = config.get("routing", dict(DEFAULT_CONFIG["routing"]))
+    if not isinstance(routing, dict):
+        raise ValueError("routing must be an object")
+    policy_mode = routing.get("policy_mode", "classic")
+    if policy_mode not in {"classic", "shadow"}:
+        raise ValueError("routing.policy_mode must be classic or shadow")
+    routing["policy_mode"] = policy_mode
+    bounded = config.get(
+        "bounded_context", dict(DEFAULT_CONFIG["bounded_context"])
+    )
+    if not isinstance(bounded, dict):
+        raise ValueError("bounded_context must be an object")
+    integer_bounds = {
+        "max_urls": (1, 50),
+        "max_context_chars": (1000, 200000),
+        "full_text_ttl_seconds": (0, None),
+        "full_text_max_bytes": (0, None),
+    }
+    for name, (minimum, maximum) in integer_bounds.items():
+        value = bounded.get(name)
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"bounded_context.{name} must be an integer")
+        if value < minimum or (maximum is not None and value > maximum):
+            upper = f" and {maximum}" if maximum is not None else ""
+            raise ValueError(
+                f"bounded_context.{name} must be between {minimum}{upper}"
+            )
+    cache_root = bounded.get("cache_root")
+    if cache_root is not None and (
+        not isinstance(cache_root, str) or not cache_root.strip()
+    ):
+        raise ValueError("bounded_context.cache_root must be a non-empty string")
     config["auto_routing"] = auto
+    config["routing"] = routing
+    config["bounded_context"] = bounded
     return config
 
 

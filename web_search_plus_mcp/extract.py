@@ -1,16 +1,48 @@
 """Extraction orchestrator for Web Search Plus."""
 
 import ipaddress
+import os
 import socket
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 try:
-    from .cache import store_web_text
-    from .config import get_api_key, keyless_public_allowed, load_config
-except ImportError:  # pragma: no cover
-    from cache import store_web_text  # type: ignore
-    from config import get_api_key, keyless_public_allowed, load_config  # type: ignore
+    from .config import ProviderConfigError, get_api_key, keyless_public_allowed, load_config
+except ImportError:  # pragma: no cover - direct script execution
+    from config import ProviderConfigError, get_api_key, keyless_public_allowed, load_config
+try:
+    from .cache import CACHE_DIR
+except ImportError:  # pragma: no cover - direct script execution
+    from cache import CACHE_DIR
+try:
+    from .bounded_context_v3 import (
+        DEFAULT_FULL_TEXT_MAX_BYTES,
+        DEFAULT_FULL_TEXT_TTL_SECONDS,
+        FullTextStore,
+        apply_bounded_context,
+        prepare_extract_request,
+    )
+except ImportError:  # pragma: no cover - direct script execution
+    from bounded_context_v3 import (
+        DEFAULT_FULL_TEXT_MAX_BYTES,
+        DEFAULT_FULL_TEXT_TTL_SECONDS,
+        FullTextStore,
+        apply_bounded_context,
+        prepare_extract_request,
+    )
+try:
+    from .attempt_engine_v3 import AttemptContext, AttemptEngine
+except ImportError:  # pragma: no cover - direct script execution
+    from attempt_engine_v3 import AttemptContext, AttemptEngine
+try:
+    from .errors_v3 import ProviderContractFailure
+except ImportError:  # pragma: no cover - direct script execution
+    from errors_v3 import ProviderContractFailure
+try:
+    from .http_client import ProviderRequestError
+except ImportError:  # pragma: no cover - direct script execution
+    from http_client import ProviderRequestError
 try:
     from .provider_health import (
         execute_provider_with_retry,
@@ -18,7 +50,18 @@ try:
         provider_in_cooldown,
         reset_provider_health,
     )
-    from .providers import (
+except ImportError:  # pragma: no cover - direct script execution
+    from provider_health import (
+        execute_provider_with_retry,
+        mark_provider_failure,
+        provider_in_cooldown,
+        reset_provider_health,
+    )
+# These imports stay module-level attributes on purpose: search.py's
+# _sync_extract_dependencies() overwrites them for monkeypatch compatibility,
+# and provider_dispatch adapters resolve them late through this module.
+try:
+    from .providers import (  # noqa: F401 - resolved late via EXTRACT_DISPATCH/monkeypatch seams
         extract_exa,
         extract_firecrawl,
         extract_keenable,
@@ -28,14 +71,8 @@ try:
         extract_tavily,
         extract_you,
     )
-except ImportError:  # pragma: no cover
-    from provider_health import (  # type: ignore
-        execute_provider_with_retry,
-        mark_provider_failure,
-        provider_in_cooldown,
-        reset_provider_health,
-    )
-    from providers import (  # type: ignore
+except ImportError:  # pragma: no cover - direct script execution
+    from providers import (  # noqa: F401 - resolved late via EXTRACT_DISPATCH/monkeypatch seams
         extract_exa,
         extract_firecrawl,
         extract_keenable,
@@ -46,9 +83,83 @@ except ImportError:  # pragma: no cover
         extract_you,
     )
 try:
+    from .provider_adapter_protocol import validate_adapter_result
+except ImportError:  # pragma: no cover - direct script execution
+    from provider_adapter_protocol import validate_adapter_result
+try:
+    from .provider_dispatch import EXTRACT_DISPATCH
+except ImportError:  # pragma: no cover - direct script execution
+    from provider_dispatch import EXTRACT_DISPATCH
+try:
     from .provider_registry import EXTRACT_PROVIDER_IDS
-except ImportError:  # pragma: no cover
-    from provider_registry import EXTRACT_PROVIDER_IDS  # type: ignore
+except ImportError:  # pragma: no cover - direct script execution
+    from provider_registry import EXTRACT_PROVIDER_IDS
+try:
+    from .compat_v3 import legacy_request_to_v3, v3_response_to_legacy_extract
+except ImportError:  # pragma: no cover - direct script execution
+    from compat_v3 import legacy_request_to_v3, v3_response_to_legacy_extract
+try:
+    from .contract_v3 import Capability, RequestV3, ResponseV3, SkipReason
+except ImportError:  # pragma: no cover - direct script execution
+    from contract_v3 import Capability, RequestV3, ResponseV3, SkipReason
+try:
+    from .orchestrator_v3 import (
+        CapabilityAdapter,
+        CapabilityExecution,
+        ProviderPlan,
+        execute_v3_request,
+    )
+except ImportError:  # pragma: no cover - direct script execution
+    from orchestrator_v3 import (
+        CapabilityAdapter,
+        CapabilityExecution,
+        ProviderPlan,
+        execute_v3_request,
+    )
+try:
+    from .runtime_v3 import response_from_legacy
+except ImportError:  # pragma: no cover - direct script execution
+    from runtime_v3 import response_from_legacy
+try:
+    from .state_store_v3 import SQLiteStateStore
+except ImportError:  # pragma: no cover - direct script execution
+    from state_store_v3 import SQLiteStateStore
+
+
+EXTRACT_PROVIDER_PRIORITY = list(EXTRACT_PROVIDER_IDS)
+
+
+def resolve_extract_provider_priority(config: Optional[Dict[str, Any]] = None) -> List[str]:
+    """Return the configured extract order, completed with registry defaults.
+
+    Runtime callers may pass hand-built config dictionaries, so invalid,
+    duplicate, and search-only entries are ignored defensively here. Persisted
+    config is validated more strictly by config.py and setup.py.
+    """
+    auto_config = config.get("auto_routing", {}) if isinstance(config, dict) else {}
+    if not isinstance(auto_config, dict):
+        auto_config = {}
+    raw_priority = auto_config.get("extract_provider_priority")
+    if isinstance(raw_priority, str):
+        raw_values = raw_priority.split(",")
+    elif isinstance(raw_priority, (list, tuple)):
+        raw_values = raw_priority
+    else:
+        raw_values = []
+
+    providers: List[str] = []
+    seen = set()
+    allowed = set(EXTRACT_PROVIDER_PRIORITY)
+    for raw_provider in raw_values:
+        provider = str(raw_provider).strip().lower()
+        if provider not in allowed or provider in seen:
+            continue
+        seen.add(provider)
+        providers.append(provider)
+    for provider in EXTRACT_PROVIDER_PRIORITY:
+        if provider not in seen:
+            providers.append(provider)
+    return providers
 
 
 class ExtractUrlSecurityError(ValueError):
@@ -118,80 +229,7 @@ def _validate_extract_urls(urls: List[str], config: Optional[Dict[str, Any]] = N
     return urls
 
 
-MCP_EXTRACT_PREVIEW_CHARS = 20_000
-_EXTRACT_TEXT_FIELDS = ("content", "markdown", "text", "raw_content")
-
-
-def _truncate_and_store_extracts(result: Dict[str, Any], preview_chars: int = MCP_EXTRACT_PREVIEW_CHARS) -> Dict[str, Any]:
-    """Keep MCP extract responses bounded while storing full text locally.
-
-    MCP clients receive a compact preview plus `stored_extract` metadata with a
-    local cache path. Under-cap content is returned unchanged.
-    """
-    res_list = result.get("results")
-    if not isinstance(res_list, list):
-        return result
-    stored_count = 0
-    for item in res_list:
-        if not isinstance(item, dict):
-            continue
-        url = item.get("url") or item.get("source_url") or ""
-        for field in _EXTRACT_TEXT_FIELDS:
-            text = item.get(field)
-            if not isinstance(text, str) or len(text) <= preview_chars:
-                continue
-            metadata = store_web_text(str(url or f"extract:{stored_count}"), text)
-            item[field] = text[:preview_chars].rstrip() + (
-                f"\n\n[TRUNCATED: full {field} stored in cache; "
-                f"original_chars={len(text)}]"
-            )
-            item["stored_extract"] = {
-                "field": field,
-                "preview_chars": preview_chars,
-                **metadata,
-            }
-            stored_count += 1
-            break
-    if stored_count:
-        result["extract_storage"] = {
-            "stored": stored_count,
-            "preview_chars": preview_chars,
-        }
-    return result
-
-
-EXTRACT_PROVIDER_PRIORITY = list(EXTRACT_PROVIDER_IDS)
-
-
-def resolve_extract_provider_priority(config: Optional[Dict[str, Any]] = None) -> List[str]:
-    """Return configured extraction order, completed with registry defaults."""
-    auto_config = config.get("auto_routing", {}) if isinstance(config, dict) else {}
-    if not isinstance(auto_config, dict):
-        auto_config = {}
-    raw_priority = auto_config.get("extract_provider_priority")
-    if isinstance(raw_priority, str):
-        raw_values = raw_priority.split(",")
-    elif isinstance(raw_priority, (list, tuple)):
-        raw_values = raw_priority
-    else:
-        raw_values = []
-
-    providers: List[str] = []
-    seen = set()
-    allowed = set(EXTRACT_PROVIDER_PRIORITY)
-    for raw_provider in raw_values:
-        provider = str(raw_provider).strip().lower()
-        if provider not in allowed or provider in seen:
-            continue
-        seen.add(provider)
-        providers.append(provider)
-    for provider in EXTRACT_PROVIDER_PRIORITY:
-        if provider not in seen:
-            providers.append(provider)
-    return providers
-
-
-def extract_plus(
+def _extract_plus_core(
     urls: List[str],
     provider: str = "auto",
     output_format: str = "markdown",
@@ -199,6 +237,7 @@ def extract_plus(
     include_raw_html: bool = False,
     render_js: bool = False,
     config: Optional[Dict[str, Any]] = None,
+    engine_owned_attempt: bool = False,
 ) -> dict:
     """Extract URL content with provider fallback."""
     config = config or load_config()
@@ -216,7 +255,13 @@ def extract_plus(
         }
     auto_config = config.get("auto_routing", {})
     disabled_providers = set(auto_config.get("disabled_providers", []))
-    base_providers = resolve_extract_provider_priority(config) if selected == "auto" else [selected] + [p for p in EXTRACT_PROVIDER_PRIORITY if p != selected]
+    base_providers = (
+        [selected]
+        if engine_owned_attempt
+        else resolve_extract_provider_priority(config)
+        if selected == "auto"
+        else [selected] + [p for p in EXTRACT_PROVIDER_PRIORITY if p != selected]
+    )
     providers = [p for p in base_providers if p == selected or p not in disabled_providers]
     errors = []
     cooldown_skips = []
@@ -227,65 +272,66 @@ def extract_plus(
         key = get_api_key(prov, config)
         keyless_allowed = keyless_public_allowed(prov, config)
         if not key and not keyless_allowed:
+            if engine_owned_attempt:
+                raise ProviderConfigError(f"missing API key for {prov}")
             errors.append({"provider": prov, "error": "missing_api_key"})
             continue
-        in_cooldown, remaining = provider_in_cooldown(prov)
-        if in_cooldown and not (selected != "auto" and prov == selected):
-            cooldown_skips.append({"provider": prov, "cooldown_remaining_seconds": remaining})
-            continue
+        if not engine_owned_attempt:
+            in_cooldown, remaining = provider_in_cooldown(prov)
+            if in_cooldown and not (selected != "auto" and prov == selected):
+                cooldown_skips.append({"provider": prov, "cooldown_remaining_seconds": remaining})
+                continue
         try:
             def execute_extract() -> Dict[str, Any]:
-                if prov == "firecrawl":
-                    fc = config.get("firecrawl", {})
-                    return extract_firecrawl(urls, key, output_format, include_images, include_raw_html, render_js, api_url=fc.get("scrape_url", "https://api.firecrawl.dev/v2/scrape"), timeout=int(fc.get("extract_timeout", 60)))
-                if prov == "linkup":
-                    lu = config.get("linkup", {})
-                    return extract_linkup(urls, key, output_format, include_images, include_raw_html, render_js, api_url=lu.get("fetch_url", "https://api.linkup.so/v1/fetch"), timeout=int(lu.get("timeout", 30)))
-                if prov == "tavily":
-                    tv = config.get("tavily", {})
-                    return extract_tavily(urls, key, output_format, include_images, include_raw_html, render_js, api_url=tv.get("extract_url", "https://api.tavily.com/extract"), timeout=int(tv.get("timeout", 30)))
-                if prov == "exa":
-                    exa = config.get("exa", {})
-                    return extract_exa(urls, key, output_format, include_images, include_raw_html, render_js, api_url=exa.get("contents_url", "https://api.exa.ai/contents"), timeout=int(exa.get("timeout", 30)))
-                if prov == "keenable":
-                    kn = config.get("keenable", {})
-                    return extract_keenable(urls, key, output_format, include_images, include_raw_html, render_js, public=keyless_allowed, api_url=kn.get("fetch_url", "https://api.keenable.ai/v1/fetch"), timeout=int(kn.get("timeout", 30)))
-                if prov == "parallel":
-                    parallel = config.get("parallel", {})
-                    return extract_parallel(
-                        urls, key, output_format, include_images, include_raw_html, render_js,
-                        api_url=parallel.get("extract_url", "https://api.parallel.ai/v1/extract"),
-                        timeout=int(parallel.get("extract_timeout", parallel.get("timeout", 60))),
-                        client_model=parallel.get("client_model"),
-                        max_chars_total=int(parallel.get("max_chars_total", 120000)),
-                        max_chars_per_result=int(parallel.get("max_chars_per_result", 60000)),
-                    )
-                if prov == "serper":
-                    sp = config.get("serper", {})
-                    return extract_serper(
-                        urls, key, output_format, include_images, include_raw_html, render_js,
-                        api_url=sp.get("scrape_url", "https://scrape.serper.dev"),
-                        timeout=int(sp.get("timeout", 30)),
-                    )
-                you = config.get("you", {})
-                return extract_you(urls, key, output_format, include_images, include_raw_html, render_js, api_url=you.get("contents_url", "https://ydc-index.io/v1/contents"), timeout=int(you.get("timeout", 30)))
+                # Provider-specific kwargs-building lives in
+                # provider_dispatch.EXTRACT_DISPATCH; the caller namespace
+                # (globals()) is passed so adapters resolve extract_<provider>
+                # late and honour monkeypatches synced onto this module.
+                adapter = EXTRACT_DISPATCH.get(prov)
+                if adapter is None:
+                    raise ValueError(f"Unknown extract provider: {prov}")
+                return validate_adapter_result(
+                    prov,
+                    "extract",
+                    adapter(
+                        globals(),
+                        prov,
+                        urls,
+                        key,
+                        output_format,
+                        include_images,
+                        include_raw_html,
+                        render_js,
+                        config,
+                        keyless_allowed,
+                    ),
+                )
 
-            result = _truncate_and_store_extracts(execute_provider_with_retry(prov, execute_extract))
+            result = (
+                execute_extract()
+                if engine_owned_attempt
+                else execute_provider_with_retry(prov, execute_extract)
+            )
             res_list = result.get("results") or []
             all_failed = bool(res_list) and all(r.get("error") for r in res_list)
             if all_failed:
+                if engine_owned_attempt:
+                    raise ProviderContractFailure("all_urls_failed")
                 errors.append({
                     "provider": prov,
                     "error": "all_urls_failed",
                     "details": [r.get("error") for r in res_list],
                 })
                 continue
-            reset_provider_health(prov)
+            if not engine_owned_attempt:
+                reset_provider_health(prov)
             result["routing"] = {"provider": prov, "requested_provider": selected, "fallback_used": bool(errors) or bool(cooldown_skips), "fallback_errors": errors}
             if cooldown_skips:
                 result["routing"]["cooldown_skips"] = cooldown_skips
             return result
         except Exception as e:
+            if engine_owned_attempt:
+                raise
             error_msg = str(e)
             cooldown_info = mark_provider_failure(prov, error_msg, retry_after=getattr(e, "retry_after", None))
             errors.append({"provider": prov, "error": error_msg, "cooldown_seconds": cooldown_info.get("cooldown_seconds")})
@@ -294,3 +340,218 @@ def extract_plus(
     if cooldown_skips:
         error_result["cooldown_skips"] = cooldown_skips
     return error_result
+
+
+def _plan_extract_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
+    selected = str(request.routing.get("provider") or "auto")
+    disabled = set((config.get("auto_routing") or {}).get("disabled_providers", []))
+    configured = [
+        provider
+        for provider in resolve_extract_provider_priority(config)
+        if provider not in disabled
+        and (get_api_key(provider, config) or keyless_public_allowed(provider, config))
+    ]
+    if selected == "auto":
+        candidates = configured
+        chosen = candidates[0] if candidates else EXTRACT_PROVIDER_PRIORITY[0]
+    else:
+        candidates = [selected] + [
+            provider for provider in configured if provider != selected
+        ]
+        chosen = selected
+    if not request.routing.get("allow_fallback", True):
+        candidates = [chosen]
+    return ProviderPlan(tuple(candidates or [chosen]), chosen)
+
+
+def _execute_extract_v3(
+    request: RequestV3, plan: ProviderPlan, config: Dict[str, Any]
+) -> CapabilityExecution:
+    options = request.options
+    try:
+        urls = _validate_extract_urls(list(request.input["urls"]), config)
+    except (ValueError, ExtractUrlSecurityError) as exc:
+        requested = str(request.routing.get("provider") or "auto")
+        return CapabilityExecution(
+            payload={
+                "provider": requested,
+                "results": [],
+                "error": str(exc),
+                "requested_provider": requested,
+            },
+            stages=(),
+        )
+    v3_config = config.get("v3") or {}
+    state_path = v3_config.get("state_path") or os.path.join(
+        str(CACHE_DIR), "v3", "state.sqlite3"
+    )
+    store = SQLiteStateStore(state_path)
+    engine = AttemptEngine(
+        store,
+        max_attempts=int(v3_config.get("max_attempts_per_provider", 2)),
+    )
+    budget_limit = int(
+        request.budget.get(
+            "max_provider_attempts",
+            v3_config.get("default_max_provider_attempts", 3),
+        )
+    )
+    scope = request.request_id or plan.execution_id
+    receipts = []
+    fallback_errors = []
+    payload = None
+    successful_provider = None
+
+    for provider in plan.candidate_order:
+        provider_config = config.get(provider) or {}
+        endpoint = str(
+            provider_config.get("endpoint")
+            or provider_config.get("base_url")
+            or provider_config.get("url")
+            or f"provider://{provider}/extract"
+        )
+        credential = get_api_key(provider, config) or f"keyless:{provider}"
+        context = AttemptContext(
+            provider=provider,
+            capability=Capability.EXTRACT,
+            endpoint=endpoint,
+            credential_fingerprint=store.fingerprint_credential(credential),
+            budget_scope=scope,
+            budget_window="request",
+            budget_limit_units=budget_limit,
+        )
+        if payload is not None:
+            receipts.append(
+                engine.skip(context, SkipReason.POLICY_EXCLUDED).receipt
+            )
+            continue
+
+        def operation(current_provider=provider):
+            result = _extract_plus_core(
+                urls=urls,
+                provider=current_provider,
+                output_format=str(options.get("output_format", "markdown")),
+                include_images=bool(options.get("include_images", False)),
+                include_raw_html=bool(options.get("include_raw_html", False)),
+                render_js=bool(options.get("render_js", False)),
+                config=dict(config),
+                engine_owned_attempt=True,
+            )
+            if result.get("error"):
+                raise ProviderRequestError(str(result["error"]), transient=False)
+            return result
+
+        attempted = engine.execute(context, operation)
+        receipts.append(attempted.receipt)
+        if attempted.payload is not None:
+            payload = attempted.payload
+            successful_provider = provider
+            continue
+        error_code = (
+            "all_urls_failed"
+            if attempted.receipt.error is not None
+            and attempted.receipt.error.error_class.value == "provider_contract"
+            else attempted.receipt.error.error_class.value
+            if attempted.receipt.error is not None
+            else attempted.receipt.skip_reason.value
+            if attempted.receipt.skip_reason is not None
+            else "provider_failed"
+        )
+        fallback_errors.append({"provider": provider, "error": error_code})
+
+    if payload is None:
+        payload = {
+            "provider": plan.selected_provider,
+            "results": [],
+            "error": "All extraction providers failed",
+            "fallback_errors": fallback_errors,
+        }
+    else:
+        routing = payload.setdefault("routing", {})
+        routing["requested_provider"] = str(
+            request.routing.get("provider") or "auto"
+        )
+        routing["provider"] = successful_provider
+        routing["fallback_used"] = successful_provider != plan.selected_provider
+        routing["fallback_errors"] = fallback_errors
+
+    stages = ["admission", "provider_attempt"]
+    if any(receipt.error is not None for receipt in receipts):
+        stages.append("error_classification")
+    stages.append("retry_circuit_update")
+    if sum(receipt.decision == "attempted" for receipt in receipts) > 1:
+        stages.append("fallback")
+    stages.append("dedup_fingerprint")
+    return CapabilityExecution(
+        payload=payload,
+        provider_attempts=tuple(receipts),
+        stages=tuple(stages),
+    )
+
+
+def _extract_adapter() -> CapabilityAdapter:
+    return CapabilityAdapter(
+        capability=Capability.EXTRACT,
+        plan=_plan_extract_v3,
+        execute=_execute_extract_v3,
+        normalize=response_from_legacy,
+    )
+
+
+def run_extract_request_v3(
+    request: RequestV3,
+    *,
+    config: Optional[Dict[str, Any]] = None,
+) -> ResponseV3:
+    """Execute a native extract RequestV3 through the canonical orchestrator."""
+    runtime_config = config or load_config()
+    bounded_plan = prepare_extract_request(request, runtime_config)
+    response = execute_v3_request(
+        bounded_plan.request, _extract_adapter(), runtime_config
+    ).response
+    policy = runtime_config.get("bounded_context") or {}
+    if not isinstance(policy, dict):
+        policy = {}
+    cache_root = Path(policy.get("cache_root") or CACHE_DIR)
+    store = FullTextStore(
+        cache_root,
+        ttl_seconds=int(
+            policy.get("full_text_ttl_seconds", DEFAULT_FULL_TEXT_TTL_SECONDS)
+        ),
+        max_bytes=int(
+            policy.get("full_text_max_bytes", DEFAULT_FULL_TEXT_MAX_BYTES)
+        ),
+    )
+    return apply_bounded_context(response, request, bounded_plan, store=store)
+
+
+def extract_plus(
+    urls: List[str],
+    provider: str = "auto",
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    config: Optional[Dict[str, Any]] = None,
+) -> dict:
+    """Legacy extract projection over the sole native v3 execution path."""
+    selected = provider or "auto"
+    if not urls:
+        return {"provider": selected, "results": [], "error": "No URLs provided", "requested_provider": selected}
+    runtime_config = config or load_config()
+    request = legacy_request_to_v3(
+        Capability.EXTRACT,
+        {
+            "urls": urls,
+            "provider": provider,
+            "output_format": output_format,
+            "include_images": include_images,
+            "include_raw_html": include_raw_html,
+            "render_js": render_js,
+        },
+    )
+    bounded_plan = prepare_extract_request(request, runtime_config)
+    execution = execute_v3_request(
+        bounded_plan.request, _extract_adapter(), runtime_config
+    )
+    return v3_response_to_legacy_extract(execution)

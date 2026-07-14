@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.0.0] - 2026-07-14
+
+### Breaking
+- Align the standalone MCP server with Web Search Plus 3.0's mechanically source-only contract. Native Perplexity and Kilo Perplexity answer endpoints are removed from public provider schemas because they do not expose a verified source-only mode; direct low-level calls fail closed with the typed `wsp.provider.source_only_required` error before provider dispatch.
+- Reduce the public search surface from 14 mixed providers to 12 source-result providers. The extraction surface remains 8 providers.
+
+### Added
+- Port the Web Search Plus v3 request/response contracts, lossless source observations, provider-attempt and routing receipts, typed errors, cache-origin evidence, deterministic compatibility projections, and generated v3 JSON Schemas.
+- Port bounded extraction context with a 10-URL call limit, deterministic inline truncation, local full-text storage, and page-on-demand references.
+- Port marker-owned v3 cache/state storage, dry-run/backup/rollback migration primitives, provider adapter validation, guarded request gates, and source-independence metadata.
+- Add `web-search-plus-mcp config set-auto-allow <provider> on|off` for explicit guarded-provider participation in auto-routing.
+- Add a 0.x-to-1.0 migration guide covering retired providers, additive response fields, MCP host schema refresh, and rollback.
+
+### Changed
+- Keep the two stable MCP tools, `web_search` and `web_extract`, while routing both through the canonical `--contract-v3` engine path and projecting v3 responses additively onto the established MCP result shape.
+- Keep Classic Routing v2 authoritative, promote Brave into the default auto-pool for independent-index diversity, and preserve deterministic source-only fallback behavior.
+- Update package, server, User-Agent, README, Glama, lockfile, and build metadata to `1.0.0`, aligned with the Web Search Plus v3.0.1 engine family.
+
+### Security
+- Preserve private/internal extraction-target blocking, credential-free public manifest data, typed provider failures, and fail-closed rejection of answer-only provider modes.
+- Convert malformed subprocess stdout/stderr into controlled typed protocol errors without exposing raw diagnostics, while retaining the additive legacy `error` string.
+
+### MCP-specific scope
+- Keep the standalone stdio/subprocess boundary. The Hermes plugin's in-process lazy loader, Operator Console, setup helpers, and v3.0.1 import-precedence hotfix are intentionally not ported because they do not apply to a normal installed MCP package.
+
+### Tests
+- Add contract, provider-surface, bounded-context, source-only rejection, compatibility-projection, schema, documentation, and Glama drift gates.
+- Port the Web Search Plus 3.0 state-migration and SQLite-state suites: dry-run/apply/no-op/rollback, backup integrity, tamper and symlink rejection, WAL initialization, circuit isolation, and atomic concurrent budget reservation.
+- Add GitHub Actions coverage for Python 3.10, 3.11, and 3.12 plus Ruff, compile, wheel, and source-distribution builds.
+
 ## [0.17.0] - 2026-07-10
 
 ### Security

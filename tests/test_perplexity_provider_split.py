@@ -1,109 +1,76 @@
-import json
-
 import pytest
 
+import web_search_plus_mcp.providers as providers
 import web_search_plus_mcp.search as search
 import web_search_plus_mcp.server as server
+from web_search_plus_mcp.provider_registry import EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
 
-def test_native_perplexity_defaults_to_direct_api_and_key(monkeypatch):
-    monkeypatch.setenv("PERPLEXITY_API_KEY", "pplx-test-key")
-    monkeypatch.setenv("KILOCODE_API_KEY", "kilo-test-key")
-
-    assert search._canonical_provider("perplexity") == "perplexity"
-    assert search.DEFAULT_CONFIG["perplexity"]["api_url"] == "https://api.perplexity.ai/chat/completions"
-    assert search.DEFAULT_CONFIG["perplexity"]["model"] == "sonar-pro"
-    assert search.get_api_key("perplexity") == "pplx-test-key"
+RETIRED = {"perplexity", "kilo-perplexity"}
 
 
-def test_kilo_perplexity_is_distinct_provider_and_underscore_alias(monkeypatch):
-    monkeypatch.setenv("PERPLEXITY_API_KEY", "pplx-test-key")
-    monkeypatch.setenv("KILOCODE_API_KEY", "kilo-test-key")
-
-    assert search._canonical_provider("kilo_perplexity") == "kilo-perplexity"
-    assert search._canonical_provider("kilo-perplexity") == "kilo-perplexity"
-    assert search._canonical_provider("kilo-perplexity") != "perplexity"
-    assert "kilo-perplexity" in search._VALID_PROVIDERS
-    assert search.DEFAULT_CONFIG["kilo-perplexity"]["api_url"] == "https://api.kilo.ai/api/gateway/chat/completions"
-    assert search.DEFAULT_CONFIG["kilo-perplexity"]["model"] == "perplexity/sonar-pro"
-    assert search.get_api_key("kilo-perplexity") == "kilo-test-key"
+def test_answer_only_providers_are_not_mcp_search_capabilities():
+    assert RETIRED.isdisjoint(server.SEARCH_PROVIDERS)
+    assert RETIRED.isdisjoint(search.SEARCH_PROVIDER_IDS)
+    assert search.PROVIDER_SPECS["perplexity"].supports_search is False
+    assert search.PROVIDER_SPECS["kilo-perplexity"].supports_search is False
 
 
-def test_missing_perplexity_keys_report_the_right_env_var(monkeypatch):
-    monkeypatch.delenv("PERPLEXITY_API_KEY", raising=False)
-    monkeypatch.delenv("KILOCODE_API_KEY", raising=False)
-
-    with pytest.raises(search.ProviderConfigError) as native_exc:
-        search.validate_api_key("perplexity")
-    native_payload = json.loads(str(native_exc.value))
-    assert native_payload["env_var"] == "PERPLEXITY_API_KEY"
-    assert native_payload["provider"] == "perplexity"
-
-    with pytest.raises(search.ProviderConfigError) as kilo_exc:
-        search.validate_api_key("kilo-perplexity")
-    kilo_payload = json.loads(str(kilo_exc.value))
-    assert kilo_payload["env_var"] == "KILOCODE_API_KEY"
-    assert kilo_payload["provider"] == "kilo-perplexity"
+def test_retired_providers_have_no_freshness_or_extract_metadata():
+    assert RETIRED.isdisjoint(providers.PROVIDER_FRESHNESS_FORMATS)
+    assert all(
+        not providers.provider_supports_freshness(provider)
+        for provider in RETIRED
+    )
+    assert set(EXTRACT_PROVIDER_IDS) == {
+        provider
+        for provider, spec in PROVIDER_SPECS.items()
+        if spec.supports_extract
+    }
 
 
-def test_perplexity_search_function_uses_native_defaults(monkeypatch):
-    captured = {}
+@pytest.mark.parametrize("provider", ["perplexity", "kilo-perplexity"])
+def test_answer_only_provider_stubs_fail_before_network(monkeypatch, provider):
+    called = False
 
-    def fake_request(api_url, headers, body):
-        captured["api_url"] = api_url
-        captured["headers"] = headers
-        captured["body"] = body
-        return {"choices": [{"message": {"content": "answer"}}], "citations": []}
+    def fake_request(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("network must not be reached")
 
     monkeypatch.setattr(search, "make_request", fake_request)
-    result = search.search_perplexity("what changed", "pplx-test-key")
-
-    assert captured["api_url"] == "https://api.perplexity.ai/chat/completions"
-    assert captured["body"]["model"] == "sonar-pro"
-    assert captured["headers"]["Authorization"] == "Bearer pplx-test-key"
-    assert result["provider"] == "perplexity"
-
-
-def test_server_metadata_keeps_kilo_perplexity_distinct():
-    assert server._canonical_provider("kilo_perplexity") == "kilo-perplexity"
-    assert server._canonical_provider("kilo-perplexity") == "kilo-perplexity"
-    assert server._canonical_provider("kilo-perplexity") != "perplexity"
-    assert server.SEARCH_PROVIDERS["perplexity"]["env"] == "PERPLEXITY_API_KEY"
-    assert server.SEARCH_PROVIDERS["kilo-perplexity"]["env"] == "KILOCODE_API_KEY"
+    with pytest.raises(ValueError, match="no_verified_source_only_endpoint"):
+        search.search_perplexity(
+            query="latest ai news",
+            api_key="retired-test-key",
+            provider_name=provider,
+        )
+    assert called is False
 
 
-def test_auto_routing_prefers_native_perplexity_when_both_keys_are_set(monkeypatch):
-    monkeypatch.setenv("PERPLEXITY_API_KEY", "pplx-test-key")
-    monkeypatch.setenv("KILOCODE_API_KEY", "kilo-test-key")
+def test_retired_providers_never_enter_auto_routing_scores(monkeypatch):
+    monkeypatch.setattr(search, "get_api_key", lambda provider, config=None: "test-key")
+    routing = search.QueryAnalyzer(search._deepcopy_default_config()).route(
+        "current AI search provider comparison"
+    )
 
-    config = search.DEFAULT_CONFIG.copy()
-    config["auto_routing"] = {
-        **search.DEFAULT_CONFIG["auto_routing"],
-        "disabled_providers": [
-            "serper",
-            "brave",
-            "tavily",
-            "linkup",
-            "querit",
-            "exa",
-            "firecrawl",
-            "you",
-            "searxng",
-        ],
-        "auto_allow": {
-            **search.DEFAULT_CONFIG["auto_routing"]["auto_allow"],
-            "perplexity": True,
-            "kilo-perplexity": True,
-        },
+    assert RETIRED.isdisjoint(routing["scores"])
+    assert RETIRED.isdisjoint(routing["auto_allow_excluded"])
+
+
+def test_routing_explanation_available_providers_comes_from_source_only_registry(
+    monkeypatch,
+):
+    monkeypatch.setattr(search, "get_api_key", lambda provider, config=None: "test-key")
+    config = search._deepcopy_default_config()
+    config["auto_routing"]["auto_allow"] = {
+        provider: True for provider in search.SEARCH_PROVIDER_IDS
     }
-    routing = search.auto_route_provider("what is the current status of SpaceX", config)
+    config["auto_routing"]["auto_allow"].update(
+        {"perplexity": True, "kilo-perplexity": True}
+    )
 
-    assert routing["provider"] == "perplexity"
-    assert routing["scores"]["perplexity"] >= routing["scores"]["kilo-perplexity"]
+    explanation = search.explain_routing("current AI search provider comparison", config)
 
-
-def test_cache_key_keeps_native_and_kilo_perplexity_separate():
-    native_key = search._get_cache_key("same query", "perplexity", 5)
-    kilo_key = search._get_cache_key("same query", "kilo-perplexity", 5)
-
-    assert native_key != kilo_key
+    assert set(explanation["available_providers"]) == set(search.SEARCH_PROVIDER_IDS)
+    assert RETIRED.isdisjoint(explanation["available_providers"])
