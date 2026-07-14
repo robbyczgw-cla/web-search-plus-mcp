@@ -23,6 +23,7 @@
 - Preserve extracted body text, immutable full-text references, global context bounds, cache provenance, and miss-to-hit semantics across the canonical v3 pipeline.
 - Keep the MCP legacy projection's aggregate provider identity as `research` while preserving canonical multi-provider attempts, observations, and receipts additively.
 - Advertise the MCP package version in the `initialize` handshake instead of leaking the installed MCP SDK version as the server version.
+- Give Research Mode subprocesses a fixed grace window beyond the requested inner budget and convert outer timeouts into sanitized, retryable `wsp.subprocess.timeout` responses.
 
 ### Security
 - Preserve private/internal extraction-target blocking, credential-free public manifest data, typed provider failures, and fail-closed rejection of answer-only provider modes.

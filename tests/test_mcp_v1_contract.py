@@ -433,3 +433,35 @@ def test_subprocess_non_json_success_is_typed_and_secret_free(monkeypatch):
     assert payload["error_v3"]["code"] == "wsp.subprocess.invalid_response"
     assert payload["error_v3"]["message"] == payload["error"]
     assert secret not in json.dumps(payload)
+
+
+def test_subprocess_timeout_is_typed_retryable_and_secret_free(monkeypatch):
+    secret = "super-secret-timeout-output"
+
+    def fake_run(cmd, capture_output, text, env, timeout):
+        raise server.subprocess.TimeoutExpired(
+            cmd=[*cmd, secret],
+            timeout=timeout,
+            output=secret,
+            stderr=secret,
+        )
+
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    content = run(server.call_tool("web_search", {
+        "query": "maximum budget",
+        "mode": "research",
+        "research_time_budget": 75,
+    }))
+    payload = json.loads(content[0].text)
+
+    assert payload["status"] == "failed"
+    assert payload["results"] == []
+    assert payload["error"] == "Web Search Plus subprocess timed out."
+    assert payload["error_v3"] == {
+        "error_class": "timeout",
+        "code": "wsp.subprocess.timeout",
+        "message": payload["error"],
+        "retryable": True,
+        "provider": None,
+    }
+    assert secret not in json.dumps(payload)

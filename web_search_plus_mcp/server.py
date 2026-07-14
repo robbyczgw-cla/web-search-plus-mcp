@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import subprocess
 import sys
@@ -49,11 +50,25 @@ CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
 PROVIDER_ALIASES = {"kilo_perplexity": "kilo-perplexity"}
 RETIRED_ANSWER_PROVIDERS = {"perplexity", "kilo-perplexity"}
 ROUTING_PROVIDER_ORDER = list(DEFAULT_PROVIDER_PRIORITY)
+DEFAULT_SEARCH_SUBPROCESS_TIMEOUT_SECONDS = 75
+RESEARCH_SUBPROCESS_GRACE_SECONDS = 10
 
 
 def _canonical_provider(provider: str) -> str:
     value = (provider or "").strip().lower()
     return PROVIDER_ALIASES.get(value, value)
+
+
+def _research_subprocess_timeout(value: Any) -> int:
+    """Keep the outer process alive long enough to emit the inner budget result."""
+    try:
+        budget = float(value)
+    except (TypeError, ValueError):
+        budget = 55.0
+    if not math.isfinite(budget):
+        budget = 55.0
+    budget = min(75.0, max(1.0, budget))
+    return math.ceil(budget) + RESEARCH_SUBPROCESS_GRACE_SECONDS
 
 
 def _valid_provider(provider: str) -> bool:
@@ -472,14 +487,23 @@ async def _run_cmd(
     urls: Optional[list[str]] = None,
     request_mode: Optional[str] = None,
 ) -> list[TextContent]:
-    result = await asyncio.to_thread(
-        subprocess.run,
-        cmd,
-        capture_output=True,
-        text=True,
-        env=os.environ.copy(),
-        timeout=timeout,
-    )
+    try:
+        result = await asyncio.to_thread(
+            subprocess.run,
+            cmd,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        payload = _typed_error_payload(
+            code="wsp.subprocess.timeout",
+            message="Web Search Plus subprocess timed out.",
+            error_class="timeout",
+            retryable=True,
+        )
+        return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
     raw = (result.stdout if result.returncode == 0 else result.stderr).strip()
     try:
         payload = json.loads(raw)
@@ -544,13 +568,18 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         _append_list(cmd, "--include-domains", arguments.get("include_domains"))
         _append_list(cmd, "--exclude-domains", arguments.get("exclude_domains"))
         mode = arguments.get("mode", "normal")
+        research_time_budget = arguments.get("research_time_budget", 55.0)
         if mode != "normal":
-            cmd.extend(["--mode", mode, "--research-time-budget", str(arguments.get("research_time_budget", 55.0))])
+            cmd.extend(["--mode", mode, "--research-time-budget", str(research_time_budget)])
         if _as_bool(arguments.get("quality_report", False)):
             cmd.append("--quality-report")
         return await _run_cmd(
             cmd,
-            timeout=75,
+            timeout=(
+                _research_subprocess_timeout(research_time_budget)
+                if mode == "research"
+                else DEFAULT_SEARCH_SUBPROCESS_TIMEOUT_SECONDS
+            ),
             capability="search",
             query=query,
             request_mode=mode,

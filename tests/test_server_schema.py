@@ -91,7 +91,26 @@ def test_web_search_call_maps_mcp_args_to_cli(monkeypatch):
     assert "--quality-report" in cmd
     assert "--research-time-budget" in cmd and "12" in cmd
     assert "--contract-v3" in cmd
+    assert seen["timeout"] == 22
     assert result[0].text == '{"ok": true}'
+
+
+def test_web_search_max_research_budget_has_outer_timeout_grace(monkeypatch):
+    seen = {}
+
+    def fake_run(cmd, capture_output, text, env, timeout):
+        seen["timeout"] = timeout
+        return SimpleNamespace(returncode=0, stdout=json.dumps({"ok": True}), stderr="")
+
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+
+    run(server.call_tool("web_search", {
+        "query": "maximum budget",
+        "mode": "research",
+        "research_time_budget": 75,
+    }))
+
+    assert seen["timeout"] == 85
 
 
 def test_web_extract_call_maps_mcp_args_to_cli(monkeypatch):
