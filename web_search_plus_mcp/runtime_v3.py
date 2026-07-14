@@ -21,6 +21,7 @@ try:
         RequestV3,
         ResponseStatus,
         ResponseV3,
+        SkipReason,
     )
 except ImportError:  # pragma: no cover - direct script execution
     from contract_v3 import (
@@ -35,6 +36,7 @@ except ImportError:  # pragma: no cover - direct script execution
         RequestV3,
         ResponseStatus,
         ResponseV3,
+        SkipReason,
     )
 try:
     from .orchestrator_v3 import ProviderPlan
@@ -352,8 +354,11 @@ def response_from_legacy(
     """Build a contract-valid ResponseV3 without modifying the legacy payload."""
     request_id = request.request_id or plan.execution_id
     routing = payload.get("routing") or {}
+    aggregate_research = payload.get("provider") == "research"
     selected = (
-        routing.get("provider") or payload.get("provider") or plan.selected_provider
+        None
+        if aggregate_research
+        else routing.get("provider") or payload.get("provider") or plan.selected_provider
     )
     raw_items = [item for item in (payload.get("results") or []) if item.get("url")]
     observation_items = [
@@ -371,16 +376,36 @@ def response_from_legacy(
         (attempt for attempt in reversed(provider_attempts) if attempt.outcome is AttemptOutcome.SUCCESS),
         None,
     )
-    observations = (
-        observations_from_legacy(
-            {**payload, "results": observation_items},
-            str(selected),
-            request.capability,
-            successful_attempt.attempt_id,
+    if aggregate_research and authoritative_attempts:
+        observations = []
+        for attempt in provider_attempts:
+            if attempt.outcome is not AttemptOutcome.SUCCESS:
+                continue
+            provider_items = [
+                item
+                for item in observation_items
+                if str(item.get("provider") or "") == attempt.provider
+            ]
+            if provider_items:
+                observations.extend(
+                    observations_from_legacy(
+                        {**payload, "results": provider_items},
+                        attempt.provider,
+                        request.capability,
+                        attempt.attempt_id,
+                    )
+                )
+    else:
+        observations = (
+            observations_from_legacy(
+                {**payload, "results": observation_items},
+                str(selected),
+                request.capability,
+                successful_attempt.attempt_id,
+            )
+            if selected and successful_attempt
+            else []
         )
-        if selected and successful_attempt
-        else []
-    )
     results = project_results_from_observations(observations, raw_items)
     failed_items = [item for item in raw_items if item.get("error")]
     top_error = payload.get("error")
@@ -414,6 +439,21 @@ def response_from_legacy(
         )
     else:
         status = ResponseStatus.OK
+
+    budget_limited = payload.get("_v3_budget_limited") is True or any(
+        attempt.outcome is AttemptOutcome.CANCELLED
+        or attempt.skip_reason
+        in {SkipReason.BUDGET_BLOCKED, SkipReason.DEADLINE_EXCEEDED}
+        for attempt in provider_attempts
+    )
+    if status is not ResponseStatus.FAILED and budget_limited:
+        status = ResponseStatus.DEGRADED
+        warnings.append(
+            {
+                "code": DegradedReason.BUDGET_LIMITED.value,
+                "message": "Execution was limited by its attempt or time budget.",
+            }
+        )
 
     if any(
         attempt.budget_decision == "store_unavailable"

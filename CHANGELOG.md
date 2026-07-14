@@ -16,7 +16,13 @@
 ### Changed
 - Keep the two stable MCP tools, `web_search` and `web_extract`, while routing both through the canonical `--contract-v3` engine path and projecting v3 responses additively onto the established MCP result shape.
 - Keep Classic Routing v2 authoritative, promote Brave into the default auto-pool for independent-index diversity, and preserve deterministic source-only fallback behavior.
-- Update package, server, User-Agent, README, Glama, lockfile, and build metadata to `1.0.0`, aligned with the Web Search Plus v3.0.1 engine family.
+- Update package, server, User-Agent, README, Glama, lockfile, and build metadata to `1.0.0`, aligned with the Web Search Plus v3.0.2 engine family.
+
+### Fixed
+- Sync the portable Web Search Plus v3.0.2 entrypoint repairs: bounded Research Mode fan-out, immutable timeout/cancellation snapshots, honest provider-attempt evidence, and consistent cache keys across request options.
+- Preserve extracted body text, immutable full-text references, global context bounds, cache provenance, and miss-to-hit semantics across the canonical v3 pipeline.
+- Keep the MCP legacy projection's aggregate provider identity as `research` while preserving canonical multi-provider attempts, observations, and receipts additively.
+- Advertise the MCP package version in the `initialize` handshake instead of leaking the installed MCP SDK version as the server version.
 
 ### Security
 - Preserve private/internal extraction-target blocking, credential-free public manifest data, typed provider failures, and fail-closed rejection of answer-only provider modes.
@@ -28,7 +34,11 @@
 ### Tests
 - Add contract, provider-surface, bounded-context, source-only rejection, compatibility-projection, schema, documentation, and Glama drift gates.
 - Port the Web Search Plus 3.0 state-migration and SQLite-state suites: dry-run/apply/no-op/rollback, backup integrity, tamper and symlink rejection, WAL initialization, circuit isolation, and atomic concurrent budget reservation.
+- Port the portable v3.0.2 entrypoint regressions and add MCP-boundary coverage for Research Mode identity and extract cache-hit body/provenance preservation.
 - Add GitHub Actions coverage for Python 3.10, 3.11, and 3.12 plus Ruff, compile, wheel, and source-distribution builds.
+
+### Attribution
+- Synced from upstream Web Search Plus PRs [#104](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/104) and [#105](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/105) by [@robbyczgw-cla](https://github.com/robbyczgw-cla).
 
 ## [0.17.0] - 2026-07-10
 

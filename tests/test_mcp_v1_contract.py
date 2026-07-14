@@ -75,6 +75,9 @@ def test_version_1_0_is_consistent_across_public_surfaces():
     )
     assert web_search_plus_mcp.__version__ == "1.0.0"
     assert server.__version__ == "1.0.0"
+    initialization = server.app.create_initialization_options()
+    assert initialization.server_name == "web-search-plus"
+    assert initialization.server_version == "1.0.0"
 
 
 def test_wheel_config_includes_v3_contracts_and_migration_guide():
@@ -101,7 +104,7 @@ def test_source_only_provider_surface_is_12_search_and_8_extract():
 def test_readme_describes_current_source_only_release_surface():
     readme = (ROOT / "README.md").read_text()
     assert "`1.0.0`" in readme
-    assert "Web Search Plus v3.0.1" in readme
+    assert "Web Search Plus v3.0.2" in readme
     assert "**12 search providers" in readme
 
     provider_section = readme.split("## 🔎 Search Providers", 1)[1].split(
@@ -200,6 +203,100 @@ def test_search_projects_canonical_v3_to_additive_legacy_shape(monkeypatch):
     assert payload["provider_attempts"] == canonical["provider_attempts"]
     assert payload["routing_receipt"] == canonical["routing_receipt"]
     assert "answer" not in json.dumps(payload).lower()
+
+
+def test_research_projection_preserves_aggregate_identity_and_v3_evidence(monkeypatch):
+    canonical = canonical_response(results=[{
+        "representative_observation_id": "obs_linkup",
+        "observation_ids": ["obs_linkup", "obs_serper"],
+        "url": {"observed": "https://example.com/research", "canonical": "https://example.com/research"},
+        "title": {"text": "Merged research result"},
+        "snippet": {"text": "Evidence merged across providers"},
+        "text": None,
+    }])
+    canonical["provider_attempts"] = [
+        {
+            "attempt_id": "attempt-linkup",
+            "provider": "linkup",
+            "capability": "search",
+            "outcome": "success",
+            "retry_count": 0,
+            "result_count": 1,
+        },
+        {
+            "attempt_id": "attempt-serper",
+            "provider": "serper",
+            "capability": "search",
+            "outcome": "success",
+            "retry_count": 0,
+            "result_count": 1,
+        },
+    ]
+    canonical["observations"] = [
+        {"observation_id": "obs_linkup", "provider": "linkup", "provider_attempt_id": "attempt-linkup"},
+        {"observation_id": "obs_serper", "provider": "serper", "provider_attempt_id": "attempt-serper"},
+    ]
+    canonical["routing_receipt"] = {
+        "mode": "classic",
+        "selected_provider": "linkup",
+        "candidate_order": ["linkup", "serper"],
+    }
+    seen = {}
+
+    def fake_run(cmd, capture_output, text, env, timeout):
+        seen["cmd"] = cmd
+        return SimpleNamespace(returncode=0, stdout=json.dumps(canonical), stderr="")
+
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    content = run(server.call_tool("web_search", {
+        "query": "compare alpha beta",
+        "provider": "auto",
+        "mode": "research",
+        "research_time_budget": 12.0,
+    }))
+    payload = json.loads(content[0].text)
+
+    assert seen["cmd"][seen["cmd"].index("--mode") + 1] == "research"
+    assert payload["provider"] == "research"
+    assert payload["provider_attempts"] == canonical["provider_attempts"]
+    assert payload["observations"] == canonical["observations"]
+    assert payload["results"][0]["snippet"] == "Evidence merged across providers"
+
+
+def test_extract_cache_hit_projection_preserves_body_and_cache_provenance(monkeypatch):
+    canonical = canonical_response(
+        capability="extract",
+        results=[{
+            "representative_observation_id": "obs_cached",
+            "observation_ids": ["obs_cached"],
+            "url": {"observed": "https://example.com/cached", "canonical": "https://example.com/cached"},
+            "title": None,
+            "snippet": None,
+            "text": {"text": "cached full body"},
+        }],
+    )
+    canonical["cache_status"] = {
+        "disposition": "fresh_hit",
+        "origin_execution_id": "exec_origin",
+    }
+    canonical["provider_attempts"] = []
+
+    def fake_run(cmd, capture_output, text, env, timeout):
+        return SimpleNamespace(returncode=0, stdout=json.dumps(canonical), stderr="")
+
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    content = run(server.call_tool("web_extract", {
+        "urls": ["https://example.com/cached"],
+        "provider": "linkup",
+    }))
+    payload = json.loads(content[0].text)
+
+    assert payload["results"] == [{
+        "url": "https://example.com/cached",
+        "content": "cached full body",
+    }]
+    assert payload["cache_status"] == canonical["cache_status"]
+    assert payload["provider_attempts"] == []
 
 
 def test_extract_projection_preserves_bounds_and_page_on_demand_reference(monkeypatch):

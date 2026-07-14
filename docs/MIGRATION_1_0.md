@@ -1,6 +1,6 @@
 # Migrating web-search-plus-mcp 0.x to 1.0
 
-`web-search-plus-mcp` 1.0 aligns the standalone MCP package with the source-only Web Search Plus 3.0.1 engine. The MCP transport remains stdio and the public tool names remain `web_search` and `web_extract`.
+`web-search-plus-mcp` 1.0 aligns the standalone MCP package with the source-only Web Search Plus 3.0.2 engine. The MCP transport remains stdio and the public tool names remain `web_search` and `web_extract`.
 
 ## Before upgrading
 

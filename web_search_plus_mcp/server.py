@@ -25,7 +25,7 @@ from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EX
 __version__ = "1.0.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
-app = Server("web-search-plus")
+app = Server("web-search-plus", version=__version__)
 
 
 SEARCH_PROVIDERS = {
@@ -412,17 +412,21 @@ def _project_v3_payload(
     capability: str,
     query: Optional[str] = None,
     urls: Optional[list[str]] = None,
+    request_mode: Optional[str] = None,
 ) -> dict[str, Any]:
     """Project canonical v3 output to the stable MCP shape, additively."""
     projected = {key: value for key, value in payload.items() if key not in {"results", "error"}}
     receipt = payload.get("routing_receipt") or {}
-    provider = receipt.get("selected_provider")
-    if not provider:
-        attempts = payload.get("provider_attempts") or []
-        provider = next(
-            (item.get("provider") for item in attempts if item.get("outcome") == "success"),
-            None,
-        )
+    if capability == "search" and request_mode == "research":
+        provider = "research"
+    else:
+        provider = receipt.get("selected_provider")
+        if not provider:
+            attempts = payload.get("provider_attempts") or []
+            provider = next(
+                (item.get("provider") for item in attempts if item.get("outcome") == "success"),
+                None,
+            )
     projected["provider"] = provider
     if query is not None:
         projected["query"] = query
@@ -466,6 +470,7 @@ async def _run_cmd(
     capability: str,
     query: Optional[str] = None,
     urls: Optional[list[str]] = None,
+    request_mode: Optional[str] = None,
 ) -> list[TextContent]:
     result = await asyncio.to_thread(
         subprocess.run,
@@ -493,7 +498,13 @@ async def _run_cmd(
             error_class="internal",
         )
     if isinstance(payload, dict) and payload.get("contract_version") == "3.0":
-        payload = _project_v3_payload(payload, capability=capability, query=query, urls=urls)
+        payload = _project_v3_payload(
+            payload,
+            capability=capability,
+            query=query,
+            urls=urls,
+            request_mode=request_mode,
+        )
     return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
 
 
@@ -537,7 +548,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             cmd.extend(["--mode", mode, "--research-time-budget", str(arguments.get("research_time_budget", 55.0))])
         if _as_bool(arguments.get("quality_report", False)):
             cmd.append("--quality-report")
-        return await _run_cmd(cmd, timeout=75, capability="search", query=query)
+        return await _run_cmd(
+            cmd,
+            timeout=75,
+            capability="search",
+            query=query,
+            request_mode=mode,
+        )
 
     if name == "web_extract":
         urls = arguments["urls"]

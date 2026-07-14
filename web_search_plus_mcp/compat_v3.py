@@ -39,10 +39,15 @@ def legacy_request_to_v3(
 
     if capability is Capability.SEARCH:
         query = unicodedata.normalize("NFC", str(payload.get("query") or "")).strip()
+        mode = str(payload.get("mode", "normal"))
+        if mode == "research" and cache["mode"] == "prefer":
+            # The standalone/public Research path has never used the legacy
+            # cache, whose source-only projection cannot preserve its envelope.
+            cache["mode"] = "bypass"
         options: Dict[str, Any] = {
             "max_results": int(payload.get("count", payload.get("max_results", 5))),
             "depth": str(payload.get("depth", payload.get("exa_depth", "normal"))),
-            "mode": str(payload.get("mode", "normal")),
+            "mode": mode,
             "quality_report": bool(payload.get("quality_report", False)),
             "research_time_budget": float(payload.get("research_time_budget", 55.0)),
         }
@@ -97,7 +102,11 @@ def legacy_request_to_v3(
 def _project(execution: ExecutedV3, capability: Capability) -> Dict[str, Any]:
     if execution.response.capability is not capability:
         raise ValueError("legacy projection capability mismatch")
-    return execution.legacy_copy()
+    return {
+        key: value
+        for key, value in execution.legacy_copy().items()
+        if not str(key).startswith("_v3_")
+    }
 
 
 def v3_response_to_legacy_search(execution: ExecutedV3) -> Dict[str, Any]:
@@ -106,5 +115,36 @@ def v3_response_to_legacy_search(execution: ExecutedV3) -> Dict[str, Any]:
 
 
 def v3_response_to_legacy_extract(execution: ExecutedV3) -> Dict[str, Any]:
-    """Return a fresh byte-equivalent copy of the legacy extract payload."""
-    return _project(execution, Capability.EXTRACT)
+    """Project the bounded v3 extraction response onto the legacy payload shape."""
+    legacy = _project(execution, Capability.EXTRACT)
+    originals = {
+        str(item.get("url") or ""): dict(item)
+        for item in legacy.get("results") or []
+        if isinstance(item, dict)
+    }
+    projected = []
+    projected_urls = set()
+    for item in execution.response.results:
+        observed_url = str((item.get("url") or {}).get("observed") or "")
+        title = item.get("title") or {}
+        text = item.get("text") or {}
+        result = originals.get(observed_url, {}).copy()
+        result["title"] = title.get("text")
+        result["url"] = observed_url
+        result["content"] = text.get("text")
+        if "raw_content" in result:
+            result["raw_content"] = result["content"]
+        projected.append(result)
+        projected_urls.add(observed_url)
+    projected.extend(
+        item
+        for url, item in originals.items()
+        if url not in projected_urls and item.get("error")
+    )
+    legacy["results"] = projected
+    if execution.response.cache_status.get("disposition") in {
+        "fresh_hit",
+        "stale_hit",
+    }:
+        legacy["cached"] = True
+    return legacy
