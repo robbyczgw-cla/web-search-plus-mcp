@@ -1240,7 +1240,9 @@ def main():
                     "include_images": args.extract_images,
                     "include_raw_html": args.include_raw_html,
                     "render_js": args.render_js,
-                    "allow_fallback": args.allow_fallback,
+                    "allow_fallback": (
+                        args.allow_fallback or (args.provider or "auto") == "auto"
+                    ),
                     "no_cache": args.no_cache,
                     "cache_ttl": args.cache_ttl,
                 },
@@ -1293,7 +1295,9 @@ def main():
                 "research_time_budget": args.research_time_budget,
                 "country": args.country,
                 "language": args.language,
-                "allow_fallback": args.allow_fallback,
+                "allow_fallback": (
+                    args.allow_fallback or (args.provider or "auto") == "auto"
+                ),
                 "no_cache": args.no_cache,
                 "cache_ttl": args.cache_ttl,
             },
