@@ -5,6 +5,8 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+from diversity_v3 import DEFAULT_NEAR_DUPLICATE_THRESHOLD, score_diversity
+
 
 ROUTING_POLICY = "routing-v2"
 
@@ -326,6 +328,7 @@ def build_quality_report(
     eligible_providers: List[str],
     cooldown_skips: List[Dict[str, Any]],
     errors: List[Dict[str, Any]],
+    near_duplicate_threshold: float = DEFAULT_NEAR_DUPLICATE_THRESHOLD,
 ) -> Dict[str, Any]:
     """Build transparent search-quality diagnostics without changing results."""
     results = result.get("results", []) or []
@@ -394,6 +397,9 @@ def build_quality_report(
         "scores": routing_info.get("scores", {}),
         "adaptive_adjustments": routing_info.get("adaptive_adjustments", {}),
         "authority_signals": authority_signals,
+        "diversity": score_diversity(
+            results, near_duplicate_threshold=near_duplicate_threshold
+        ),
     }
 
 

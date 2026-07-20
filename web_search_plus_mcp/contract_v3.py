@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
+import unicodedata
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
@@ -298,6 +300,7 @@ _DECISION_REASONS = {
     CandidateDecision.NOT_ATTEMPTED: {
         CandidateReasonCode.PROVIDER_UNAVAILABLE,
         CandidateReasonCode.NOT_ATTEMPTED_AFTER_SUCCESS,
+        CandidateReasonCode.BUDGET_DENIED,
     },
     CandidateDecision.ORIGIN_SELECTED: {
         CandidateReasonCode.CACHE_ORIGIN_SELECTED,
@@ -331,6 +334,10 @@ def complete_routing_receipt_v3(
     completed = dict(receipt)
     order = [str(provider) for provider in receipt.get("candidate_order") or []]
     selected = receipt.get("selected_provider")
+    preflight = receipt.get("budget_preflight")
+    preflight_aborted = (
+        isinstance(preflight, dict) and preflight.get("action") == "abort"
+    )
     attempts_by_provider = {item.provider: item for item in attempts}
     decisions = []
     selected_seen = False
@@ -399,7 +406,9 @@ def complete_routing_receipt_v3(
             selected_seen = True
         else:
             reason = (
-                CandidateReasonCode.NOT_ATTEMPTED_AFTER_SUCCESS
+                CandidateReasonCode.BUDGET_DENIED
+                if preflight_aborted
+                else CandidateReasonCode.NOT_ATTEMPTED_AFTER_SUCCESS
                 if selected_seen
                 else CandidateReasonCode.PROVIDER_UNAVAILABLE
             )
@@ -512,6 +521,7 @@ def validate_routing_receipt_v3(
     }
     if not base_fields.issubset(receipt):
         raise ValueError("routing_receipt is missing frozen required fields")
+    _validate_budget_preflight_receipt(receipt.get("budget_preflight"))
     present = _COMPLETED_RECEIPT_FIELDS.intersection(receipt)
     if not present and not require_completed:
         return
@@ -675,17 +685,104 @@ def validate_routing_receipt_v3(
             raise ValueError("cache_origin selected decision/provider mismatch")
     shadow = receipt["shadow_observation"]
     if shadow is not None:
-        shadow_fields = {
+        legacy_shadow_fields = {
             "observed", "policy_id", "policy_revision", "selected_provider",
             "affected_execution",
         }
+        extended_shadow_fields = {
+            *legacy_shadow_fields,
+            "shadow_provider",
+            "agreement",
+        }
+        shadow_keys = set(shadow) if isinstance(shadow, dict) else set()
         if (
             not isinstance(shadow, dict)
-            or set(shadow) != shadow_fields
+            or (
+                shadow_keys != legacy_shadow_fields
+                and shadow_keys != extended_shadow_fields
+            )
             or shadow["observed"] is not True
             or shadow["affected_execution"] is not False
         ):
             raise ValueError("shadow observation must be typed and observational")
+        if shadow_keys == extended_shadow_fields and (
+            not isinstance(shadow["agreement"], bool)
+            or (
+                shadow["shadow_provider"] is not None
+                and not isinstance(shadow["shadow_provider"], str)
+            )
+        ):
+            raise ValueError("extended shadow observation must be typed")
+
+
+_BUDGET_PREFLIGHT_CHECKS = {
+    "provider_call_cap",
+    "daily_quota",
+    "timeout_budget",
+    "context_budget",
+}
+_BUDGET_PREFLIGHT_REASONS = {
+    "daily_quota_exhausted",
+    "budget_ledger_unavailable",
+    "budget_unsatisfiable",
+}
+_BUDGET_PREFLIGHT_ADJUSTMENTS = {
+    "max_provider_calls",
+    "timeout_seconds",
+    "context_limit",
+}
+
+
+def _validate_budget_preflight_receipt(value: Any) -> None:
+    """Validate the compact, typed receipt extension without free text."""
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        raise ValueError("budget_preflight receipt must be an object")
+    action = value.get("action")
+    required = {"action", "checks"}
+    if action == "degrade":
+        required.add("adjustments")
+    elif action == "abort":
+        required.add("reason")
+    else:
+        raise ValueError("budget_preflight receipt action is invalid")
+    if set(value) != required:
+        raise ValueError("budget_preflight receipt fields are invalid")
+    checks = value["checks"]
+    if not isinstance(checks, list) or len(checks) != len(_BUDGET_PREFLIGHT_CHECKS):
+        raise ValueError("budget_preflight receipt checks are invalid")
+    seen = set()
+    for check in checks:
+        if not isinstance(check, dict) or set(check) != {
+            "check", "limit", "observed", "verdict"
+        }:
+            raise ValueError("budget_preflight check fields are invalid")
+        name = check["check"]
+        if name not in _BUDGET_PREFLIGHT_CHECKS or name in seen:
+            raise ValueError("budget_preflight check name is invalid")
+        seen.add(name)
+        for scalar in ("limit", "observed"):
+            item = check[scalar]
+            if item is not None and (
+                isinstance(item, bool) or not isinstance(item, int) or item < 0
+            ):
+                raise ValueError("budget_preflight check scalar is invalid")
+        if check["verdict"] not in {"ok", "exceeded"}:
+            raise ValueError("budget_preflight verdict is invalid")
+    if action == "degrade":
+        adjustments = value["adjustments"]
+        if not isinstance(adjustments, dict) or not adjustments:
+            raise ValueError("budget_preflight adjustments are invalid")
+        if not set(adjustments) <= _BUDGET_PREFLIGHT_ADJUSTMENTS:
+            raise ValueError("budget_preflight adjustment name is invalid")
+        if any(
+            isinstance(item, bool) or not isinstance(item, int) or item < 1
+            for item in adjustments.values()
+        ):
+            raise ValueError("budget_preflight adjustment value is invalid")
+    elif value["reason"] not in _BUDGET_PREFLIGHT_REASONS:
+        raise ValueError("budget_preflight reason is invalid")
 
 
 @dataclass(frozen=True)
@@ -726,6 +823,12 @@ class RequestV3:
                     isinstance(option_value, bool) or not isinstance(option_value, int)
                 ):
                     raise ValueError(f"{option_name} must be an integer")
+            spans = self.options.get("spans")
+            if spans is not None and not isinstance(spans, bool):
+                raise ValueError("spans must be a boolean")
+            spans_query = self.options.get("spans_query")
+            if spans_query is not None and not isinstance(spans_query, str):
+                raise ValueError("spans_query must be a string")
 
     @classmethod
     def search(
@@ -762,6 +865,8 @@ class RequestV3:
         include_images: bool = False,
         max_urls: Optional[int] = None,
         max_context_chars: Optional[int] = None,
+        spans: bool = False,
+        spans_query: Optional[str] = None,
     ) -> "RequestV3":
         options: Dict[str, Any] = {
             "output_format": output_format,
@@ -771,6 +876,10 @@ class RequestV3:
             options["max_urls"] = max_urls
         if max_context_chars is not None:
             options["max_context_chars"] = max_context_chars
+        if spans:
+            options["spans"] = True
+        if spans_query is not None:
+            options["spans_query"] = spans_query
         return cls(
             Capability.EXTRACT,
             {"urls": list(urls)},
@@ -845,16 +954,19 @@ _POLICY_ACTION_REASONS = {
     "truncated_by_limit": {
         "max_results", "max_content_bytes", "max_context_chars",
     },
+    "budget_preflight": {"degraded", "aborted"},
 }
 _BASE64_IMAGE_RE = re.compile(r"data:image/[^;]+;base64,[A-Za-z0-9+/=]+")
 
 
 def _validate_no_banned_fields(value: Any) -> None:
     if isinstance(value, dict):
+        span_fields = {"start", "end", "text", "score", "within_preview"}
+        is_span = set(value) == span_fields
         for key, child in value.items():
             if key in _BANNED_CANONICAL_FIELDS:
                 raise ValueError(f"banned canonical field: {key}")
-            if key == "score":
+            if key == "score" and not is_span:
                 raise ValueError("bare score is banned; use typed provider_score")
             if key == "type" and child == "synthesis":
                 raise ValueError("banned canonical type: synthesis")
@@ -944,6 +1056,52 @@ def _validate_projected_text(
         raise ValueError("empty projected text must have no segments")
 
 
+def _validate_result_spans(
+    result: Dict[str, Any], observations: Dict[str, Dict[str, Any]]
+) -> None:
+    has_spans = "spans" in result or "span_contract_version" in result
+    if not has_spans:
+        return
+    if result.get("span_contract_version") != 1:
+        raise ValueError("span_contract_version must be 1")
+    spans = result.get("spans")
+    if not isinstance(spans, list):
+        raise ValueError("spans must be an array")
+    observation = observations.get(result.get("representative_observation_id")) or {}
+    full_text = unicodedata.normalize("NFC", str(observation.get("text") or ""))
+    previous_end = 0
+    for span in spans:
+        if not isinstance(span, dict) or set(span) != {
+            "start", "end", "text", "score", "within_preview"
+        }:
+            raise ValueError("span fields are invalid")
+        start, end = span["start"], span["end"]
+        score = span["score"]
+        if (
+            isinstance(start, bool)
+            or not isinstance(start, int)
+            or isinstance(end, bool)
+            or not isinstance(end, int)
+            or not 0 <= start < end <= len(full_text)
+            or start < previous_end
+        ):
+            raise ValueError("span offsets are invalid")
+        if span["text"] != full_text[start:end]:
+            raise ValueError("span text does not match NFC codepoint offsets")
+        if (
+            isinstance(score, bool)
+            or not isinstance(score, (int, float))
+            or not math.isfinite(score)
+        ):
+            raise ValueError("span score must be finite numeric")
+        if not isinstance(span["within_preview"], bool):
+            raise ValueError("within_preview must be boolean")
+        preview = ((result.get("text") or {}).get("text") or "")
+        if span["within_preview"] != (end <= len(preview)):
+            raise ValueError("within_preview does not match projected text")
+        previous_end = end
+
+
 def _default_diversity() -> Dict[str, Any]:
     return {
         "method": "component_count",
@@ -1023,11 +1181,15 @@ class ResponseV3:
                     if not isinstance(projected, dict):
                         raise ValueError("content-bearing result fields must be projected objects")
                     _validate_projected_text(projected, observations)
+            _validate_result_spans(result, observations)
         for action in self.policy_actions:
             reasons = _POLICY_ACTION_REASONS.get(str(action.get("action")))
             if reasons is None or action.get("reason") not in reasons:
                 raise ValueError("invalid policy action/reason combination")
-            if action.get("observation_id") not in observations:
+            if action.get("action") == "budget_preflight":
+                if action.get("observation_id") is not None:
+                    raise ValueError("budget preflight action cannot reference observation")
+            elif action.get("observation_id") not in observations:
                 raise ValueError("policy action references missing observation")
         extract_limits = self.limits_applied.get("extract")
         if extract_limits is not None:

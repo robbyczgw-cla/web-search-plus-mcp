@@ -23,7 +23,7 @@ from mcp.types import TextContent, Tool
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus", version=__version__)
@@ -376,6 +376,15 @@ async def list_tools() -> list[Tool]:
                     "include_images": {"type": "boolean", "default": False},
                     "include_raw_html": {"type": "boolean", "default": False},
                     "render_js": {"type": "boolean", "default": False},
+                    "spans": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Select deterministic semantic spans from extracted text.",
+                    },
+                    "spans_query": {
+                        "type": "string",
+                        "description": "Optional query used to rank semantic spans.",
+                    },
                 },
                 "required": ["urls"],
             },
@@ -607,6 +616,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             cmd.append("--include-raw-html")
         if _as_bool(arguments.get("render_js", False)):
             cmd.append("--render-js")
+        if _as_bool(arguments.get("spans", False)):
+            cmd.append("--spans")
+        _append_optional(cmd, "--spans-query", arguments.get("spans_query"))
         return await _run_cmd(cmd, timeout=90, capability="extract", urls=urls)
 
     raise ValueError(f"Unknown tool: {name}")

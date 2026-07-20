@@ -196,6 +196,15 @@
           "render_js": {
             "type": "boolean",
             "default": false
+          },
+          "spans": {
+            "type": "boolean",
+            "default": false,
+            "description": "Select deterministic semantic spans from extracted text."
+          },
+          "spans_query": {
+            "type": "string",
+            "description": "Optional query used to rank semantic spans."
           }
         },
         "required": [

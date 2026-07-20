@@ -10,54 +10,65 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
-    from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
+    from .env_loader import clean_env_value as _shared_clean_env_value, is_truthy, load_env_files
 except ImportError:  # pragma: no cover
-    from provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS  # type: ignore
+    from env_loader import clean_env_value as _shared_clean_env_value, is_truthy, load_env_files
+try:
+    from .errors_v3 import ProviderConfigError
+except ImportError:  # pragma: no cover
+    from errors_v3 import ProviderConfigError
+try:
+    from .provider_registry import (
+        DEFAULT_AUTO_ALLOW,
+        DEFAULT_PROVIDER_PRIORITY,
+        EXTRACT_PROVIDER_IDS,
+        KEYLESS_EXTRACT_PROVIDER_IDS,
+        KEYLESS_PROVIDER_IDS,
+        PROVIDER_SPECS,
+        keyless_public_env_var,
+    )
+except ImportError:  # pragma: no cover
+    from provider_registry import (
+        DEFAULT_AUTO_ALLOW,
+        DEFAULT_PROVIDER_PRIORITY,
+        EXTRACT_PROVIDER_IDS,
+        KEYLESS_EXTRACT_PROVIDER_IDS,
+        KEYLESS_PROVIDER_IDS,
+        PROVIDER_SPECS,
+        keyless_public_env_var,
+    )
 
 
 CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
 
 
-class ProviderConfigError(Exception):
-    """Raised when a provider is missing or has an invalid API key/config."""
-    pass
+class SelfHostedProfileError(ProviderConfigError):
+    """Raised when the self-hosted profile has no usable automatic provider."""
+
+    error_type = "self_hosted_profile_unavailable"
+
+
+SUPPORTED_PROFILES = frozenset({"standard", "self_hosted"})
+SELF_HOSTED_SEARCH_PROVIDER_IDS = ("searxng", *KEYLESS_PROVIDER_IDS)
+SELF_HOSTED_EXTRACT_PROVIDER_IDS = tuple(KEYLESS_EXTRACT_PROVIDER_IDS)
 
 
 def _is_placeholder_env_value(value: str) -> bool:
     """Return True for template placeholders that should not count as credentials."""
-    stripped = (value or "").strip().strip('"').strip("'")
-    return not stripped or set(stripped) == {"*"}
+    return _shared_clean_env_value(value) is None
 
 
 def _clean_env_value(value: str) -> Optional[str]:
-    stripped = (value or "").strip().strip('"').strip("'")
-    return None if _is_placeholder_env_value(stripped) else stripped
+    return _shared_clean_env_value(value)
 
 
 def _load_env_file():
-    """Load .env files from plugin-local and legacy parent locations."""
-    env_paths = [
-        Path(__file__).parent / ".env",
-        Path(__file__).parent.parent / ".env",
-    ]
-    for env_path in env_paths:
-        if not env_path.exists():
-            continue
-        with open(env_path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    # Handle export VAR=value or VAR=value
-                    if line.startswith("export "):
-                        line = line[7:]
-                    key, _, value = line.partition("=")
-                    key = key.strip()
-                    value = _clean_env_value(value)
-                    if key and value and key not in os.environ:
-                        os.environ[key] = value
+    """Load package-local, project parent, and profile-aware .env files."""
+    load_env_files(__file__)
 
 DEFAULT_CONFIG = {
     "version": 1,
+    "profile": "standard",
     "default_provider": None,
     "defaults": {
         "provider": "serper",
@@ -86,6 +97,25 @@ DEFAULT_CONFIG = {
         # Fail-closed operator policy boundary. Shadow intent is accepted only
         # when this ceiling is explicitly changed to "shadow".
         "policy_mode": "classic",
+    },
+    "budget_preflight": {
+        # Disabled and unbounded by default: existing requests keep their
+        # exact routing and execution behaviour until an operator opts in.
+        "enabled": False,
+        "max_provider_calls_per_request": None,
+        "max_daily_provider_calls": None,
+        "max_timeout_seconds": None,
+        "max_context_chars": None,
+        "on_exceed": "degrade",
+    },
+    "quality": {
+        # Diversity diagnostics are always safe to calculate.  Reordering
+        # research results is separately opt-in so the default remains an
+        # exact behavioural match for existing result ordering.
+        "diversity": {
+            "rerank": False,
+            "near_duplicate_threshold": 0.6,
+        },
     },
     "web": {
         # Maximum cleaned characters returned inline per extracted result before
@@ -167,6 +197,9 @@ DEFAULT_CONFIG = {
         "timeout": 30,
     },
     "searxng": {
+        # ``base_url`` is the canonical v3.1 name. ``instance_url`` remains
+        # supported for existing configs and environments.
+        "base_url": None,
         "instance_url": None,  # Required - user must set their own instance
         "safesearch": 0,  # 0=off, 1=moderate, 2=strict
         "engines": None,  # Optional list of engines to use
@@ -270,6 +303,65 @@ def _append_missing_extract_providers(providers: List[str]) -> List[str]:
     return list(providers) + [provider for provider in EXTRACT_PROVIDER_IDS if provider not in seen]
 
 
+def is_self_hosted_profile(config: Dict[str, Any]) -> bool:
+    """Return whether a runtime config selects the no-paid-key profile."""
+    return config.get("profile", "standard") == "self_hosted"
+
+
+def apply_profile_effects(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Derive profile-owned routing settings without persisting duplicate config.
+
+    The selected profile is the only durable setting.  Its effective automatic
+    routing policy is reconstructed whenever the config is loaded so later
+    default-priority changes do not leave stale copied profile settings behind.
+    Explicit provider calls do not use this automatic-routing gate.
+    """
+    profile = config.get("profile", "standard")
+    if profile not in SUPPORTED_PROFILES:
+        raise ValueError("profile must be standard or self_hosted")
+    config["profile"] = profile
+    if profile != "self_hosted":
+        return config
+
+    auto = config.get("auto_routing")
+    if auto is None:
+        # Direct in-process callers may supply only ``profile``. Persisted
+        # configs are merged with defaults before this point, but this keeps
+        # the one-switch profile usable on the public helper surface too.
+        auto = json.loads(json.dumps(DEFAULT_CONFIG["auto_routing"]))
+        config["auto_routing"] = auto
+    if not isinstance(auto, dict):
+        raise ValueError("auto_routing must be an object")
+    auto["provider_priority"] = list(SELF_HOSTED_SEARCH_PROVIDER_IDS)
+    auto["fallback_provider"] = "keenable"
+    auto["extract_provider_priority"] = list(SELF_HOSTED_EXTRACT_PROVIDER_IDS)
+    auto["auto_allow"] = {
+        provider: provider in SELF_HOSTED_SEARCH_PROVIDER_IDS
+        for provider, spec in PROVIDER_SPECS.items()
+        if spec.supports_search
+    }
+    return config
+
+
+def self_hosted_profile_error(config: Dict[str, Any]) -> Optional[SelfHostedProfileError]:
+    """Return a typed readiness error when self-hosted AUTO has no provider.
+
+    This deliberately checks only local configuration state. URL reachability
+    belongs to request execution; status/doctor must never make a provider call.
+    """
+    if not is_self_hosted_profile(config):
+        return None
+    searxng = config.get("searxng", {})
+    has_searxng_url = isinstance(searxng, dict) and bool(
+        searxng.get("base_url") or searxng.get("instance_url")
+    )
+    if has_searxng_url or provider_configured("keenable", config):
+        return None
+    return SelfHostedProfileError(
+        "self_hosted profile requires searxng.base_url or an enabled Keenable keyless/public endpoint"
+    )
+
+
 def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     auto = config.get("auto_routing", {})
     if not isinstance(auto, dict):
@@ -322,6 +414,55 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     if policy_mode not in {"classic", "shadow"}:
         raise ValueError("routing.policy_mode must be classic or shadow")
     routing["policy_mode"] = policy_mode
+    budget_preflight = config.get(
+        "budget_preflight", dict(DEFAULT_CONFIG["budget_preflight"])
+    )
+    if not isinstance(budget_preflight, dict):
+        raise ValueError("budget_preflight must be an object")
+    if not isinstance(budget_preflight.get("enabled"), bool):
+        raise ValueError("budget_preflight.enabled must be a boolean")
+    for name in (
+        "max_provider_calls_per_request",
+        "max_daily_provider_calls",
+        "max_timeout_seconds",
+        "max_context_chars",
+    ):
+        value = budget_preflight.get(name)
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or value < 1
+        ):
+            raise ValueError(
+                f"budget_preflight.{name} must be a positive integer or null"
+            )
+    if budget_preflight.get("max_context_chars") not in (None,) and (
+        budget_preflight["max_context_chars"] < 1000
+        or budget_preflight["max_context_chars"] > 200000
+    ):
+        raise ValueError(
+            "budget_preflight.max_context_chars must be between 1000 and 200000"
+        )
+    if budget_preflight.get("on_exceed") not in {"degrade", "abort"}:
+        raise ValueError("budget_preflight.on_exceed must be degrade or abort")
+    quality = config.get("quality", dict(DEFAULT_CONFIG["quality"]))
+    if not isinstance(quality, dict):
+        raise ValueError("quality must be an object")
+    diversity = quality.get("diversity", {})
+    if not isinstance(diversity, dict):
+        raise ValueError("quality.diversity must be an object")
+    default_diversity = DEFAULT_CONFIG["quality"]["diversity"]
+    diversity = {**default_diversity, **diversity}
+    if not isinstance(diversity["rerank"], bool):
+        raise ValueError("quality.diversity.rerank must be a boolean")
+    threshold = diversity["near_duplicate_threshold"]
+    if isinstance(threshold, bool) or not isinstance(threshold, (int, float)):
+        raise ValueError("quality.diversity.near_duplicate_threshold must be a number")
+    threshold = float(threshold)
+    if threshold < 0.0 or threshold > 1.0:
+        raise ValueError(
+            "quality.diversity.near_duplicate_threshold must be between 0.0 and 1.0"
+        )
+    diversity["near_duplicate_threshold"] = threshold
+    quality["diversity"] = diversity
     bounded = config.get(
         "bounded_context", dict(DEFAULT_CONFIG["bounded_context"])
     )
@@ -349,8 +490,10 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("bounded_context.cache_root must be a non-empty string")
     config["auto_routing"] = auto
     config["routing"] = routing
+    config["budget_preflight"] = budget_preflight
+    config["quality"] = quality
     config["bounded_context"] = bounded
-    return config
+    return apply_profile_effects(config)
 
 
 def _unique_timestamped_path(path: Path, marker: str) -> Path:
@@ -397,20 +540,9 @@ def load_config() -> Dict[str, Any]:
             _quarantine_runtime_config(config_path, str(e))
             config = _deepcopy_default_config()
 
-    return config
-
-
-def is_truthy(value: Any) -> bool:
-    """Strict true-ish parser for opt-in public provider settings."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return value == 1
-    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
-
-
-def keyless_public_env_var(provider: str) -> str:
-    return f"{provider.upper().replace('-', '_')}_ALLOW_PUBLIC"
+    # Defaults need no migration, but applying this here keeps direct/default
+    # loads on the same profile-derived path as persisted configurations.
+    return apply_profile_effects(config)
 
 
 def keyless_public_allowed(provider: str, config: Dict[str, Any] = None) -> bool:
@@ -504,7 +636,8 @@ def get_searxng_instance_url(config: Dict[str, Any] = None) -> Optional[str]:
     """Get SearXNG instance URL from config or environment.
 
     SearXNG is self-hosted, so no API key needed - just the instance URL.
-    Priority: config.json > SEARXNG_INSTANCE_URL environment variable
+    Priority: config.json searxng.base_url > legacy instance_url >
+    SEARXNG_INSTANCE_URL environment variable.
 
     Security: URL is validated to prevent SSRF via scheme enforcement.
     Both config sources (config.json, env var) are operator-controlled,
@@ -514,7 +647,7 @@ def get_searxng_instance_url(config: Dict[str, Any] = None) -> Optional[str]:
     if config:
         searxng_config = config.get("searxng", {})
         if isinstance(searxng_config, dict):
-            url = searxng_config.get("instance_url")
+            url = searxng_config.get("base_url") or searxng_config.get("instance_url")
             if url:
                 return _validate_searxng_url(url)
 

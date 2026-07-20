@@ -358,6 +358,16 @@ EXTRACT_DISPATCH: dict[str, ExtractAdapter] = {
 }
 
 
+# SDK modules are discovered by provider_registry before this module imports.
+# Their callables implement the exact same formal adapter signatures as the
+# built-ins above, so no core dispatch-file edit is needed for a new provider.
+for _sdk_spec in PROVIDER_SPECS.values():
+    if _sdk_spec.execute_search is not None:
+        SEARCH_DISPATCH[_sdk_spec.provider] = _sdk_spec.execute_search
+    if _sdk_spec.execute_extract is not None:
+        EXTRACT_DISPATCH[_sdk_spec.provider] = _sdk_spec.execute_extract
+
+
 # Import-time fail-closed gate: registry capabilities and callable signatures
 # must not drift between tests or in downstream plugin packaging.
 assert_dispatch_conformance(SEARCH_DISPATCH, EXTRACT_DISPATCH, PROVIDER_SPECS)

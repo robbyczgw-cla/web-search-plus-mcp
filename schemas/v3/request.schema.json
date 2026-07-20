@@ -236,6 +236,12 @@
         },
         "max_context_chars": {
           "type": "integer"
+        },
+        "spans": {
+          "type": "boolean"
+        },
+        "spans_query": {
+          "type": "string"
         }
       },
       "additionalProperties": false

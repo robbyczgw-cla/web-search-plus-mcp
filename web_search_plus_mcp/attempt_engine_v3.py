@@ -46,10 +46,27 @@ class AttemptContext:
     budget_window: str
     budget_units: int = 1
     budget_limit_units: int = 3
+    daily_budget_scope: str | None = None
+    daily_budget_window: str | None = None
+    daily_budget_limit_units: int | None = None
+    deadline_monotonic: float | None = None
 
     def __post_init__(self) -> None:
         if self.budget_units < 0 or self.budget_limit_units < 0:
             raise ValueError("budget units must be non-negative")
+        daily_values = (
+            self.daily_budget_scope,
+            self.daily_budget_window,
+            self.daily_budget_limit_units,
+        )
+        if any(value is not None for value in daily_values) and not all(
+            value is not None for value in daily_values
+        ):
+            raise ValueError("daily budget settings must be specified together")
+        if self.daily_budget_limit_units is not None and self.daily_budget_limit_units < 1:
+            raise ValueError("daily budget limit must be positive")
+        if self.deadline_monotonic is not None and self.deadline_monotonic <= 0:
+            raise ValueError("deadline must be positive")
 
     @property
     def circuit_key(self) -> CircuitKey:
@@ -229,6 +246,18 @@ class AttemptEngine:
         )
 
         for index in range(self.max_attempts):
+            if (
+                context.deadline_monotonic is not None
+                and time.monotonic() >= context.deadline_monotonic
+            ):
+                return self._skipped(
+                    context,
+                    started=started,
+                    retry_count=index,
+                    state=CircuitState.CLOSED,
+                    reason=SkipReason.DEADLINE_EXCEEDED,
+                    budget_decision="not_reserved",
+                )
             decision = self.store.admit(context.circuit_key, now=int(now()))
             if index == 0:
                 before = decision.circuit_state
@@ -246,6 +275,7 @@ class AttemptEngine:
 
             reserved = decision.store_available
             budget_decision = "reserved" if reserved else "store_unavailable"
+            daily_reserved = False
             if reserved:
                 budget_allowed = self.store.reserve_budget(
                     context.budget_scope,
@@ -264,6 +294,34 @@ class AttemptEngine:
                 if not budget_allowed:
                     reserved = False
                     budget_decision = "store_unavailable"
+            if reserved and context.daily_budget_scope is not None:
+                self.store.configure_budget(
+                    context.daily_budget_scope,
+                    context.daily_budget_window or "",
+                    limit_units=int(context.daily_budget_limit_units or 0),
+                )
+                daily_allowed = self.store.reserve_budget(
+                    context.daily_budget_scope,
+                    context.daily_budget_window or "",
+                    units=context.budget_units,
+                )
+                if not daily_allowed:
+                    self.store.release_budget(
+                        context.budget_scope,
+                        context.budget_window,
+                        units=context.budget_units,
+                    )
+                    return self._skipped(
+                        context,
+                        started=started,
+                        retry_count=index,
+                        state=decision.circuit_state,
+                        reason=SkipReason.BUDGET_BLOCKED,
+                        budget_decision=(
+                            "blocked" if self.store.available else "store_unavailable"
+                        ),
+                    )
+                daily_reserved = True
 
             try_started = int(now())
             call_started = time.monotonic()
@@ -277,6 +335,14 @@ class AttemptEngine:
                         units=context.budget_units,
                     )
                     if not reconciled:
+                        budget_decision = "store_unavailable"
+                if daily_reserved:
+                    reconciled_daily = self.store.commit_budget(
+                        context.daily_budget_scope or "",
+                        context.daily_budget_window or "",
+                        units=context.budget_units,
+                    )
+                    if not reconciled_daily:
                         budget_decision = "store_unavailable"
                 classified = classify_provider_error(exc, provider=context.provider)
                 last_error = classified
@@ -335,6 +401,14 @@ class AttemptEngine:
                     units=context.budget_units,
                 )
                 if not reconciled:
+                    budget_decision = "store_unavailable"
+            if daily_reserved:
+                reconciled_daily = self.store.commit_budget(
+                    context.daily_budget_scope or "",
+                    context.daily_budget_window or "",
+                    units=context.budget_units,
+                )
+                if not reconciled_daily:
                     budget_decision = "store_unavailable"
             for error_class in encountered:
                 self.store.record_success(
