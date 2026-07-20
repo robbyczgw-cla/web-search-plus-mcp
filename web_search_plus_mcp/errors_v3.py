@@ -10,6 +10,7 @@ try:
     from .http_client import ProviderRequestError
 except ImportError:  # pragma: no cover - direct script execution
     from http_client import ProviderRequestError
+from wsp_sdk.errors import ProviderConfigError, ProviderContractFailure
 
 
 _MESSAGES = {
@@ -35,11 +36,6 @@ _CODES = {
 }
 
 
-class ProviderContractFailure(Exception):
-    """Provider returned a structurally unusable result without a transport error."""
-
-
-
 def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
     """Map an arbitrary provider exception to the frozen ErrorV3 taxonomy.
 
@@ -51,7 +47,7 @@ def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
     retry_after = getattr(error, "retry_after", None)
     class_name = type(error).__name__
 
-    if class_name == "ProviderConfigError":
+    if isinstance(error, ProviderConfigError) or class_name == "ProviderConfigError":
         error_class = ErrorClass.CONFIG
     elif isinstance(error, (TimeoutError,)):
         error_class = ErrorClass.TIMEOUT

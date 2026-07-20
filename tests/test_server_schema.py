@@ -47,6 +47,8 @@ def test_web_extract_tool_is_exposed_with_tavily_first_capable_schema():
     assert tool.inputSchema["required"] == ["urls"]
     assert props["provider"]["enum"] == ["auto", "tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper"]
     assert props["render_js"]["type"] == "boolean"
+    assert props["spans"]["type"] == "boolean"
+    assert props["spans_query"]["type"] == "string"
     assert props["format"]["enum"] == ["markdown", "html"]
 
 
@@ -130,6 +132,8 @@ def test_web_extract_call_maps_mcp_args_to_cli(monkeypatch):
         "include_images": True,
         "include_raw_html": True,
         "render_js": True,
+        "spans": True,
+        "spans_query": "installation steps",
     }))
 
     cmd = seen["cmd"]
@@ -139,6 +143,8 @@ def test_web_extract_call_maps_mcp_args_to_cli(monkeypatch):
     assert "--extract-images" in cmd
     assert "--include-raw-html" in cmd
     assert "--render-js" in cmd
+    assert "--spans" in cmd
+    assert "--spans-query" in cmd and "installation steps" in cmd
     assert "--contract-v3" in cmd
     assert seen["timeout"] == 90
     assert result[0].text == '{"results": []}'

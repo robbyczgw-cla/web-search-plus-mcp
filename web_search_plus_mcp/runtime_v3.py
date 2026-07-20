@@ -77,7 +77,10 @@ def _valid_rfc3339(value: object) -> str | None:
 
 def _error(message: str, provider: str | None = None) -> ErrorV3:
     lowered = message.lower()
-    if "missing" in lowered and ("key" in lowered or "credential" in lowered):
+    if "self_hosted profile" in lowered:
+        error_class = ErrorClass.CONFIG
+        code = "wsp.config.self_hosted_profile_unavailable"
+    elif "missing" in lowered and ("key" in lowered or "credential" in lowered):
         error_class = ErrorClass.CONFIG
         code = "wsp.config.missing_credentials"
     elif "timeout" in lowered or "timed out" in lowered:

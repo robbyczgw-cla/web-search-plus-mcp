@@ -15,7 +15,7 @@
 
 `web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the source-only provider and evidence contract of Web Search Plus 3.0 without depending on the Hermes plugin runtime.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`1.0.1`) while tracking the source-only Web Search Plus v3.0.2 engine. The Hermes plugin is versioned separately; its plugin-loader, setup, Console, and release commands are not exposed by the standalone MCP server.
+Version note: `web-search-plus-mcp` uses its own MCP package version (`1.1.0`) while tracking the portable source-only Web Search Plus v3.1.1 engine. The Hermes plugin is versioned separately; its plugin-loader, Operator Console, receipts journal, and release commands are not exposed by the standalone MCP server.
 
 ## ✨ Features
 
@@ -26,6 +26,9 @@ Version note: `web-search-plus-mcp` uses its own MCP package version (`1.0.1`) w
 - **Classic Routing v2 authority** — registry-backed routing for multilingual/current, docs/API, arXiv, CVE/security, local/shopping, and OSS discovery
 - **Quality reports + doctor checks** — optional routing/result diagnostics plus compact offline health checks for configured providers/cache
 - **Research mode** — opt-in multi-provider search + top-source extraction with a time budget
+- **3.1 policy layer** — budget preflight, diversity-aware reranking, self-hosted profiles, shadow-policy observations, extraction cache identity v6, and SQLite state schema v3
+- **Provider SDK** — zero-core-edit provider discovery through `providers.d` with fail-closed startup diagnostics and shared conformance checks
+- **Semantic extraction spans** — deterministic query-ranked spans through `web_extract(spans=true, spans_query=...)`
 - **Onboarding CLI** — `status`, `list`, `setup`, and persistent routing `config` helpers for MCP env/config wiring
 - **Zero-install run** — `uvx web-search-plus-mcp`
 - **MCP-native** — stdio server exposing stable `web_search` and `web_extract` tools
@@ -250,6 +253,8 @@ Parameters:
 - `include_images` — include image metadata when supported
 - `include_raw_html` — include raw HTML when supported
 - `render_js` — render JavaScript before extraction when supported
+- `spans` — select deterministic semantic spans from extracted text
+- `spans_query` — optional query used to rank semantic spans
 
 Example MCP arguments:
 

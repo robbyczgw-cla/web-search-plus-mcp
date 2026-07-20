@@ -5,10 +5,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel.force-include]
 "schemas" = "web_search_plus_mcp/schemas"
 "docs/MIGRATION_1_0.md" = "web_search_plus_mcp/docs/MIGRATION_1_0.md"
+"wsp_sdk" = "wsp_sdk"
 
 [project]
 name = "web-search-plus-mcp"
-version = "1.0.1"
+version = "1.1.0"
 description = "Source-only multi-provider web search, extraction, evidence receipts, and onboarding for MCP clients"
 readme = "README.md"
 license = { file = "LICENSE" }

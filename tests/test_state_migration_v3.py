@@ -70,7 +70,7 @@ def _logical_dump(path) -> str:
         return "\n".join(connection.iterdump())
 
 
-def test_schema_v2_contains_legacy_health_and_adaptive_tables(tmp_path):
+def test_schema_v3_contains_legacy_health_adaptive_and_shadow_tables(tmp_path):
     path = tmp_path / "state.sqlite3"
     SQLiteStateStore(path)
 
@@ -83,14 +83,15 @@ def test_schema_v2_contains_legacy_health_and_adaptive_tables(tmp_path):
         }
         version = connection.execute("PRAGMA user_version").fetchone()[0]
 
-    assert SCHEMA_VERSION == 2
-    assert version == 2
+    assert SCHEMA_VERSION == 3
+    assert version == 3
     assert {
         "circuit_state",
         "budget_ledger",
         "legacy_provider_health",
         "adaptive_samples_v3",
         "legacy_state_migrations",
+        "shadow_evaluations_v3",
     }.issubset(tables)
 
 

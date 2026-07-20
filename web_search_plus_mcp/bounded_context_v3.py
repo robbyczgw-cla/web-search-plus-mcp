@@ -22,6 +22,10 @@ try:
     from .runtime_v3 import segment_canonical_text
 except ImportError:  # pragma: no cover - direct script execution
     from runtime_v3 import segment_canonical_text
+try:
+    from .span_extraction_v3 import select_spans
+except ImportError:  # pragma: no cover - direct script execution
+    from span_extraction_v3 import select_spans
 
 DEFAULT_MAX_URLS = 10
 HARD_MAX_URLS = 50
@@ -193,10 +197,27 @@ def apply_bounded_context(
     lengths = [len(results[index]["text"]["text"]) for index in content_positions]
     allocations = _fair_share_allocations(lengths, plan.max_context_chars)
     truncated_count = 0
+    spans_enabled = original_request.options.get("spans") is True
+    spans_query = original_request.options.get("spans_query")
+    if spans_query is None:
+        spans_query = original_request.input.get("query")
+    if spans_enabled:
+        for result in results:
+            result["span_contract_version"] = 1
+            result["spans"] = []
 
     for position, allocation in zip(content_positions, allocations):
         projected = results[position]["text"]
         full_text = unicodedata.normalize("NFC", projected["text"])
+        if spans_enabled:
+            preview_end = min(len(full_text), allocation)
+            results[position]["spans"] = [
+                {
+                    **span,
+                    "within_preview": span["end"] <= preview_end,
+                }
+                for span in select_spans(full_text, spans_query)
+            ]
         if len(full_text) <= allocation:
             continue
         truncated_count += 1

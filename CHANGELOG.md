@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.1.0] - 2026-07-20
+
+### Added
+- Sync the portable Web Search Plus v3.1.1 policy layer: budget preflight, diversity scoring/reranking, self-hosted profiles, shadow-policy observations, semantic extraction spans, extraction cache identity v6, and SQLite state schema v3.
+- Add the public `wsp_sdk` package plus fail-closed `providers.d` discovery, startup diagnostics, and network-free provider conformance checks.
+- Expose deterministic semantic spans through the MCP `web_extract` schema and CLI projection.
+
+### Changed
+- Generate and ship the current v3 request/response schemas, including budget-preflight receipts and span options.
+- Keep MCP-specific stdio, subprocess, tool names, legacy projections, and auto-fallback behavior authoritative while syncing the portable engine to Web Search Plus v3.1.1.
+
+### No-port scope
+- Hermes plugin loading, Operator Console, receipt journals, benchmark/release tooling, and Hermes runtime hooks remain intentionally outside the standalone MCP package.
+
+### Verification
+- 265 tests pass, including 73 portable v3.1 feature tests and provider-SDK discovery/conformance subprocess coverage.
+
 ## [1.0.1] - 2026-07-20
 
 ### Fixed

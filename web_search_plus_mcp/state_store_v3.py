@@ -7,9 +7,11 @@ import hmac
 import os
 import secrets
 import sqlite3
+import stat
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 try:
     from .contract_v3 import Capability, CircuitState, ErrorClass, SkipReason
@@ -17,7 +19,9 @@ except ImportError:  # pragma: no cover - direct script execution
     from contract_v3 import Capability, CircuitState, ErrorClass, SkipReason
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+SHADOW_EVALUATION_RETENTION_SECONDS = 30 * 24 * 60 * 60
+SHADOW_EVALUATION_MAX_ROWS = 10_000
 DEFAULT_OPEN_SECONDS = {
     ErrorClass.AUTH: 300,
     ErrorClass.QUOTA: 3600,
@@ -136,6 +140,18 @@ def initialize_state_schema(connection: sqlite3.Connection) -> None:
             adaptive_providers INTEGER NOT NULL,
             adaptive_samples INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS shadow_evaluations_v3 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at REAL NOT NULL,
+            routing_class TEXT NOT NULL,
+            classic_provider TEXT NOT NULL,
+            shadow_provider TEXT,
+            agreement INTEGER NOT NULL,
+            policy_id TEXT NOT NULL,
+            policy_revision TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_shadow_eval_created
+            ON shadow_evaluations_v3(created_at);
         PRAGMA user_version={SCHEMA_VERSION};
         """
     )
@@ -147,6 +163,7 @@ class SQLiteStateStore:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.secret_path = Path(f"{self.path}.secret")
+        self._read_only = False
         self._local_secret = secrets.token_bytes(32)
         self._secret_available = False
         self._available = False
@@ -154,6 +171,33 @@ class SQLiteStateStore:
         self._initialize()
         if not self._secret_available:
             self._available = False
+
+    @classmethod
+    def open_readonly(cls, path: str | Path) -> "SQLiteStateStore":
+        """Open an existing owned database for aggregate reads without writes."""
+        store = cls.__new__(cls)
+        store.path = Path(path)
+        store.secret_path = Path(f"{store.path}.secret")
+        store._read_only = True
+        store._local_secret = b""
+        store._secret_available = False
+        store._available = False
+        try:
+            absolute = Path(os.path.abspath(os.fspath(store.path)))
+            current = Path(os.path.sep)
+            for component in absolute.parts[1:]:
+                current /= component
+                if stat.S_ISLNK(os.lstat(current).st_mode):
+                    return store
+            metadata = os.lstat(absolute)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid():
+                return store
+            connection = store._connect()
+            connection.close()
+            store._available = True
+        except (OSError, sqlite3.Error):
+            store._available = False
+        return store
 
     def _initialize_local_secret(self) -> None:
         """Load or atomically create the DB-local HMAC key with mode 0600."""
@@ -190,7 +234,32 @@ class SQLiteStateStore:
         return self._available
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path, timeout=5, isolation_level=None)
+        if self._read_only:
+            connection = sqlite3.connect(
+                f"{self.path.resolve().as_uri()}?mode=ro",
+                uri=True,
+                timeout=5,
+                isolation_level=None,
+            )
+        else:
+            connection = sqlite3.connect(self.path, timeout=5, isolation_level=None)
+        # This store intentionally uses short-lived WAL connections from
+        # concurrent research workers.  SQLite normally checkpoints WAL when
+        # the apparent last connection closes, which requires an exclusive
+        # lock and can deadlock with another thread opening a connection.
+        # Normal WAL auto-checkpointing still bounds the journal without doing
+        # blocking persistence work during request teardown.
+        no_checkpoint_on_close = getattr(
+            sqlite3, "SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE", None
+        )
+        setconfig = getattr(connection, "setconfig", None)
+        if no_checkpoint_on_close is not None and setconfig is not None:
+            try:
+                setconfig(no_checkpoint_on_close, True)
+            except sqlite3.Error:
+                # Older SQLite builds may expose the Python API without this
+                # option; state access must retain its existing degradation.
+                pass
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout=5000")
         return connection
@@ -551,3 +620,202 @@ class SQLiteStateStore:
             int(row["used_units"]),
             int(row["reserved_units"]),
         )
+
+    def read_budget_snapshot(
+        self, scope: str, window_key: str
+    ) -> BudgetRecord | None:
+        """Read an optional ledger row without creating or updating state.
+
+        Callers that require a zero-write read must obtain the store through
+        :meth:`open_readonly`; a missing row is distinct from an unavailable
+        database so policy can fail closed only when necessary.
+        """
+        if not self._available:
+            return None
+        try:
+            connection = self._connect()
+            try:
+                row = connection.execute(
+                    """
+                    SELECT limit_units, used_units, reserved_units
+                    FROM budget_ledger WHERE scope=? AND window_key=?
+                    """,
+                    (scope, window_key),
+                ).fetchone()
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            self._available = False
+            return None
+        if row is None:
+            return None
+        return BudgetRecord(
+            scope,
+            window_key,
+            int(row["limit_units"]),
+            int(row["used_units"]),
+            int(row["reserved_units"]),
+        )
+
+    def record_shadow_evaluation(
+        self,
+        *,
+        routing_class: str,
+        classic_provider: str,
+        shadow_provider: str | None,
+        agreement: bool,
+        policy_id: str,
+        policy_revision: str,
+        now: float | None = None,
+    ) -> bool:
+        """Best-effort bounded persistence for a completed shadow observation."""
+        if (
+            not self._available
+            or self._read_only
+            or not all(
+                isinstance(value, str) and value
+                for value in (
+                    routing_class,
+                    classic_provider,
+                    policy_id,
+                    policy_revision,
+                )
+            )
+            or (shadow_provider is not None and not isinstance(shadow_provider, str))
+            or not isinstance(agreement, bool)
+        ):
+            return False
+        try:
+            created_at = time.time() if now is None else float(now)
+            connection = self._connect()
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                connection.execute(
+                    """
+                    INSERT INTO shadow_evaluations_v3 (
+                        created_at, routing_class, classic_provider,
+                        shadow_provider, agreement, policy_id, policy_revision
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        created_at,
+                        routing_class,
+                        classic_provider,
+                        shadow_provider,
+                        int(agreement),
+                        policy_id,
+                        policy_revision,
+                    ),
+                )
+                connection.execute(
+                    "DELETE FROM shadow_evaluations_v3 WHERE created_at < ?",
+                    (created_at - SHADOW_EVALUATION_RETENTION_SECONDS,),
+                )
+                connection.execute(
+                    """
+                    DELETE FROM shadow_evaluations_v3
+                    WHERE id NOT IN (
+                        SELECT id FROM shadow_evaluations_v3
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT ?
+                    )
+                    """,
+                    (SHADOW_EVALUATION_MAX_ROWS,),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+        except (OSError, sqlite3.Error, ValueError):
+            self._available = False
+            return False
+        return True
+
+    def adaptive_sample_rows(self) -> list[tuple[str, int, int, int, int]]:
+        """Return (provider, sample_time, latency_ms, result_count, error) rows."""
+        if not self._available:
+            return []
+        try:
+            connection = self._connect()
+            try:
+                rows = connection.execute(
+                    """
+                    SELECT provider, sample_time, latency_ms, result_count, error
+                    FROM adaptive_samples_v3
+                    ORDER BY provider, sample_time
+                    """
+                ).fetchall()
+            finally:
+                connection.close()
+            return [
+                (
+                    str(row["provider"]),
+                    int(row["sample_time"]),
+                    int(row["latency_ms"]),
+                    int(row["result_count"]),
+                    int(row["error"]),
+                )
+                for row in rows
+            ]
+        except sqlite3.Error:
+            self._available = False
+            return []
+
+    def shadow_evaluation_summary(self, window_seconds: int) -> dict[str, Any]:
+        """Return a bounded aggregate with no query text or request identifiers."""
+        empty = {
+            "total": 0,
+            "agreement_count": 0,
+            "agreement_rate": 0.0,
+            "divergences": [],
+        }
+        if not self._available:
+            return empty
+        try:
+            seconds = max(
+                0,
+                min(int(window_seconds), SHADOW_EVALUATION_RETENTION_SECONDS),
+            )
+            cutoff = time.time() - seconds
+            connection = self._connect()
+            try:
+                totals = connection.execute(
+                    """
+                    SELECT COUNT(*) AS total, COALESCE(SUM(agreement), 0) AS agreement_count
+                    FROM shadow_evaluations_v3 WHERE created_at >= ?
+                    """,
+                    (cutoff,),
+                ).fetchone()
+                rows = connection.execute(
+                    """
+                    SELECT classic_provider, shadow_provider, COUNT(*) AS count
+                    FROM shadow_evaluations_v3
+                    WHERE created_at >= ? AND agreement=0
+                    GROUP BY classic_provider, shadow_provider
+                    ORDER BY count DESC, classic_provider ASC, shadow_provider ASC
+                    """,
+                    (cutoff,),
+                ).fetchall()
+            finally:
+                connection.close()
+        except (OSError, sqlite3.Error, TypeError, ValueError):
+            self._available = False
+            return empty
+        total = int(totals["total"])
+        agreement_count = int(totals["agreement_count"])
+        return {
+            "total": total,
+            "agreement_count": agreement_count,
+            "agreement_rate": agreement_count / total if total else 0.0,
+            "divergences": [
+                {
+                    "classic_provider": str(row["classic_provider"]),
+                    "shadow_provider": (
+                        None
+                        if row["shadow_provider"] is None
+                        else str(row["shadow_provider"])
+                    ),
+                    "count": int(row["count"]),
+                }
+                for row in rows
+            ],
+        }

@@ -4,19 +4,38 @@ import hashlib
 import ipaddress
 import os
 import socket
+import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 try:
-    from .config import ProviderConfigError, get_api_key, keyless_public_allowed, load_config
+    from .config import (
+        ProviderConfigError,
+        SELF_HOSTED_EXTRACT_PROVIDER_IDS,
+        get_api_key,
+        is_self_hosted_profile,
+        keyless_public_allowed,
+        load_config,
+    )
 except ImportError:  # pragma: no cover - direct script execution
-    from config import ProviderConfigError, get_api_key, keyless_public_allowed, load_config
+    from config import (
+        ProviderConfigError,
+        SELF_HOSTED_EXTRACT_PROVIDER_IDS,
+        get_api_key,
+        is_self_hosted_profile,
+        keyless_public_allowed,
+        load_config,
+    )
 try:
     from .cache import CACHE_DIR
 except ImportError:  # pragma: no cover - direct script execution
     from cache import CACHE_DIR
+try:
+    from .cache_identity_v3 import ExtractionCacheIdentityV3
+except ImportError:  # pragma: no cover - direct script execution
+    from cache_identity_v3 import ExtractionCacheIdentityV3
 try:
     from .bounded_context_v3 import (
         DEFAULT_FULL_TEXT_MAX_BYTES,
@@ -131,6 +150,24 @@ except ImportError:  # pragma: no cover - direct script execution
 EXTRACT_PROVIDER_PRIORITY = list(EXTRACT_PROVIDER_IDS)
 
 
+def _daily_preflight_budget(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the optional global provider-call ledger settings for attempts."""
+    raw_off = os.environ.get("WSP_BUDGET_PREFLIGHT_OFF")
+    if raw_off is not None and raw_off.strip().strip('"').strip("'").lower() not in {
+        "", "0", "false", "no", "off",
+    }:
+        return {}
+    section = config.get("budget_preflight") or {}
+    limit = section.get("max_daily_provider_calls") if isinstance(section, dict) else None
+    if section.get("enabled") is not True or isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+        return {}
+    return {
+        "daily_budget_scope": "daily_provider_calls",
+        "daily_budget_window": time.strftime("%Y-%m-%d", time.gmtime()),
+        "daily_budget_limit_units": limit,
+    }
+
+
 def resolve_extract_provider_priority(config: Optional[Dict[str, Any]] = None) -> List[str]:
     """Return the configured extract order, completed with registry defaults.
 
@@ -158,6 +195,15 @@ def resolve_extract_provider_priority(config: Optional[Dict[str, Any]] = None) -
             continue
         seen.add(provider)
         providers.append(provider)
+    if is_self_hosted_profile(config or {}):
+        # Profile-owned automatic extraction must not be re-expanded with the
+        # normal priority list. Explicit provider= requests are assembled by
+        # the caller and remain available when their credentials exist.
+        return [
+            provider
+            for provider in SELF_HOSTED_EXTRACT_PROVIDER_IDS
+            if provider in providers or provider in allowed
+        ]
     for provider in EXTRACT_PROVIDER_PRIORITY:
         if provider not in seen:
             providers.append(provider)
@@ -244,6 +290,11 @@ def _extract_plus_core(
     """Extract URL content with provider fallback."""
     config = config or load_config()
     selected = provider or "auto"
+    profile_deviation = (
+        is_self_hosted_profile(config)
+        and selected != "auto"
+        and selected not in SELF_HOSTED_EXTRACT_PROVIDER_IDS
+    )
     if not urls:
         return {"provider": selected, "results": [], "error": "No URLs provided", "requested_provider": selected}
     try:
@@ -328,6 +379,8 @@ def _extract_plus_core(
             if not engine_owned_attempt:
                 reset_provider_health(prov)
             result["routing"] = {"provider": prov, "requested_provider": selected, "fallback_used": bool(errors) or bool(cooldown_skips), "fallback_errors": errors}
+            if profile_deviation:
+                result.setdefault("metadata", {})["profile_deviation"] = True
             if cooldown_skips:
                 result["routing"]["cooldown_skips"] = cooldown_skips
             return result
@@ -347,15 +400,16 @@ def _extract_plus_core(
 def _plan_extract_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
     selected = str(request.routing.get("provider") or "auto")
     disabled = set((config.get("auto_routing") or {}).get("disabled_providers", []))
+    priority = resolve_extract_provider_priority(config)
     configured = [
         provider
-        for provider in resolve_extract_provider_priority(config)
+        for provider in priority
         if provider not in disabled
         and (get_api_key(provider, config) or keyless_public_allowed(provider, config))
     ]
     if selected == "auto":
         candidates = configured
-        chosen = candidates[0] if candidates else EXTRACT_PROVIDER_PRIORITY[0]
+        chosen = candidates[0] if candidates else priority[0]
     else:
         candidates = [selected] + [
             provider for provider in configured if provider != selected
@@ -403,6 +457,15 @@ def _execute_extract_v3(
     fallback_errors = []
     payload = None
     successful_provider = None
+    max_wall_time_ms = request.budget.get("max_wall_time_ms")
+    deadline = (
+        time.monotonic() + (max_wall_time_ms / 1000)
+        if isinstance(max_wall_time_ms, int)
+        and not isinstance(max_wall_time_ms, bool)
+        and max_wall_time_ms > 0
+        else None
+    )
+    daily_budget = _daily_preflight_budget(config)
 
     for provider in plan.candidate_order:
         provider_config = config.get(provider) or {}
@@ -421,10 +484,17 @@ def _execute_extract_v3(
             budget_scope=scope,
             budget_window="request",
             budget_limit_units=budget_limit,
+            deadline_monotonic=deadline,
+            **daily_budget,
         )
         if payload is not None:
             receipts.append(
                 engine.skip(context, SkipReason.POLICY_EXCLUDED).receipt
+            )
+            continue
+        if deadline is not None and time.monotonic() >= deadline:
+            receipts.append(
+                engine.skip(context, SkipReason.DEADLINE_EXCEEDED).receipt
             )
             continue
 
@@ -593,20 +663,151 @@ def _extract_cache_identity(
     )
 
 
-def _extract_cache_vary(
-    _request: RequestV3, _provider_plan: ProviderPlan, config: Dict[str, Any]
+def _identity_requested_provider(request) -> str:
+    return str(request.routing.get("provider") or "auto")
+
+
+def _identity_candidate_basis(request, config) -> list:
+    """Config-derived candidate list for cache identity.
+
+    Deliberately health-independent: an explicit provider is its own basis;
+    auto requests use the configured extraction priority so transient
+    cooldowns never change the cache key.
+    """
+    requested = _identity_requested_provider(request)
+    if requested != "auto":
+        return [requested]
+    return list(resolve_extract_provider_priority(config))
+
+
+def _extract_provider_endpoint_config(
+    provider: str, config: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Bind mutable operator storage and URL policy to cache-owned evidence."""
+    """Return every non-secret extraction adapter setting that affects output."""
+    section = config.get(provider) or {}
+    if not isinstance(section, dict):
+        section = {}
+    if provider == "firecrawl":
+        return {
+            "scrape_url": section.get(
+                "scrape_url", "https://api.firecrawl.dev/v2/scrape"
+            ),
+            "extract_timeout": int(section.get("extract_timeout", 60)),
+        }
+    if provider == "linkup":
+        return {
+            "fetch_url": section.get("fetch_url", "https://api.linkup.so/v1/fetch"),
+            "timeout": int(section.get("timeout", 30)),
+        }
+    if provider == "tavily":
+        return {
+            "extract_url": section.get(
+                "extract_url", "https://api.tavily.com/extract"
+            ),
+            "timeout": int(section.get("timeout", 30)),
+        }
+    if provider == "exa":
+        return {
+            "contents_url": section.get("contents_url", "https://api.exa.ai/contents"),
+            "timeout": int(section.get("timeout", 30)),
+        }
+    if provider == "parallel":
+        return {
+            "extract_url": section.get(
+                "extract_url", "https://api.parallel.ai/v1/extract"
+            ),
+            "extract_timeout": int(
+                section.get("extract_timeout", section.get("timeout", 60))
+            ),
+            "client_model": section.get("client_model"),
+            "max_chars_total": int(section.get("max_chars_total", 120000)),
+            "max_chars_per_result": int(section.get("max_chars_per_result", 60000)),
+        }
+    if provider == "keenable":
+        return {
+            "fetch_url": section.get("fetch_url", "https://api.keenable.ai/v1/fetch"),
+            "timeout": int(section.get("timeout", 30)),
+            "keyless_public": keyless_public_allowed(provider, config),
+        }
+    if provider == "serper":
+        return {
+            "scrape_url": section.get("scrape_url", "https://scrape.serper.dev"),
+            "extract_timeout": int(
+                section.get("extract_timeout", section.get("timeout", 30))
+            ),
+        }
+    if provider == "you":
+        return {
+            "contents_url": section.get("contents_url", "https://ydc-index.io/v1/contents"),
+            "timeout": int(section.get("timeout", 30)),
+        }
+    # The registry is the authoritative provider boundary. An unknown provider
+    # must not be silently collapsed into a shared cache identity.
+    raise ValueError(f"unknown extraction provider in cache identity: {provider}")
+
+
+def _extract_cache_vary(
+    request: RequestV3, provider_plan: ProviderPlan, config: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Return the complete typed identity for request-exact extraction evidence."""
+    prepared = prepare_extract_request(request, config)
     policy = config.get("bounded_context") or {}
     if not isinstance(policy, dict):
         policy = {}
     cache_root = Path(policy.get("cache_root") or CACHE_DIR)
-    return {
-        "extract_url_policy": {
+    v3_config = config.get("v3") or {}
+    if not isinstance(v3_config, dict):
+        v3_config = {}
+    storage_root = os.path.abspath(os.fspath(cache_root))
+    identity = ExtractionCacheIdentityV3(
+        requested_urls=tuple(request.input["urls"]),
+        attempt_budget={
+            "requested": dict(request.budget),
+            "effective_max_provider_attempts": int(
+                request.budget.get(
+                    "max_provider_attempts",
+                    v3_config.get("default_max_provider_attempts", 3),
+                )
+            ),
+            "max_attempts_per_provider": int(
+                v3_config.get("max_attempts_per_provider", 2)
+            ),
+        },
+        effective_context_limits={
+            "max_urls": prepared.max_urls,
+            "max_context_chars": prepared.max_context_chars,
+        },
+        output_format=str(request.options.get("output_format", "markdown")),
+        include_images=bool(request.options.get("include_images", False)),
+        include_raw_html=bool(request.options.get("include_raw_html", False)),
+        render_js=bool(request.options.get("render_js", False)),
+        semantic_spans={
+            "enabled": request.options.get("spans") is True,
+            "query": request.options.get("spans_query"),
+            "span_contract_version": 1,
+        },
+        # Identity captures the request and configuration, never the transient
+        # provider plan: cooldown/health changes between two otherwise
+        # identical calls must not vary the cache key. The provider that
+        # actually served remains recorded in the cached evidence itself.
+        provider_selection={
+            "requested_provider": _identity_requested_provider(request),
+            "allow_fallback": bool(request.routing.get("allow_fallback", True)),
+            "candidate_basis": _identity_candidate_basis(request, config),
+        },
+        provider_endpoint_config={
+            provider: _extract_provider_endpoint_config(provider, config)
+            for provider in _identity_candidate_basis(request, config)
+        },
+        url_policy={
             "allow_private_urls": _extract_allows_private_urls(config),
         },
-        "full_text_store": {
-            "cache_root": os.path.abspath(os.fspath(cache_root)),
+        storage_policy={
+            # Retained content references are local to this store. Keep the
+            # location opaque even inside the cache envelope.
+            "cache_root_fingerprint": hashlib.sha256(
+                storage_root.encode("utf-8")
+            ).hexdigest(),
             "ttl_seconds": max(
                 0,
                 int(
@@ -620,7 +821,8 @@ def _extract_cache_vary(
                 int(policy.get("full_text_max_bytes", DEFAULT_FULL_TEXT_MAX_BYTES)),
             ),
         },
-    }
+    )
+    return {"extraction_cache_identity": identity.canonical_form()}
 
 
 def _extract_cache_write_eligible(
@@ -631,7 +833,24 @@ def _extract_cache_write_eligible(
     _config: Dict[str, Any],
 ) -> bool:
     """Avoid lossy cache projections for partial or provider-specific payloads."""
-    if set(legacy_payload) - {"provider", "results", "routing"}:
+    # Per-execution provider metadata (upstream request ids, cost accounting,
+    # upstream cache statuses) describes ONE live execution. It is never part
+    # of the cached evidence and never reproduced on hits, so its presence
+    # must not disqualify a write. Everything else unknown stays a blocker.
+    execution_metadata_fields = {"request_id", "cost_dollars", "statuses"}
+    if set(legacy_payload) - {"provider", "results", "routing"} - execution_metadata_fields:
+        return False
+    if "request_id" in legacy_payload and not isinstance(
+        legacy_payload.get("request_id"), str
+    ):
+        return False
+    if "cost_dollars" in legacy_payload and not isinstance(
+        legacy_payload.get("cost_dollars"), dict
+    ):
+        return False
+    if "statuses" in legacy_payload and not isinstance(
+        legacy_payload.get("statuses"), list
+    ):
         return False
     routing = legacy_payload.get("routing")
     if routing is not None:
@@ -663,6 +882,11 @@ def _extract_cache_write_eligible(
         "content",
         "raw_content",
         "provider",
+        # Benign scalar metadata emitted by real providers (e.g. Exa). These
+        # round-trip losslessly through the projection hints, so they must not
+        # disqualify a write.
+        "favicon",
+        "published_date",
     }
     for item in legacy_payload.get("results") or []:
         if not isinstance(item, dict) or item.get("error"):
@@ -671,6 +895,12 @@ def _extract_cache_write_eligible(
             return False
         if "provider" in item and not isinstance(item.get("provider"), str):
             return False
+        for scalar_field in ("favicon", "published_date"):
+            if scalar_field in item and not (
+                item.get(scalar_field) is None
+                or isinstance(item.get(scalar_field), str)
+            ):
+                return False
         if "raw_content" in item and item.get("raw_content") != item.get("content"):
             return False
     return True
@@ -721,6 +951,8 @@ def extract_plus(
     include_images: bool = False,
     include_raw_html: bool = False,
     render_js: bool = False,
+    spans: bool = False,
+    spans_query: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """Legacy extract projection over the sole native v3 execution path."""
@@ -737,6 +969,8 @@ def extract_plus(
             "include_images": include_images,
             "include_raw_html": include_raw_html,
             "render_js": render_js,
+            "spans": spans,
+            "spans_query": spans_query,
         },
     )
     execution = execute_v3_request(

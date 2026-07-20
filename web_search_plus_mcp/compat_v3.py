@@ -20,6 +20,7 @@ def legacy_request_to_v3(
     payload: Mapping[str, Any],
     *,
     request_id: str | None = None,
+    policy_mode: str = "classic",
 ) -> RequestV3:
     """Project a public legacy invocation into a complete RequestV3."""
     capability = Capability(capability)
@@ -29,7 +30,7 @@ def legacy_request_to_v3(
         "mode": "auto" if provider == "auto" else "fixed",
         "provider": provider,
         "allow_fallback": bool(payload.get("allow_fallback", default_fallback)),
-        "policy_mode": "classic",
+        "policy_mode": policy_mode if policy_mode == "shadow" else "classic",
     }
     cache = {
         "mode": "bypass" if payload.get("no_cache") else "prefer",
@@ -81,18 +82,28 @@ def legacy_request_to_v3(
     urls = payload.get("urls") or []
     if isinstance(urls, str):
         urls = [urls]
+    extract_options: Dict[str, Any] = {
+        "output_format": str(
+            payload.get("format", payload.get("output_format", "markdown"))
+        ),
+        "include_images": bool(payload.get("include_images", False)),
+        "include_raw_html": bool(payload.get("include_raw_html", False)),
+        "render_js": bool(payload.get("render_js", False)),
+    }
+    if payload.get("spans") is True:
+        extract_options["spans"] = True
+    spans_query = payload.get("spans_query")
+    if spans_query is None and payload.get("query") is not None:
+        spans_query = payload.get("query")
+    if spans_query is not None:
+        extract_options["spans_query"] = unicodedata.normalize(
+            "NFC", str(spans_query)
+        ).strip()
     return RequestV3(
         capability=capability,
         input={"urls": list(urls)},
         request_id=request_id,
-        options={
-            "output_format": str(
-                payload.get("format", payload.get("output_format", "markdown"))
-            ),
-            "include_images": bool(payload.get("include_images", False)),
-            "include_raw_html": bool(payload.get("include_raw_html", False)),
-            "render_js": bool(payload.get("render_js", False)),
-        },
+        options=extract_options,
         cache=cache,
         routing=routing,
         client=client,
@@ -132,6 +143,9 @@ def v3_response_to_legacy_extract(execution: ExecutedV3) -> Dict[str, Any]:
         result["title"] = title.get("text")
         result["url"] = observed_url
         result["content"] = text.get("text")
+        if "spans" in item:
+            result["span_contract_version"] = item.get("span_contract_version")
+            result["spans"] = [dict(span) for span in item["spans"]]
         if "raw_content" in result:
             result["raw_content"] = result["content"]
         projected.append(result)
