@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.1] - 2026-07-20
+
+### Fixed
+- Restore multi-provider fallback expansion for normal `provider=auto` Search and Extract requests across the MCP → CLI → v3 projection boundary. The CLI's absent `--allow-fallback` flag no longer serializes an explicit `allow_fallback: false` that collapses auto plans to one candidate.
+- Keep explicit provider requests strict by default; they fall back only when `--allow-fallback` is explicitly requested.
+
+### Verification
+- Add issue #27 regressions proving multi-candidate auto plans and an executed second-provider fallback after a simulated `429` for both Search and Extract.
+- Full suite: 187 tests passing locally and on Python 3.10, 3.11, and 3.12 in CI.
+
 ## [1.0.0] - 2026-07-14
 
 ### Breaking
