@@ -24,7 +24,10 @@ from .errors import (
     ProviderSDKError,
     ProviderStartupDiagnostic,
 )
-from http_client import ProviderRequestError
+try:
+    from web_search_plus_mcp.http_client import ProviderRequestError
+except ImportError:  # pragma: no cover - flat test/script layout
+    from http_client import ProviderRequestError
 
 __all__ = [
     "DuplicateProviderError",

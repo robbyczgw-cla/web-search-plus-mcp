@@ -30,7 +30,7 @@ class FakeResponse:
 
 def test_default_user_agent_tracks_package_version():
     assert http_client.DEFAULT_USER_AGENT == f"ClawdBot-WebSearchPlus-MCP/{web_search_plus_mcp.__version__}"
-    assert http_client.DEFAULT_USER_AGENT.endswith("/1.1.0")
+    assert http_client.DEFAULT_USER_AGENT.endswith("/1.1.1")
 
 
 @pytest.mark.parametrize(

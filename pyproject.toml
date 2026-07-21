@@ -9,7 +9,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "web-search-plus-mcp"
-version = "1.1.0"
+version = "1.1.1"
 description = "Source-only multi-provider web search, extraction, evidence receipts, and onboarding for MCP clients"
 readme = "README.md"
 license = { file = "LICENSE" }

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1] - 2026-07-21
+
+### Fixed
+- The MCP `web_extract` projection now preserves `spans` and `span_contract_version` on result items; previously the engine computed spans but clients never received them.
+- `wsp_sdk` imports as a plain package again (its `ProviderRequestError` import no longer depends on test-only `sys.path` layout).
+- Extraction requests served by discovered Provider-SDK extraction providers no longer fail closed inside the cache identity; SDK providers contribute a deterministic identity derived from their spec and the non-secret scalar settings of their config section. Unknown providers still fail closed.
+- The `providers.d` non-production gate acts before module execution: modules declaring a literal `production=False` are skipped without being imported unless `WSP_SDK_ALLOW_NON_PRODUCTION` is set.
+
 ## [1.1.0] - 2026-07-20
 
 ### Added

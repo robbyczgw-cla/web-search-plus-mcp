@@ -15,7 +15,7 @@
 
 `web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the source-only provider and evidence contract of Web Search Plus 3.0 without depending on the Hermes plugin runtime.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`1.1.0`) while tracking the portable source-only Web Search Plus v3.1.1 engine. The Hermes plugin is versioned separately; its plugin-loader, Operator Console, receipts journal, and release commands are not exposed by the standalone MCP server.
+Version note: `web-search-plus-mcp` uses its own MCP package version (`1.1.1`) while tracking the portable source-only Web Search Plus v3.1.1 engine. The Hermes plugin is versioned separately; its plugin-loader, Operator Console, receipts journal, and release commands are not exposed by the standalone MCP server.
 
 ## ✨ Features
 

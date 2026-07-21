@@ -7,6 +7,7 @@ their formal execute callables are consumed by :mod:`provider_dispatch`.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import inspect
 import os
@@ -243,6 +244,31 @@ def _validate_discovered_spec(spec: ProviderSpec) -> None:
         raise ProviderRegistrationError("only search providers may opt into the auto pool")
 
 
+def _statically_non_production(path: Path) -> bool:
+    """Detect ``production=False`` without importing (and thus executing) the module.
+
+    Non-production fixtures must declare the flag as a literal keyword so the
+    gate can act before any module code runs.  A module whose flag cannot be
+    read statically is treated as production here; the post-import gate in
+    :func:`discover_providers` remains as the authoritative backstop.
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, ValueError):
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        for keyword in node.keywords:
+            if (
+                keyword.arg == "production"
+                and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value is False
+            ):
+                return True
+    return False
+
+
 def _load_provider_file(path: Path) -> ProviderSpec:
     module_name = "wsp_provider_" + re.sub(r"[^a-zA-Z0-9_]", "_", path.stem)
     module_spec = importlib.util.spec_from_file_location(module_name, path)
@@ -277,6 +303,10 @@ def discover_providers(
     diagnostics = []
     for path in sorted(root.glob("*.py")):
         if path.name.startswith("_"):
+            continue
+        if not _non_production_discovery_allowed() and _statically_non_production(path):
+            # Skip before import: non-production fixture code must not execute
+            # in a production process at all, not merely stay unregistered.
             continue
         try:
             spec = _load_provider_file(path)

@@ -67,17 +67,17 @@ def canonical_response(*, capability="search", status="ok", results=None, error=
     }
 
 
-def test_version_1_1_0_is_consistent_across_public_surfaces():
+def test_version_1_1_1_is_consistent_across_public_surfaces():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert project["project"]["version"] == "1.1.0"
+    assert project["project"]["version"] == "1.1.1"
     assert project["project"]["scripts"]["web-search-plus-mcp"] == (
         "web_search_plus_mcp.server:cli_main"
     )
-    assert web_search_plus_mcp.__version__ == "1.1.0"
-    assert server.__version__ == "1.1.0"
+    assert web_search_plus_mcp.__version__ == "1.1.1"
+    assert server.__version__ == "1.1.1"
     initialization = server.app.create_initialization_options()
     assert initialization.server_name == "web-search-plus"
-    assert initialization.server_version == "1.1.0"
+    assert initialization.server_version == "1.1.1"
 
 
 def test_wheel_config_includes_v3_contracts_and_migration_guide():
@@ -103,7 +103,7 @@ def test_source_only_provider_surface_is_12_search_and_8_extract():
 
 def test_readme_describes_current_source_only_release_surface():
     readme = (ROOT / "README.md").read_text()
-    assert "`1.1.0`" in readme
+    assert "`1.1.1`" in readme
     assert "Web Search Plus v3.1.1" in readme
     assert "**12 search providers" in readme
 
