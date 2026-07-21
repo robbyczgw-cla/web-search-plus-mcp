@@ -17,7 +17,7 @@ TRANSIENT_HTTP_CODES = {429, 503}
 try:
     from . import __version__
 except ImportError:  # pragma: no cover
-    __version__ = "1.1.0"
+    __version__ = "1.1.1"
 
 DEFAULT_USER_AGENT = f"ClawdBot-WebSearchPlus-MCP/{__version__}"
 

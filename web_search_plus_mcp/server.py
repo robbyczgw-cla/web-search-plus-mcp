@@ -23,7 +23,7 @@ from mcp.types import TextContent, Tool
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus", version=__version__)
@@ -464,6 +464,11 @@ def _project_v3_payload(
         url = _field_url(item.get("url"))
         if capability == "extract":
             result = {"url": url, "content": _field_text(item.get("text"))}
+            if isinstance(item.get("spans"), list):
+                result["spans"] = [
+                    dict(span) for span in item["spans"] if isinstance(span, dict)
+                ]
+                result["span_contract_version"] = item.get("span_contract_version")
         else:
             result = {
                 "title": _field_text(item.get("title")),

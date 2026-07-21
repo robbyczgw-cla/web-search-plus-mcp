@@ -3,6 +3,7 @@
 import hashlib
 import ipaddress
 import os
+import re
 import socket
 import time
 from dataclasses import replace
@@ -112,9 +113,9 @@ try:
 except ImportError:  # pragma: no cover - direct script execution
     from provider_dispatch import EXTRACT_DISPATCH
 try:
-    from .provider_registry import EXTRACT_PROVIDER_IDS
+    from .provider_registry import EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 except ImportError:  # pragma: no cover - direct script execution
-    from provider_registry import EXTRACT_PROVIDER_IDS
+    from provider_registry import EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 try:
     from .compat_v3 import legacy_request_to_v3, v3_response_to_legacy_extract
 except ImportError:  # pragma: no cover - direct script execution
@@ -680,6 +681,13 @@ def _identity_candidate_basis(request, config) -> list:
     return list(resolve_extract_provider_priority(config))
 
 
+# Config keys that may carry credentials must never enter the cache identity:
+# the identity is persisted alongside cached evidence on disk.
+_SECRET_SETTING_KEY_PATTERN = re.compile(
+    r"key|token|secret|password|credential|auth", re.IGNORECASE
+)
+
+
 def _extract_provider_endpoint_config(
     provider: str, config: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -740,6 +748,25 @@ def _extract_provider_endpoint_config(
         return {
             "contents_url": section.get("contents_url", "https://ydc-index.io/v1/contents"),
             "timeout": int(section.get("timeout", 30)),
+        }
+    spec = PROVIDER_SPECS.get(provider)
+    if spec is not None and spec.supports_extract:
+        # Discovered SDK providers get a deterministic identity derived from
+        # their spec and the non-secret scalars of their config section, so
+        # caching works without enumerating third-party endpoint knobs here.
+        section = config.get(spec.config_section) or {}
+        if not isinstance(section, dict):
+            section = {}
+        settings = {
+            key: value
+            for key, value in sorted(section.items())
+            if not _SECRET_SETTING_KEY_PATTERN.search(key)
+            and isinstance(value, (str, int, float, bool, type(None)))
+        }
+        return {
+            "sdk_provider": provider,
+            "config_section": spec.config_section,
+            "settings": settings,
         }
     # The registry is the authoritative provider boundary. An unknown provider
     # must not be silently collapsed into a shared cache identity.
