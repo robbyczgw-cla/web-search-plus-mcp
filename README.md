@@ -11,9 +11,15 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Glama](https://glama.ai/mcp/servers/robbyczgw-cla/web-search-plus-mcp/badge)](https://glama.ai/mcp/servers/robbyczgw-cla/web-search-plus-mcp)
 
-**Source-only multi-provider web search and bounded URL extraction for MCP clients.**
+**Give your agent the web — as real sources, never a made-up answer.** `web-search-plus-mcp` is the standalone MCP server for Web Search Plus: drop it into Claude Desktop, Cursor, NanoBot, Hermes, or any MCP-compatible host, and your agent can search and read pages across the providers *you* choose — and always see where each result came from.
 
-`web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the source-only provider and evidence contract of Web Search Plus 3.2 without depending on the Hermes plugin runtime.
+**New in 3.2 — and why it is genuinely fun now:**
+
+- 🔑 **Search with zero paid API keys.** The local, key-free **Hound** integration runs right on your own machine.
+- 🧭 **Careful, predictable routing** across 13 search and 9 extract providers — deliberate choice, safe fallbacks, no surprise costs.
+- 🧾 **Honest details on every call** — which provider ran, what failed, what came from cache. Nothing fails silently.
+
+All sources, zero invented answers.
 
 Version note: `web-search-plus-mcp` uses its own MCP package version (`1.2.0`) while tracking the portable source-only Web Search Plus v3.2.0 engine. The Hermes plugin is versioned separately; its plugin-loader, Operator Console, receipts journal, and release commands are not exposed by the standalone MCP server.
 
