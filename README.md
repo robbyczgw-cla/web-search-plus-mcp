@@ -1,7 +1,7 @@
 # 🔍 web-search-plus-mcp
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/badlogic/web-search-plus-mcp/main/docs/assets/web-search-plus-logo.png" alt="Web Search Plus" width="180">
+  <img src="docs/assets/web-search-plus-logo.png" alt="Web Search Plus" width="180">
 </p>
 
 [![PyPI version](https://img.shields.io/pypi/v/web-search-plus-mcp.svg)](https://pypi.org/project/web-search-plus-mcp/)
