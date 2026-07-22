@@ -23,7 +23,7 @@ from mcp.types import TextContent, Tool
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus", version=__version__)
@@ -326,7 +326,7 @@ async def list_tools() -> list[Tool]:
             name="web_search",
             description=(
                 "Source-only web search through the Web Search Plus v3 runtime. "
-                "Routes across 12 source-result providers and returns additive v3 evidence, "
+                "Routes across 13 source-result providers and returns additive v3 evidence, "
                 "routing receipts, provider attempts, cache provenance, and typed errors."
             ),
             inputSchema={
@@ -363,7 +363,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="web_extract",
             description=(
-                "Source-only URL extraction through 8 Web Search Plus v3 providers. "
+                "Source-only URL extraction through 9 Web Search Plus v3 providers. "
                 "Responses preserve bounded-context limits, truncation warnings, evidence, "
                 "and page-on-demand stored-content references."
             ),
@@ -445,6 +445,10 @@ def _project_v3_payload(
         provider = "research"
     else:
         provider = receipt.get("selected_provider")
+        if not provider:
+            cache_origin = receipt.get("cache_origin") or {}
+            if isinstance(cache_origin, dict):
+                provider = cache_origin.get("selected_provider")
         if not provider:
             attempts = payload.get("provider_attempts") or []
             provider = next(

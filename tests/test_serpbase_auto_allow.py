@@ -85,6 +85,7 @@ def test_server_schema_exposes_serpbase_last_and_auto_allow_metadata():
         "you",
         "searxng",
         "keenable",
+        "hound",
     ]
     assert server.SEARCH_PROVIDERS["serpbase"]["env"] == "SERPBASE_API_KEY"
     assert server.SEARCH_PROVIDERS["serpbase"]["auto_allow"] is False
@@ -109,6 +110,7 @@ def test_server_schema_exposes_serpbase_last_and_auto_allow_metadata():
         "serpbase": False,
         "querit": False,
         "parallel": False,
+        "hound": False,
     }
 
 
@@ -126,4 +128,5 @@ def test_server_normalizes_source_only_auto_allow_preferences():
         "serpbase": True,
         "querit": False,
         "parallel": False,
+        "hound": False,
     }

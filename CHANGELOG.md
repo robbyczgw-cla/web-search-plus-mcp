@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.2.0] - 2026-07-22
+
+### Added
+- Add Hound as an optional production Search and Extract provider through a separately installed MCP Streamable-HTTP sidecar.
+- Expand the public source-only surface to 13 Search providers and 9 Extract providers while preserving the two stable MCP tools.
+- Ship a Hound installation, security, keyless-trade-off, and opt-in routing guide plus dedicated 1.2 release notes in the wheel.
+
+### Changed
+- Sync the portable Hound provider and automatic-extraction guard from Web Search Plus v3.2.0.
+- Require `mcp>=1.26,<2` and declare `httpx>=0.27,<1` explicitly for the loopback MCP client bridge.
+
+### Security
+- Accept Hound endpoints only on literal IPv4/IPv6 loopback addresses, without credentials, query strings, fragments, redirects, or proxy-environment inheritance.
+- Keep Hound explicit-only by default for both Search and Extract; automatic participation requires an operator `auto_allow` override.
+- Disable Hound-side response caching in provider calls so Web Search Plus remains the cache, freshness, policy, and receipt authority.
+
+### Fixed
+- Preserve the originating provider in the stable MCP `provider` field on v3 cache hits, where no current provider attempt exists.
+
+### Attribution
+- [Hound / Master Fetch](https://github.com/dondai1234/master-fetch) is an independent MIT-licensed project created and maintained by [Bishesh Bhandari (`dondai1234`)](https://github.com/dondai1234). It is connected as a separate sidecar and is not bundled or forked by this package.
+
+### Verification
+- Add network-free Hound transport, projection, endpoint-validation, failure, timeout, raw-HTML, cardinality, and automatic-routing regressions.
+- Validate the packaged provider through Search and Extract MCP boundary smokes against `hound-mcp 11.1.6`.
+
 ## [1.1.1] - 2026-07-21
 
 ### Fixed

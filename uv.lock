@@ -869,9 +869,10 @@ wheels = [
 
 [[package]]
 name = "web-search-plus-mcp"
-version = "1.1.1"
+version = "1.2.0"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx" },
     { name = "mcp" },
 ]
 
@@ -884,7 +885,8 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "mcp", specifier = ">=1.0.0" },
+    { name = "httpx", specifier = ">=0.27.0,<1" },
+    { name = "mcp", specifier = ">=1.26.0,<2" },
     { name = "pytest", marker = "extra == 'test'" },
     { name = "ruff", marker = "extra == 'test'" },
     { name = "tomli", marker = "python_full_version < '3.11' and extra == 'test'" },
