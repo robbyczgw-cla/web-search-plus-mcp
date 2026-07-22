@@ -13,14 +13,15 @@
 
 **Source-only multi-provider web search and bounded URL extraction for MCP clients.**
 
-`web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the source-only provider and evidence contract of Web Search Plus 3.0 without depending on the Hermes plugin runtime.
+`web-search-plus-mcp` is the standalone MCP packaging of Web Search Plus. It gives Claude Desktop, Cursor, NanoBot, Hermes native MCP, and other MCP-compatible hosts the source-only provider and evidence contract of Web Search Plus 3.2 without depending on the Hermes plugin runtime.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`1.1.1`) while tracking the portable source-only Web Search Plus v3.1.1 engine. The Hermes plugin is versioned separately; its plugin-loader, Operator Console, receipts journal, and release commands are not exposed by the standalone MCP server.
+Version note: `web-search-plus-mcp` uses its own MCP package version (`1.2.0`) while tracking the portable source-only Web Search Plus v3.2.0 engine. The Hermes plugin is versioned separately; its plugin-loader, Operator Console, receipts journal, and release commands are not exposed by the standalone MCP server.
 
 ## ✨ Features
 
-- **12 search providers + auto-routing** — source-result providers only; answer-only endpoints are rejected instead of being presented as search
-- **8 extract providers with private-target protection** — Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, Serper
+- **13 search providers + auto-routing** — source-result providers only; answer-only endpoints are rejected instead of being presented as search
+- **9 extract providers with private-target protection** — Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, Serper, Hound
+- **Optional keyless Hound sidecar** — local metasearch and browser-backed extraction over loopback MCP; explicit-only by default
 - **Additive v3 evidence contract** — source observations, provider attempts, routing receipts, cache provenance, typed errors, and deterministic legacy projections
 - **Bounded extraction context** — long pages return a bounded preview plus a page-on-demand reference to the stored full text
 - **Classic Routing v2 authority** — registry-backed routing for multilingual/current, docs/API, arXiv, CVE/security, local/shopping, and OSS discovery
@@ -53,7 +54,9 @@ pip install web-search-plus-mcp
 web-search-plus-mcp
 ```
 
-At least one provider credential is required for search. Extraction needs at least one extraction-capable provider key.
+At least one configured provider is required. Most providers use credentials;
+Hound can instead run as a separately installed keyless local sidecar. Keyless
+does not mean offline, anonymous, unlimited, or free of local operating cost.
 
 ## 🧭 Easier onboarding
 
@@ -150,6 +153,7 @@ You can also place a `.env` file next to the package/project with the same varia
 - **SerpBase** — explicit-only Google SERP API (`SERPBASE_API_KEY`, `auto_allow=false`)
 - **Querit** — explicit-only multilingual, real-time AI search (`QUERIT_API_KEY`, `auto_allow=false`)
 - **Keenable** — independent web index with search and extraction (`KEENABLE_API_KEY`, or opt-in keyless public tier; off by default)
+- **Hound** — explicit-only local keyless metasearch through a separately installed loopback MCP sidecar (`HOUND_MCP_URL`)
 
 ## 📄 Extract Providers
 
@@ -161,6 +165,7 @@ You can also place a `.env` file next to the package/project with the same varia
 - **You.com** — LLM-ready snippets/content where available
 - **Keenable** — keyed or explicitly opted-in public extraction
 - **Serper** — fast webpage scraper extraction
+- **Hound** — explicit-only local fetch, browser rendering, PDF, and OCR fallback through MCP
 
 `auto_routing.extract_provider_priority` can override the auto-extraction order without changing search routing. Explicit provider calls still try the requested provider first.
 
@@ -179,6 +184,22 @@ KEENABLE_ALLOW_PUBLIC=1
 ```
 
 Use an API key for private or production use. The public endpoint sends queries and fetched URLs to a shared unauthenticated service and remains near the tail of the public default fallback order unless the operator configures a different extraction priority.
+
+### Hound local keyless sidecar
+
+[Hound / Master Fetch](https://github.com/dondai1234/master-fetch) is an
+independent MIT-licensed project created and maintained by
+[Bishesh Bhandari (`dondai1234`)](https://github.com/dondai1234). It is not
+bundled with this package. Web Search Plus connects to a separately installed
+Hound service through an uncredentialed loopback-only MCP endpoint.
+
+Hound avoids commercial search API credentials, but uses local resources and
+public network egress; engines may throttle or change behavior, browser-backed
+fetches can be slow, and no SLA is implied. Hound therefore remains
+`explicit-only` unless the operator enables `auto_allow`.
+
+See the [Hound setup and security guide](docs/HOUND.md) for installation,
+configuration, trade-offs, and tested versions.
 
 ### Private/internal extraction target guard
 
@@ -220,7 +241,7 @@ Use for source discovery, current events, prices, weather, sports lineups, sched
 Parameters:
 
 - `query` — required search query
-- `provider` — `auto`, `serper`, `serpbase`, `brave`, `tavily`, `querit`, `linkup`, `exa`, `firecrawl`, `parallel`, `you`, `searxng`, `keenable`
+- `provider` — `auto`, `serper`, `serpbase`, `brave`, `tavily`, `querit`, `linkup`, `exa`, `firecrawl`, `parallel`, `you`, `searxng`, `keenable`, `hound`
 - `count` — results to return, default `5`, max `20`
 - `depth` — Exa depth: `normal`, `deep`, `deep-reasoning`
 - `time_range` — `hour`, `day`, `week`, `month`, `year`
@@ -248,7 +269,7 @@ Example MCP arguments:
 Parameters:
 
 - `urls` — required list of URLs
-- `provider` — `auto`, `tavily`, `exa`, `linkup`, `parallel`, `firecrawl`, `you`, `keenable`, `serper`
+- `provider` — `auto`, `tavily`, `exa`, `linkup`, `parallel`, `firecrawl`, `you`, `keenable`, `serper`, `hound`
 - `format` — `markdown` or `html`
 - `include_images` — include image metadata when supported
 - `include_raw_html` — include raw HTML when supported
@@ -280,6 +301,8 @@ Guarded providers can still be called explicitly. To let one participate in `pro
 ```bash
 web-search-plus-mcp config set-auto-allow parallel on
 web-search-plus-mcp config set-auto-allow parallel off
+web-search-plus-mcp config set-auto-allow hound on
+web-search-plus-mcp config set-auto-allow hound off
 ```
 
 ## Development

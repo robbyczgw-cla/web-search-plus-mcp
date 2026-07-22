@@ -67,17 +67,17 @@ def canonical_response(*, capability="search", status="ok", results=None, error=
     }
 
 
-def test_version_1_1_1_is_consistent_across_public_surfaces():
+def test_version_1_2_0_is_consistent_across_public_surfaces():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert project["project"]["version"] == "1.1.1"
+    assert project["project"]["version"] == "1.2.0"
     assert project["project"]["scripts"]["web-search-plus-mcp"] == (
         "web_search_plus_mcp.server:cli_main"
     )
-    assert web_search_plus_mcp.__version__ == "1.1.1"
-    assert server.__version__ == "1.1.1"
+    assert web_search_plus_mcp.__version__ == "1.2.0"
+    assert server.__version__ == "1.2.0"
     initialization = server.app.create_initialization_options()
     assert initialization.server_name == "web-search-plus"
-    assert initialization.server_version == "1.1.1"
+    assert initialization.server_version == "1.2.0"
 
 
 def test_wheel_config_includes_v3_contracts_and_migration_guide():
@@ -87,11 +87,15 @@ def test_wheel_config_includes_v3_contracts_and_migration_guide():
     assert forced["docs/MIGRATION_1_0.md"] == (
         "web_search_plus_mcp/docs/MIGRATION_1_0.md"
     )
+    assert forced["docs/HOUND.md"] == "web_search_plus_mcp/docs/HOUND.md"
+    assert forced["docs/RELEASE_1_2.md"] == (
+        "web_search_plus_mcp/docs/RELEASE_1_2.md"
+    )
 
 
-def test_source_only_provider_surface_is_12_search_and_8_extract():
-    assert len(server.SEARCH_PROVIDERS) == 12
-    assert len(server.EXTRACT_PROVIDERS) == 8
+def test_source_only_provider_surface_is_13_search_and_9_extract():
+    assert len(server.SEARCH_PROVIDERS) == 13
+    assert len(server.EXTRACT_PROVIDERS) == 9
     assert RETIRED_ANSWER_PROVIDERS.isdisjoint(server.SEARCH_PROVIDERS)
     assert RETIRED_ANSWER_PROVIDERS.isdisjoint(server.EXTRACT_PROVIDERS)
 
@@ -103,9 +107,9 @@ def test_source_only_provider_surface_is_12_search_and_8_extract():
 
 def test_readme_describes_current_source_only_release_surface():
     readme = (ROOT / "README.md").read_text()
-    assert "`1.1.1`" in readme
-    assert "Web Search Plus v3.1.1" in readme
-    assert "**12 search providers" in readme
+    assert "`1.2.0`" in readme
+    assert "Web Search Plus v3.2.0" in readme
+    assert "**13 search providers" in readme
 
     provider_section = readme.split("## 🔎 Search Providers", 1)[1].split(
         "## 📄 Extract Providers", 1
@@ -117,6 +121,24 @@ def test_readme_describes_current_source_only_release_surface():
         display_name = "Kilo Perplexity" if provider == "kilo-perplexity" else "Perplexity"
         assert f"- **{display_name}**" not in provider_section
         assert f"`{provider}`" not in search_tool_section
+
+
+def test_hound_release_surfaces_preserve_attribution_and_separate_install():
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    dependencies = set(project["project"]["dependencies"])
+    readme = (ROOT / "README.md").read_text()
+    guide = (ROOT / "docs/HOUND.md").read_text()
+    release = (ROOT / "docs/RELEASE_1_2.md").read_text()
+    changelog = (ROOT / "CHANGELOG.md").read_text()
+    combined = "\n".join((readme, guide, release, changelog))
+
+    assert "mcp>=1.26.0,<2" in dependencies
+    assert "httpx>=0.27.0,<1" in dependencies
+    assert "https://github.com/dondai1234/master-fetch" in combined
+    assert "Bishesh Bhandari" in combined
+    assert "MIT-licensed" in combined
+    assert "separately installed" in combined
+    assert "not bundled" in combined
 
 
 def test_glama_manifest_matches_live_tool_schemas():
@@ -261,6 +283,29 @@ def test_research_projection_preserves_aggregate_identity_and_v3_evidence(monkey
     assert payload["provider_attempts"] == canonical["provider_attempts"]
     assert payload["observations"] == canonical["observations"]
     assert payload["results"][0]["snippet"] == "Evidence merged across providers"
+
+
+def test_cache_hit_projection_preserves_origin_provider_without_current_attempts():
+    canonical = canonical_response()
+    canonical["routing_receipt"] = {
+        "mode": "classic",
+        "selected_provider": None,
+        "candidate_order": [],
+        "cache_origin": {
+            "execution_id": "exec_origin",
+            "selected_provider": "hound",
+            "candidate_order": ["hound"],
+        },
+    }
+    canonical["provider_attempts"] = []
+
+    projected = server._project_v3_payload(
+        canonical,
+        capability="search",
+        query="cached query",
+    )
+
+    assert projected["provider"] == "hound"
 
 
 def test_extract_cache_hit_projection_preserves_body_and_cache_provenance(monkeypatch):

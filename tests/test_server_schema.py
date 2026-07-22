@@ -33,6 +33,7 @@ def test_web_search_schema_exposes_v1_source_providers_and_controls():
         "you",
         "searxng",
         "keenable",
+        "hound",
     ]
     assert props["depth"]["enum"] == ["normal", "deep", "deep-reasoning"]
     assert props["mode"]["enum"] == ["normal", "research"]
@@ -45,7 +46,10 @@ def test_web_extract_tool_is_exposed_with_tavily_first_capable_schema():
     props = tool.inputSchema["properties"]
 
     assert tool.inputSchema["required"] == ["urls"]
-    assert props["provider"]["enum"] == ["auto", "tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper"]
+    assert props["provider"]["enum"] == [
+        "auto", "tavily", "exa", "linkup", "parallel", "firecrawl",
+        "you", "keenable", "serper", "hound",
+    ]
     assert props["render_js"]["type"] == "boolean"
     assert props["spans"]["type"] == "boolean"
     assert props["spans_query"]["type"] == "string"
@@ -150,9 +154,13 @@ def test_web_extract_call_maps_mcp_args_to_cli(monkeypatch):
     assert result[0].text == '{"results": []}'
 
 
-def test_extract_auto_priority_is_tavily_exa_linkup_parallel_firecrawl_you():
-    assert search.EXTRACT_PROVIDER_PRIORITY == ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper"]
-    assert server.EXTRACT_PROVIDERS == ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper"]
+def test_extract_provider_registry_order_includes_hound_last():
+    expected = [
+        "tavily", "exa", "linkup", "parallel", "firecrawl",
+        "you", "keenable", "serper", "hound",
+    ]
+    assert search.EXTRACT_PROVIDER_PRIORITY == expected
+    assert server.EXTRACT_PROVIDERS == expected
 
 
 def test_cli_status_json_and_setup_dry_run(tmp_path, monkeypatch, capsys):

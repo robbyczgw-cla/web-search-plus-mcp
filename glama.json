@@ -25,7 +25,7 @@
   "tools": [
     {
       "name": "web_search",
-      "description": "Source-only web search through the Web Search Plus v3 runtime. Routes across 12 source-result providers and returns additive v3 evidence, routing receipts, provider attempts, cache provenance, and typed errors.",
+      "description": "Source-only web search through the Web Search Plus v3 runtime. Routes across 13 source-result providers and returns additive v3 evidence, routing receipts, provider attempts, cache provenance, and typed errors.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -48,7 +48,8 @@
               "parallel",
               "you",
               "searxng",
-              "keenable"
+              "keenable",
+              "hound"
             ],
             "description": "Force a specific provider, or use auto-routing.",
             "default": "auto"
@@ -151,7 +152,7 @@
     },
     {
       "name": "web_extract",
-      "description": "Source-only URL extraction through 8 Web Search Plus v3 providers. Responses preserve bounded-context limits, truncation warnings, evidence, and page-on-demand stored-content references.",
+      "description": "Source-only URL extraction through 9 Web Search Plus v3 providers. Responses preserve bounded-context limits, truncation warnings, evidence, and page-on-demand stored-content references.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -173,7 +174,8 @@
               "firecrawl",
               "you",
               "keenable",
-              "serper"
+              "serper",
+              "hound"
             ],
             "default": "auto"
           },
@@ -232,7 +234,8 @@
       "parallel",
       "you",
       "searxng",
-      "keenable"
+      "keenable",
+      "hound"
     ],
     "extractProviders": [
       "tavily",
@@ -242,7 +245,8 @@
       "firecrawl",
       "you",
       "keenable",
-      "serper"
+      "serper",
+      "hound"
     ]
   }
 }
