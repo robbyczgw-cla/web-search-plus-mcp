@@ -47,7 +47,7 @@ jobs:
       - name: Install quality tools
         run: python -m pip install --upgrade pip build && python -m pip install -e ".[test]"
       - name: Ruff
-        run: ruff check .
+        run: ruff check --config pyproject.toml .
       - name: Compile
         run: python -m compileall -q web_search_plus_mcp tests
       - name: Build wheel and source distribution

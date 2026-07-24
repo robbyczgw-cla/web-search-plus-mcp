@@ -80,6 +80,17 @@ def test_version_3_3_0_is_consistent_across_public_surfaces():
     assert initialization.server_version == "3.3.0"
 
 
+def test_ci_ruff_policy_is_repo_local_and_pinned():
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+
+    assert project["tool"]["ruff"]["target-version"] == "py310"
+    assert project["tool"]["ruff"]["lint"]["select"] == ["E4", "E7", "E9", "F"]
+    assert "ruff==0.15.12" in project["project"]["optional-dependencies"]["test"]
+    assert "ruff check --config pyproject.toml ." in workflow
+    assert project["project"]["urls"]["Homepage"] == "https://websearchplus.xyz"
+
+
 def test_wheel_config_includes_v3_contracts_and_migration_guide():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
     forced = project["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]

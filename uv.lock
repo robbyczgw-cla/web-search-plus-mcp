@@ -888,6 +888,6 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27.0,<1" },
     { name = "mcp", specifier = ">=1.26.0,<2" },
     { name = "pytest", marker = "extra == 'test'" },
-    { name = "ruff", marker = "extra == 'test'" },
+    { name = "ruff", marker = "extra == 'test'", specifier = "==0.15.12" },
     { name = "tomli", marker = "python_full_version < '3.11' and extra == 'test'" },
 ]
