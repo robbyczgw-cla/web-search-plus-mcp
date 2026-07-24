@@ -161,6 +161,9 @@ def _attempts(
 
 
 PROJECTION_REQUIRED_PROVIDERS = frozenset({"parallel", "you"})
+_SNIPPET_SEPARATOR = "\n\n"
+_MAX_AGGREGATED_SNIPPET_CHARS = 600
+_AUTHORITATIVE_SOURCE_TYPES = frozenset({"docs", "paper", "repo", "reference"})
 
 
 def segment_canonical_text(text: str) -> List[Dict[str, Any]]:
@@ -187,6 +190,127 @@ def _projected_text(observation: Mapping[str, Any], source_field: str) -> Dict[s
         },
         "segments": segment_canonical_text(value),
     }
+
+
+def _observation_order(observation: Mapping[str, Any]) -> tuple[str, int, str]:
+    """Stable ordering never depends on arrival order or random attempt IDs."""
+    return (
+        str(observation.get("provider") or ""),
+        int(observation.get("provider_result_index") or 0),
+        str(observation.get("observation_id") or ""),
+    )
+
+
+def _source_type(url: str, provider_hint: object = None) -> Dict[str, str]:
+    """Return a transparent, deliberately heuristic source classification."""
+    parsed = urlsplit(url)
+    host = (parsed.hostname or "").casefold()
+    path = (parsed.path or "").casefold()
+    if host in {"github.com", "gitlab.com", "bitbucket.org"}:
+        return {"value": "repo", "method": "url_heuristic", "method_version": "1", "confidence": "high"}
+    if host in {"arxiv.org", "doi.org", "semanticscholar.org", "pubmed.ncbi.nlm.nih.gov"} or path.endswith(".pdf"):
+        return {"value": "paper", "method": "url_heuristic", "method_version": "1", "confidence": "high"}
+    if host.startswith("docs.") or "/docs" in path or "/documentation" in path:
+        return {"value": "docs", "method": "url_heuristic", "method_version": "1", "confidence": "high"}
+    if host in {"wikipedia.org", "en.wikipedia.org", "developer.mozilla.org"}:
+        return {"value": "reference", "method": "url_heuristic", "method_version": "1", "confidence": "high"}
+    if any(token in host for token in ("reddit.", "stackoverflow.", "discourse.", "forum.", "community.")):
+        return {"value": "forum", "method": "url_heuristic", "method_version": "1", "confidence": "high"}
+    if host.startswith("news.") or "/news" in path:
+        return {"value": "news", "method": "url_heuristic", "method_version": "1", "confidence": "medium"}
+    if host.startswith("blog.") or "/blog" in path:
+        return {"value": "blog", "method": "url_heuristic", "method_version": "1", "confidence": "medium"}
+
+    hint = str(provider_hint or "").casefold().replace("_", "-")
+    hint_map = {
+        "official-docs": "docs", "docs": "docs", "documentation": "docs",
+        "paper": "paper", "repository": "repo", "repo": "repo", "blog": "blog",
+        "forum": "forum", "reference": "reference", "news": "news",
+    }
+    if hint in hint_map:
+        return {
+            "value": hint_map[hint],
+            "method": "provider_hint_normalized",
+            "method_version": "1",
+            "confidence": "medium",
+        }
+    return {"value": "other", "method": "url_heuristic", "method_version": "1", "confidence": "low"}
+
+
+def _aggregate_snippet(members: List[Dict[str, Any]]) -> Dict[str, Any] | None:
+    """Merge provider snippets mechanically, retaining all selected source links."""
+    candidates = [
+        observation for observation in members
+        if isinstance(observation.get("snippet"), str) and observation["snippet"]
+    ]
+    if not candidates:
+        return None
+
+    def normalized(observation: Mapping[str, Any]) -> str:
+        return " ".join(str(observation["snippet"]).casefold().split())
+
+    # Prefer containing fragments over shorter duplicates, then restore source
+    # order for display. Both phases use only stable observation evidence.
+    retained: List[Dict[str, Any]] = []
+    retained_normalized: List[str] = []
+    for candidate in sorted(candidates, key=lambda item: (-len(normalized(item)), _observation_order(item))):
+        candidate_normalized = normalized(candidate)
+        if any(
+            candidate_normalized in existing or existing in candidate_normalized
+            for existing in retained_normalized
+        ):
+            continue
+        retained.append(candidate)
+        retained_normalized.append(candidate_normalized)
+    retained.sort(key=_observation_order)
+
+    fragments: List[Dict[str, Any]] = []
+    used_chars = 0
+    for observation in retained:
+        remaining = _MAX_AGGREGATED_SNIPPET_CHARS - used_chars - (
+            len(_SNIPPET_SEPARATOR) if fragments else 0
+        )
+        if remaining <= 0:
+            break
+        source_text = str(observation["snippet"])
+        text = source_text
+        transformations = ["mechanical_segmentation"]
+        if len(text) > remaining:
+            text = text[:remaining]
+            transformations.append("deterministic_truncation")
+        fragments.append(
+            {
+                "observation_id": observation["observation_id"],
+                "source_field": "snippet",
+                "text": text,
+                "transformations": transformations,
+            }
+        )
+        used_chars += len(text) + (len(_SNIPPET_SEPARATOR) if len(fragments) > 1 else 0)
+        if len(text) < len(source_text):
+            break
+    if not fragments:
+        return None
+    text = _SNIPPET_SEPARATOR.join(fragment["text"] for fragment in fragments)
+    return {
+        "text": text,
+        "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "origin": "engine",
+        "provenance": {"aggregation": "concat", "separator": _SNIPPET_SEPARATOR, "fragments": fragments},
+        "segments": segment_canonical_text(text),
+    }
+
+
+def _fetch_priority(engine_rank: int, members: List[Dict[str, Any]], source_type: Mapping[str, Any]) -> Dict[str, Any]:
+    consensus = len({str(member.get("provider")) for member in members}) >= 2
+    authoritative = source_type.get("value") in _AUTHORITATIVE_SOURCE_TYPES
+    reason_codes = [
+        "cluster_consensus" if consensus else "cluster_single_observation",
+        "rank_top_3" if engine_rank <= 3 else "rank_beyond_top_3",
+        "source_type_authoritative" if authoritative else "source_type_general",
+    ]
+    score = (2 if consensus else 0) + (1 if engine_rank <= 3 else 0) + (1 if authoritative else 0)
+    return {"tier": "high" if score >= 3 else "medium" if score >= 1 else "low", "reason_codes": reason_codes}
 
 
 def _observation(
@@ -239,6 +363,7 @@ def _observation(
         "provider_score": provider_score,
         "published_at": published_at,
         "provider_fields": {},
+        "source_type": _source_type(observed_url, item.get("source_type")),
     }
 
 
@@ -271,7 +396,10 @@ def project_results_from_observations(
     """Project selected source clusters without deleting non-selected observations."""
     representatives = []
     if selected_items is None:
-        representatives = [(observation, [observation]) for observation in observations]
+        representatives = [
+            (observation, [observation])
+            for observation in sorted(observations, key=_observation_order)
+        ]
     else:
         clusters: Dict[str, List[Dict[str, Any]]] = {}
         for observation in observations:
@@ -279,7 +407,7 @@ def project_results_from_observations(
         emitted = set()
         for item in selected_items:
             canonical = _canonical_url(str(item.get("url") or ""))
-            members = clusters.get(canonical) or []
+            members = sorted(clusters.get(canonical) or [], key=_observation_order)
             if not members or canonical in emitted:
                 continue
             observed = str(item.get("url") or "")
@@ -298,6 +426,15 @@ def project_results_from_observations(
     for rank, (observation, members) in enumerate(representatives, 1):
         observation_id = observation["observation_id"]
         cluster_id = _stable_id("cluster", observation["url"]["canonical"])
+        source_type = dict(
+            observation.get("source_type")
+            or _source_type(observation["url"]["canonical"])
+        )
+        snippet = (
+            _aggregate_snippet(members)
+            if len(members) > 1
+            else _projected_text(observation, "snippet")
+        )
         results.append(
             {
                 "result_id": _stable_id("result", observation_id),
@@ -308,8 +445,10 @@ def project_results_from_observations(
                 "dedup_cluster_id": cluster_id,
                 "url": dict(observation["url"]),
                 "title": _projected_text(observation, "title"),
-                "snippet": _projected_text(observation, "snippet"),
+                "snippet": snippet,
                 "text": _projected_text(observation, "text"),
+                "source_type": source_type,
+                "fetch_priority": _fetch_priority(rank, members, source_type),
             }
         )
     return results

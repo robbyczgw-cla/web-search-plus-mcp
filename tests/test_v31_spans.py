@@ -127,6 +127,82 @@ def test_custom_ranker_seam_scores_candidate_text_and_query() -> None:
     assert "Second" in spans[0]["text"]
 
 
+def test_query_matching_heading_keeps_its_body_without_query_terms() -> None:
+    document = (
+        "# Alpine Reservoirs\n\n"
+        "This body deliberately uses only neutral prose and measurement details.\n\n"
+        "# Other Notes\n\n"
+        "Unrelated material follows."
+    )
+
+    [span] = select_spans(document, "alpine reservoirs", max_spans=1)
+    span_text = str(span["text"])
+
+    assert span_text.startswith("# Alpine Reservoirs")
+    assert "neutral prose and measurement details" in span_text
+    assert "Other Notes" not in span_text
+
+
+def test_heading_section_stops_before_parent_or_sibling_section() -> None:
+    document = (
+        "# Parent Background\n\n"
+        "Parent-only context stays outside the target subsection.\n\n"
+        "## Orbital Calibration\n\n"
+        "Neutral calibration prose deliberately omits the query vocabulary.\n\n"
+        "# Sibling Appendix\n\n"
+        "Sibling-only context must never leak in."
+    )
+
+    [span] = select_spans(document, "orbital", max_spans=1)
+    span_text = str(span["text"])
+
+    assert span_text.startswith("## Orbital Calibration")
+    assert "Neutral calibration prose" in span_text
+    assert "Parent Background" not in span_text
+    assert "Sibling Appendix" not in span_text
+
+
+def test_heading_section_includes_deeper_subheadings() -> None:
+    document = (
+        "# Aurora Field Guide\n\n"
+        "The overview body intentionally contains no query terms.\n\n"
+        "## Packing Notes\n\n"
+        "Bring insulated layers and a tripod.\n\n"
+        "# Separate Topic\n\n"
+        "This must be excluded."
+    )
+
+    [span] = select_spans(document, "aurora", max_spans=1)
+    span_text = str(span["text"])
+
+    assert "## Packing Notes" in span_text
+    assert "Bring insulated layers" in span_text
+    assert "Separate Topic" not in span_text
+
+
+def test_heading_section_respects_character_budget() -> None:
+    document = "# Mineral Atlas\n\n" + ("neutral body text " * 100) + "\n\n# Later\n\nIgnored."
+
+    [span] = select_spans(document, "mineral atlas", max_spans=1, max_span_chars=10_000)
+    span_text = str(span["text"])
+
+    assert span_text.startswith("# Mineral Atlas")
+    assert "neutral body text" in span_text
+    assert int(span["end"]) - int(span["start"]) <= 1_200
+    assert "Later" not in span_text
+
+
+def test_non_heading_selection_remains_unchanged() -> None:
+    document = (
+        "Astronomy notes describe telescope mirrors and distant galaxies.\n\n"
+        "Cooking notes explain sourdough starter and bread fermentation."
+    )
+
+    [span] = select_spans(document, "telescope galaxies", max_spans=1)
+
+    assert str(span["text"]) == "Astronomy notes describe telescope mirrors and distant galaxies."
+
+
 def test_spans_false_is_byte_identical_to_default() -> None:
     response = _response("Alpha sentence. Beta sentence.")
     default_request = RequestV3.extract(["https://example.test/doc"])

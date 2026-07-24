@@ -256,6 +256,7 @@ def execute_search(search_module, prov, args, key, config, routing_info):
                 source=str(item.get("source") or ""),
                 fetch_relevance=str(item.get("fetch_relevance") or ""),
                 engines_consensus=str(item.get("engines_consensus") or ""),
+                source_type=str(item.get("source_type") or ""),
             )
         )
 

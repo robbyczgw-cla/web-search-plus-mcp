@@ -1445,6 +1445,39 @@ def _diversity_settings(config: Dict[str, Any]) -> Tuple[bool, float]:
     return rerank, threshold
 
 
+def _research_quorum_settings(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Read validated Research early-return controls for direct callers too."""
+    raw_quality_config = config.get("quality")
+    quality_config = raw_quality_config if isinstance(raw_quality_config, dict) else {}
+    configured = quality_config.get("research_quorum")
+    configured = configured if isinstance(configured, dict) else {}
+    defaults = {
+        "enabled": True,
+        "min_contributing_providers": 2,
+        "result_target_cap": 5,
+        "min_unique_domains": 3,
+    }
+    settings = {**defaults, **configured}
+    # Validation owns persisted config; conservative fallbacks keep callers that
+    # invoke the public search helpers with hand-built config dicts safe.
+    if settings["enabled"] is not True:
+        settings["enabled"] = False
+    for name, minimum in (
+        ("min_contributing_providers", 2),
+        ("result_target_cap", 1),
+        ("min_unique_domains", 1),
+    ):
+        value = settings[name]
+        if isinstance(value, bool):
+            settings[name] = defaults[name]
+            continue
+        try:
+            settings[name] = max(minimum, int(value))
+        except (TypeError, ValueError):
+            settings[name] = defaults[name]
+    return settings
+
+
 def _finalize_research_result(
     result: Dict[str, Any],
     *,
@@ -1460,6 +1493,17 @@ def _finalize_research_result(
     final_routing["mode"] = "research"
     final_routing["provider"] = "research"
     result.setdefault("routing", {}).update(final_routing)
+    if cooldown_skips:
+        result["routing"]["providers_skipped"] = [
+            {
+                "provider": item.get("provider"),
+                "reason": "cooldown",
+                "cooldown_remaining_seconds": item.get(
+                    "cooldown_remaining_seconds"
+                ),
+            }
+            for item in cooldown_skips
+        ]
     if args.freshness:
         result.setdefault("metadata", {})["freshness"] = {
             "requested": args.freshness,
@@ -1652,10 +1696,26 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         if provider and provider_configured(provider, config) and not provider_in_cooldown(provider)[0]:
             available_research_providers.add(provider)
         if args.research_providers:
-            research_providers = [
-                p for p in args.research_providers
-                if p not in disabled_providers and _provider_auto_allowed(p, auto_config) and provider_configured(p, config) and not provider_in_cooldown(p)[0]
-            ]
+            # Explicit research selection follows the same contract as an
+            # explicit single-provider call: auto-routing allowlists do not
+            # veto the caller's named provider. Disabled/unconfigured providers
+            # remain unavailable, and cooldown skips stay visible in receipts.
+            research_providers = []
+            for p in args.research_providers:
+                if p in disabled_providers or not provider_configured(p, config):
+                    continue
+                in_cooldown, remaining = provider_in_cooldown(p)
+                if in_cooldown:
+                    if not any(item.get("provider") == p for item in cooldown_skips):
+                        cooldown_skips.append(
+                            {
+                                "provider": p,
+                                "cooldown_remaining_seconds": remaining,
+                            }
+                        )
+                    continue
+                if p not in research_providers:
+                    research_providers.append(p)
         else:
             research_providers = select_research_providers(
                 primary_provider=provider,
@@ -1675,6 +1735,7 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             return error_result, 1
 
         diversity_rerank, near_duplicate_threshold = _diversity_settings(config)
+        quorum_settings = _research_quorum_settings(config)
         result = run_research_mode(
             query=args.query,
             research_providers=research_providers,
@@ -1690,6 +1751,12 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             time_budget_seconds=args.research_time_budget,
             diversity_rerank=diversity_rerank,
             near_duplicate_threshold=near_duplicate_threshold,
+            quorum_enabled=quorum_settings["enabled"],
+            quorum_min_contributing_providers=quorum_settings[
+                "min_contributing_providers"
+            ],
+            quorum_result_target_cap=quorum_settings["result_target_cap"],
+            quorum_min_unique_domains=quorum_settings["min_unique_domains"],
         )
         result = _finalize_research_result(
             result,
@@ -2111,6 +2178,7 @@ def _execute_research_v3(
     ):
         time_budget_seconds = min(time_budget_seconds, max_wall_time_ms / 1000)
     diversity_rerank, near_duplicate_threshold = _diversity_settings(config)
+    quorum_settings = _research_quorum_settings(config)
     payload = run_research_mode(
         query=str(request.input.get("query") or ""),
         research_providers=providers,
@@ -2126,6 +2194,12 @@ def _execute_research_v3(
         on_provider_timeout=timed_out_providers.add,
         diversity_rerank=diversity_rerank,
         near_duplicate_threshold=near_duplicate_threshold,
+        quorum_enabled=quorum_settings["enabled"],
+        quorum_min_contributing_providers=quorum_settings[
+            "min_contributing_providers"
+        ],
+        quorum_result_target_cap=quorum_settings["result_target_cap"],
+        quorum_min_unique_domains=quorum_settings["min_unique_domains"],
     )
     extraction_error = str(
         (payload.get("routing") or {}).get("extraction_error") or ""

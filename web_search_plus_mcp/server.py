@@ -2,13 +2,14 @@
 """
 web-search-plus-mcp: Multi-provider web search MCP server.
 
-MCP wrapper around the Web Search Plus v3 source-only runtime: 12 search
-providers, 8 extraction providers, evidence-rich responses, bounded extraction,
+MCP wrapper around the Web Search Plus v3 source-only runtime: 13 search
+providers, 9 extraction providers, evidence-rich responses, bounded extraction,
 guarded auto-routing, and opt-in research mode.
 """
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import json
 import math
 import os
@@ -16,6 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -23,7 +25,7 @@ from mcp.types import TextContent, Tool
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
-__version__ = "1.2.0"
+__version__ = "3.3.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus", version=__version__)
@@ -405,6 +407,47 @@ def _field_url(value: Any) -> str:
     return value if isinstance(value, str) else ""
 
 
+def _quality_report_from_v3(
+    payload: dict[str, Any], projected: dict[str, Any]
+) -> dict[str, Any]:
+    """Build MCP diagnostics from validated canonical evidence without re-fetching."""
+    domains = []
+    for item in projected.get("results") or []:
+        if not isinstance(item, dict):
+            continue
+        domain = urlparse(str(item.get("url") or "")).netloc.lower()
+        if domain.startswith("www."):
+            domain = domain[4:]
+        if domain:
+            domains.append(domain)
+    unique_domains = sorted(set(domains))
+    receipt = payload.get("routing_receipt") or {}
+    attempts = payload.get("provider_attempts") or []
+    return {
+        "query": projected.get("query") or "",
+        "selected_provider": projected.get("provider"),
+        "routing_policy": receipt.get("policy_id"),
+        "providers_considered": list(receipt.get("candidate_order") or []),
+        "provider_attempts": [
+            {
+                key: deepcopy(item[key])
+                for key in ("provider", "outcome", "skip_reason", "error")
+                if key in item
+            }
+            for item in attempts
+            if isinstance(item, dict)
+        ],
+        "result_count": len(projected.get("results") or []),
+        "domain_count": len(unique_domains),
+        "domains": unique_domains,
+        "domain_diversity": (
+            len(unique_domains) / len(domains) if domains else 0.0
+        ),
+        "source_diversity": deepcopy(payload.get("source_diversity") or {}),
+        "cache_disposition": (payload.get("cache_status") or {}).get("disposition"),
+    }
+
+
 def _typed_error_payload(
     *,
     code: str,
@@ -437,6 +480,7 @@ def _project_v3_payload(
     query: Optional[str] = None,
     urls: Optional[list[str]] = None,
     request_mode: Optional[str] = None,
+    quality_report_requested: bool = False,
 ) -> dict[str, Any]:
     """Project canonical v3 output to the stable MCP shape, additively."""
     projected = {key: value for key, value in payload.items() if key not in {"results", "error"}}
@@ -466,6 +510,7 @@ def _project_v3_payload(
         if not isinstance(item, dict):
             continue
         url = _field_url(item.get("url"))
+        result: dict[str, Any]
         if capability == "extract":
             result = {"url": url, "content": _field_text(item.get("text"))}
             if isinstance(item.get("spans"), list):
@@ -474,13 +519,31 @@ def _project_v3_payload(
                 ]
                 result["span_contract_version"] = item.get("span_contract_version")
         else:
+            structured_snippet = item.get("snippet")
             result = {
                 "title": _field_text(item.get("title")),
                 "url": url,
-                "snippet": _field_text(item.get("snippet")),
+                "snippet": _field_text(structured_snippet),
             }
+            # Preserve additive, schema-validated v3.1 enrichment at the MCP
+            # boundary.  Legacy title/url/snippet remain unchanged.
+            snippet_provenance = (
+                structured_snippet.get("provenance")
+                if isinstance(structured_snippet, dict)
+                else None
+            )
+            if (
+                isinstance(snippet_provenance, dict)
+                and snippet_provenance.get("aggregation") == "concat"
+            ):
+                result["snippet_aggregate"] = deepcopy(structured_snippet)
+            for field in ("source_type", "fetch_priority"):
+                if isinstance(item.get(field), dict):
+                    result[field] = deepcopy(item[field])
         results.append(result)
     projected["results"] = results
+    if capability == "search" and quality_report_requested:
+        projected["quality_report"] = _quality_report_from_v3(payload, projected)
 
     error_value = payload.get("error")
     error_v3 = error_value if isinstance(error_value, dict) else payload.get("error_v3")
@@ -504,6 +567,7 @@ async def _run_cmd(
     query: Optional[str] = None,
     urls: Optional[list[str]] = None,
     request_mode: Optional[str] = None,
+    quality_report_requested: bool = False,
 ) -> list[TextContent]:
     try:
         result = await asyncio.to_thread(
@@ -546,6 +610,7 @@ async def _run_cmd(
             query=query,
             urls=urls,
             request_mode=request_mode,
+            quality_report_requested=quality_report_requested,
         )
     return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
 
@@ -589,7 +654,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         research_time_budget = arguments.get("research_time_budget", 55.0)
         if mode != "normal":
             cmd.extend(["--mode", mode, "--research-time-budget", str(research_time_budget)])
-        if _as_bool(arguments.get("quality_report", False)):
+        quality_report_requested = _as_bool(arguments.get("quality_report", False))
+        if quality_report_requested:
             cmd.append("--quality-report")
         return await _run_cmd(
             cmd,
@@ -601,6 +667,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             capability="search",
             query=query,
             request_mode=mode,
+            quality_report_requested=quality_report_requested,
         )
 
     if name == "web_extract":

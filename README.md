@@ -13,15 +13,24 @@
 
 **Give your agent the web — as real sources, never a made-up answer.** `web-search-plus-mcp` is the standalone MCP server for Web Search Plus: drop it into Claude Desktop, Cursor, NanoBot, Hermes, or any MCP-compatible host, and your agent can search and read pages across the providers *you* choose — and always see where each result came from.
 
-**New in 3.2 — and why it is genuinely fun now:**
+**New in 3.3 — better evidence, less waiting:**
 
-- 🔑 **Search with zero paid API keys.** The local, key-free **Hound** integration runs right on your own machine.
-- 🧭 **Careful, predictable routing** across 13 search and 9 extract providers — deliberate choice, safe fallbacks, no surprise costs.
-- 🧾 **Honest details on every call** — which provider ran, what failed, what came from cache. Nothing fails silently.
+- 🧩 **Heading-aware extraction spans** keep the useful body beneath a matching heading instead of returning an isolated keyword sentence.
+- 🧾 **Provenance-safe result enrichment** merges corroborating snippets without losing observation IDs, then adds explainable `source_type` and `fetch_priority` hints.
+- ⚡ **Quality-quorum Research** harvests providers as they finish and can stop waiting once enough diverse evidence exists, while every preempted provider remains visible.
 
 All sources, zero invented answers.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`1.2.0`) while tracking the portable source-only Web Search Plus v3.2.0 engine. The Hermes plugin is versioned separately; its plugin-loader, Operator Console, receipts journal, and release commands are not exposed by the standalone MCP server.
+The heading-aware spans, multi-observation enrichment, and Research quorum are
+independent WSP/MCP implementations inspired by
+[Hound/Master-Fetch v11.2.0](https://github.com/dondai1234/master-fetch/releases/tag/v11.2.0),
+the MIT-licensed project by [Bishesh Bhandari (`dondai1234`)](https://github.com/dondai1234).
+This is respectful upstream collaboration and attribution, not a Hound fork or
+a claim that the upstream work is Robby's code.
+
+Version note: `web-search-plus-mcp 3.3.0` aligns its public version with the portable source-only Web Search Plus v3.3.0 engine. This is a one-time version-line realignment from MCP 1.2.0, not a breaking change to the two MCP tools. The Hermes plugin remains a separate product; its plugin-loader, Operator Console, receipts journal, and release commands are not exposed by the standalone MCP server.
+
+See the [3.3 release notes](docs/RELEASE_3_3.md) for compatibility, upgrade, and attribution details.
 
 ## ✨ Features
 
@@ -33,9 +42,11 @@ Version note: `web-search-plus-mcp` uses its own MCP package version (`1.2.0`) w
 - **Classic Routing v2 authority** — registry-backed routing for multilingual/current, docs/API, arXiv, CVE/security, local/shopping, and OSS discovery
 - **Quality reports + doctor checks** — optional routing/result diagnostics plus compact offline health checks for configured providers/cache
 - **Research mode** — opt-in multi-provider search + top-source extraction with a time budget
+- **Quality-quorum research** — harvest provider completions as they arrive, stop waiting only after a conservative diversity threshold, and report every preempted provider explicitly
 - **3.1 policy layer** — budget preflight, diversity-aware reranking, self-hosted profiles, shadow-policy observations, extraction cache identity v6, and SQLite state schema v3
 - **Provider SDK** — zero-core-edit provider discovery through `providers.d` with fail-closed startup diagnostics and shared conformance checks
-- **Semantic extraction spans** — deterministic query-ranked spans through `web_extract(spans=true, spans_query=...)`
+- **Semantic extraction spans** — deterministic query-ranked spans through `web_extract(spans=true, spans_query=...)`, with bounded heading sections that retain the useful body below a matching heading
+- **Provenance-safe result enrichment** — merged cross-provider snippet fragments retain observation IDs; additive `source_type` and `fetch_priority` explain what to fetch next
 - **Onboarding CLI** — `status`, `list`, `setup`, and persistent routing `config` helpers for MCP env/config wiring
 - **Zero-install run** — `uvx web-search-plus-mcp`
 - **MCP-native** — stdio server exposing stable `web_search` and `web_extract` tools

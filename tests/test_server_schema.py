@@ -62,6 +62,124 @@ def test_only_stable_tools_are_exposed_even_with_legacy_answer_env(monkeypatch):
     assert names == ["web_search", "web_extract"]
 
 
+def test_search_projection_preserves_v31_result_enrichment():
+    snippet_aggregate = {
+        "text": "first\n\nsecond",
+        "text_sha256": "fixture",
+        "origin": "engine",
+        "provenance": {
+            "aggregation": "concat",
+            "separator": "\n\n",
+            "fragments": [
+                {"text": "first", "observation_id": "obs_1", "source_field": "snippet"},
+                {"text": "second", "observation_id": "obs_2", "source_field": "snippet"},
+            ],
+        },
+    }
+    source_type = {
+        "value": "docs",
+        "method": "heuristic",
+        "method_version": "wsp-source-type-v1",
+        "confidence": 0.9,
+    }
+    fetch_priority = {
+        "tier": "high",
+        "score": 3,
+        "reason_codes": ["source_type_authority"],
+    }
+    payload = {
+        "contract_version": "3.0",
+        "status": "ok",
+        "routing_receipt": {"selected_provider": "linkup"},
+        "results": [
+            {
+                "title": {"text": "Docs"},
+                "url": {"canonical": "https://docs.example/guide"},
+                "snippet": snippet_aggregate,
+                "source_type": source_type,
+                "fetch_priority": fetch_priority,
+            }
+        ],
+    }
+
+    projected = server._project_v3_payload(
+        payload, capability="search", query="guide"
+    )
+
+    assert projected["provider"] == "linkup"
+    assert projected["results"][0] == {
+        "title": "Docs",
+        "url": "https://docs.example/guide",
+        "snippet": "first\n\nsecond",
+        "snippet_aggregate": snippet_aggregate,
+        "source_type": source_type,
+        "fetch_priority": fetch_priority,
+    }
+    assert projected["results"][0]["snippet_aggregate"] is not snippet_aggregate
+
+
+def test_search_projection_builds_requested_quality_report_from_v3_evidence():
+    payload = {
+        "contract_version": "3.0",
+        "status": "ok",
+        "routing_receipt": {
+            "policy_id": "classic",
+            "candidate_order": ["serper", "brave"],
+            "selected_provider": "serper",
+        },
+        "provider_attempts": [
+            {"provider": "serper", "outcome": "success"},
+            {
+                "provider": "brave",
+                "outcome": "skipped",
+                "skip_reason": "cooldown",
+            },
+        ],
+        "source_diversity": {"provider_count": 1, "host_count": 2},
+        "cache_status": {"disposition": "miss"},
+        "results": [
+            {
+                "title": {"text": "One"},
+                "url": {"canonical": "https://docs.example/one"},
+                "snippet": {"text": "First"},
+            },
+            {
+                "title": {"text": "Two"},
+                "url": {"canonical": "https://www.example.org/two"},
+                "snippet": {"text": "Second"},
+            },
+        ],
+    }
+
+    projected = server._project_v3_payload(
+        payload,
+        capability="search",
+        query="fixture query",
+        quality_report_requested=True,
+    )
+
+    assert projected["quality_report"] == {
+        "query": "fixture query",
+        "selected_provider": "serper",
+        "routing_policy": "classic",
+        "providers_considered": ["serper", "brave"],
+        "provider_attempts": [
+            {"provider": "serper", "outcome": "success"},
+            {
+                "provider": "brave",
+                "outcome": "skipped",
+                "skip_reason": "cooldown",
+            },
+        ],
+        "result_count": 2,
+        "domain_count": 2,
+        "domains": ["docs.example", "example.org"],
+        "domain_diversity": 1.0,
+        "source_diversity": {"provider_count": 1, "host_count": 2},
+        "cache_disposition": "miss",
+    }
+
+
 def test_web_search_call_maps_mcp_args_to_cli(monkeypatch):
     seen = {}
 

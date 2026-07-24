@@ -216,6 +216,7 @@ def test_hound_search_projects_source_results_and_disables_hound_cache(monkeypat
                     "relevance_score": 0.91,
                     "fetch_relevance": "high",
                     "engines_consensus": "2 of 3",
+                    "source_type": "official-docs",
                 },
                 {
                     "url": "https://blocked.docs.example.test/b",
@@ -270,6 +271,7 @@ def test_hound_search_projects_source_results_and_disables_hound_cache(monkeypat
             "source": "brave,startpage",
             "fetch_relevance": "high",
             "engines_consensus": "2 of 3",
+            "source_type": "official-docs",
         }
     ]
     assert result["metadata"] == {

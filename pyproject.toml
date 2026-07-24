@@ -7,11 +7,12 @@ build-backend = "hatchling.build"
 "docs/MIGRATION_1_0.md" = "web_search_plus_mcp/docs/MIGRATION_1_0.md"
 "docs/HOUND.md" = "web_search_plus_mcp/docs/HOUND.md"
 "docs/RELEASE_1_2.md" = "web_search_plus_mcp/docs/RELEASE_1_2.md"
+"docs/RELEASE_3_3.md" = "web_search_plus_mcp/docs/RELEASE_3_3.md"
 "wsp_sdk" = "wsp_sdk"
 
 [project]
 name = "web-search-plus-mcp"
-version = "1.2.0"
+version = "3.3.0"
 description = "Source-only multi-provider web search, extraction, evidence receipts, and onboarding for MCP clients"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -21,7 +22,7 @@ dependencies = ["mcp>=1.26.0,<2", "httpx>=0.27.0,<1"]
 [project.optional-dependencies]
 test = [
   "pytest",
-  "ruff",
+  "ruff==0.15.12",
   "tomli; python_version < '3.11'",
 ]
 
@@ -29,5 +30,12 @@ test = [
 web-search-plus-mcp = "web_search_plus_mcp.server:cli_main"
 
 [project.urls]
-Homepage = "https://github.com/robbyczgw-cla/web-search-plus-mcp"
+Homepage = "https://websearchplus.xyz"
 Repository = "https://github.com/robbyczgw-cla/web-search-plus-mcp"
+Documentation = "https://websearchplus.xyz"
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
