@@ -365,6 +365,7 @@ response_defs = {
                 "maxProperties": 1,
                 "additionalProperties": {"type": "object"},
             },
+            "source_type": {"$ref": "#/$defs/SourceTypeV31"},
         },
         (
             "observation_id", "provider_attempt_id", "provider_result_index",
@@ -391,7 +392,7 @@ response_defs = {
         },
         ("start", "end", "text", "score", "within_preview"),
     ),
-    "ProjectedProvenanceV3": obj(
+    "ProjectedSingleProvenanceV3": obj(
         {
             "observation_id": {"type": "string", "pattern": "^obs_"},
             "source_field": {"type": "string", "enum": ["title", "snippet", "text"]},
@@ -407,6 +408,63 @@ response_defs = {
             },
         },
         ("observation_id", "source_field", "transformations"),
+    ),
+    "ProjectedFragmentV31": obj(
+        {
+            "observation_id": {"type": "string", "pattern": "^obs_"},
+            "source_field": {"type": "string", "enum": ["title", "snippet", "text"]},
+            "text": {"type": "string"},
+            "transformations": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "enum": [
+                        "whitespace_norm", "deterministic_truncation",
+                        "mechanical_segmentation", "image_base64_replace",
+                    ],
+                },
+            },
+        },
+        ("observation_id", "source_field", "text", "transformations"),
+    ),
+    "ProjectedAggregateProvenanceV31": obj(
+        {
+            "aggregation": {"type": "string", "const": "concat"},
+            "separator": {"type": "string", "minLength": 1},
+            "fragments": {
+                "type": "array", "minItems": 1,
+                "items": {"$ref": "#/$defs/ProjectedFragmentV31"},
+            },
+        },
+        ("aggregation", "separator", "fragments"),
+    ),
+    "ProjectedProvenanceV3": {
+        "oneOf": [
+            {"$ref": "#/$defs/ProjectedSingleProvenanceV3"},
+            {"$ref": "#/$defs/ProjectedAggregateProvenanceV31"},
+        ]
+    },
+    "SourceTypeV31": obj(
+        {
+            "value": {"type": "string", "enum": ["docs", "paper", "repo", "blog", "forum", "reference", "news", "other"]},
+            "method": {"type": "string", "minLength": 1},
+            "method_version": {"type": "string", "minLength": 1},
+            "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+        },
+        ("value", "method", "method_version", "confidence"),
+    ),
+    "FetchPriorityV31": obj(
+        {
+            "tier": {"type": "string", "enum": ["high", "medium", "low"]},
+            "reason_codes": {
+                "type": "array", "minItems": 1, "uniqueItems": True,
+                "items": {"type": "string", "enum": [
+                    "cluster_consensus", "cluster_single_observation", "rank_top_3",
+                    "rank_beyond_top_3", "source_type_authoritative", "source_type_general",
+                ]},
+            },
+        },
+        ("tier", "reason_codes"),
     ),
     "ProjectedTextV3": obj(
         {
@@ -433,6 +491,8 @@ response_defs = {
             "title": {"anyOf": [{"$ref": "#/$defs/ProjectedTextV3"}, {"type": "null"}]},
             "snippet": {"anyOf": [{"$ref": "#/$defs/ProjectedTextV3"}, {"type": "null"}]},
             "text": {"anyOf": [{"$ref": "#/$defs/ProjectedTextV3"}, {"type": "null"}]},
+            "source_type": {"$ref": "#/$defs/SourceTypeV31"},
+            "fetch_priority": {"$ref": "#/$defs/FetchPriorityV31"},
             "span_contract_version": {"type": "integer", "const": 1},
             "spans": {
                 "type": "array",

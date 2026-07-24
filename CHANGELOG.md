@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Preserve bounded heading-aware semantic sections in `web_extract` spans, including query-free body text and deeper subheadings through the next same-or-shallower heading.
+- Add provenance-safe cross-provider snippet aggregation plus additive `source_type` and explainable `fetch_priority` result hints.
+- Harvest Research providers in completion order and optionally preempt unfinished providers after a configurable quality quorum; preempted providers remain explicit as `preempted_after_quorum` diagnostics.
+
+### Fixed
+- Preserve `snippet_aggregate`, `source_type`, and `fetch_priority` across the canonical v3 engine to stable MCP result projection instead of silently dropping them.
+
+### Attribution
+- These independently implemented portable improvements adapt product ideas from [Hound/Master-Fetch v11.2.0](https://github.com/dondai1234/hound/releases/tag/v11.2.0), the independent MIT-licensed project by [Bishesh Bhandari (`dondai1234`)](https://github.com/dondai1234). The implementation is reworked for WSP/MCP's own provider, provenance, budget, and receipt contracts; Hound code is neither bundled nor claimed as Robby's code.
+
 ## [1.2.0] - 2026-07-22
 
 ### Added

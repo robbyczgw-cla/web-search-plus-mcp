@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import queue
 import threading
 import time
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 try:
     from .daemon_tasks import DaemonTask
@@ -16,15 +18,95 @@ try:
 except ImportError:  # pragma: no cover - direct script execution
     from diversity_v3 import DEFAULT_NEAR_DUPLICATE_THRESHOLD, rerank_duplicate_candidates
 try:
-    from .quality import deduplicate_results_across_providers
+    from .quality import deduplicate_results_across_providers, normalize_result_url
 except ImportError:  # pragma: no cover - direct script execution
-    from quality import deduplicate_results_across_providers
+    from quality import deduplicate_results_across_providers, normalize_result_url
 
 
 # Small real-time grace given to already-submitted provider calls once the
 # (possibly fake-clock) budget reads as exhausted, so completed futures can
 # still be harvested without blocking on slow ones.
 _RESULT_GRACE_SECONDS = 0.25
+_DEFAULT_QUORUM_RESULT_TARGET_CAP = 5
+_DEFAULT_QUORUM_MIN_DOMAINS = 3
+
+
+def _positive_int(value: Any, default: int, minimum: int = 1) -> int:
+    """Return a bounded integer without letting direct callers disable safety."""
+    if isinstance(value, bool):
+        return default
+    try:
+        return max(minimum, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _research_quorum_snapshot(
+    provider_results: List[Tuple[str, Dict[str, Any]]],
+    *,
+    result_target: int,
+) -> Tuple[int, int, List[str]]:
+    """Return unique candidate/domain/provider counts for an early-return check.
+
+    This intentionally mirrors the stable provider-order merge rather than the
+    arrival order. A provider counts only if it supplies a unique, URL-bearing
+    candidate inside the result target, so duplicate/empty responses cannot
+    manufacture a quorum.
+    """
+    seen_urls = set()
+    domains = set()
+    contributors: List[str] = []
+    candidate_count = 0
+    for provider, payload in provider_results:
+        contributed = False
+        for item in payload.get("results", []) or []:
+            if not isinstance(item, dict):
+                continue
+            url = item.get("url")
+            if not isinstance(url, str) or not url.strip():
+                continue
+            normalized = normalize_result_url(url)
+            if not normalized or normalized in seen_urls:
+                continue
+            seen_urls.add(normalized)
+            candidate_count += 1
+            contributed = True
+            domain = urlparse(url).netloc.lower()
+            if domain.startswith("www."):
+                domain = domain[4:]
+            if domain:
+                domains.add(domain)
+            if candidate_count >= result_target:
+                break
+        if contributed:
+            contributors.append(provider)
+        if candidate_count >= result_target:
+            break
+    return candidate_count, len(domains), contributors
+
+
+def _quorum_metadata(
+    provider_results: List[Tuple[str, Dict[str, Any]]],
+    *,
+    enabled: bool,
+    min_contributing_providers: int,
+    result_target: int,
+    min_unique_domains: int,
+    triggered: bool,
+) -> Dict[str, Any]:
+    candidate_count, domain_count, contributors = _research_quorum_snapshot(
+        provider_results, result_target=result_target
+    )
+    return {
+        "enabled": enabled,
+        "triggered": triggered,
+        "min_contributing_providers": min_contributing_providers,
+        "result_target": result_target,
+        "min_unique_domains": min_unique_domains,
+        "contributing_providers": contributors,
+        "deduplicated_result_count": candidate_count,
+        "unique_domain_count": domain_count,
+    }
 
 
 def run_research_mode(
@@ -40,6 +122,10 @@ def run_research_mode(
     on_provider_timeout=None,
     diversity_rerank: bool = False,
     near_duplicate_threshold: float = DEFAULT_NEAR_DUPLICATE_THRESHOLD,
+    quorum_enabled: bool = True,
+    quorum_min_contributing_providers: int = 2,
+    quorum_result_target_cap: int = _DEFAULT_QUORUM_RESULT_TARGET_CAP,
+    quorum_min_unique_domains: int = _DEFAULT_QUORUM_MIN_DOMAINS,
 ) -> Dict[str, Any]:
     """Run broad search, deduplicate, then extract top sources for grounding.
 
@@ -53,8 +139,17 @@ def run_research_mode(
     extraction runs at all — so the budget caps total wall-clock time instead of
     only limiting how many providers start.
 
-    Result ordering is preserved by provider submission order regardless of which
-    provider finishes first, so deduplication stays deterministic.
+    Results are harvested in completion order so a blocked early submission
+    cannot hide later providers. Final provider/result ordering nevertheless
+    stays in submission order for deterministic deduplication. Once at least
+    two providers have contributed unique URL results, an opt-in-by-default
+    conservative quorum may return early only after its capped result target
+    and domain-diversity target are both met; otherwise every provider remains
+    eligible and small/poor result sets retain their full recall.
+
+    The completion-order/quorum design adapts ideas from the independent
+    MIT-licensed Hound/Master-Fetch project by Bishesh Bhandari (dondai1234),
+    reworked here around WSP's own provider, budget, and receipt contracts.
     """
     provider_errors: List[Dict[str, Any]] = []
     now = now_fn or time.monotonic
@@ -71,8 +166,28 @@ def run_research_mode(
     # so an overdue provider cannot stall CLI/subprocess shutdown either.
     pending: List[Tuple[int, str]] = []
     tasks: Dict[int, DaemonTask] = {}
+    completed = queue.Queue()
     workers = max_workers or max(1, len(research_providers))
     gate = threading.Semaphore(workers)
+
+    # At most the requested result count is needed, but asking for a huge result
+    # page must not turn the early-return quality bar into an arbitrary latency
+    # deadline. The cap is an explicit operator setting and is deliberately
+    # conservative at five by default.
+    quorum_enabled = quorum_enabled is True
+    quorum_min_contributing_providers = max(
+        2, _positive_int(quorum_min_contributing_providers, 2)
+    )
+    quorum_result_target_cap = _positive_int(
+        quorum_result_target_cap, _DEFAULT_QUORUM_RESULT_TARGET_CAP
+    )
+    quorum_result_target = min(
+        max(1, _positive_int(max_results, 1)), quorum_result_target_cap
+    )
+    quorum_min_unique_domains = min(
+        quorum_result_target,
+        _positive_int(quorum_min_unique_domains, _DEFAULT_QUORUM_MIN_DOMAINS),
+    )
 
     def run_gated(provider_name: str) -> Dict[str, Any]:
         with gate:
@@ -83,30 +198,119 @@ def run_research_mode(
         if remaining is not None and remaining <= 0:
             provider_errors.append({"provider": provider, "error": "skipped: research time budget exhausted"})
             continue
-        tasks[index] = DaemonTask(run_gated, provider)
+        task = DaemonTask(run_gated, provider)
+        tasks[index] = task
         pending.append((index, provider))
+        task.add_done_callback(lambda _task, completed_index=index: completed.put(completed_index))
 
     results_by_index: Dict[int, Tuple[str, Dict[str, Any]]] = {}
-    for index, provider in pending:
-        remaining = remaining_budget()
-        if remaining is not None and remaining <= 0:
-            # Budget gone: give already-submitted calls a short real-time grace
-            # so finished tasks are still harvested without blocking on slow ones.
-            timeout = _RESULT_GRACE_SECONDS
-        else:
-            timeout = remaining
+    pending_by_index = {index: provider for index, provider in pending}
+    quorum_triggered = False
+
+    def provider_results_in_submission_order() -> List[Tuple[str, Dict[str, Any]]]:
+        return [results_by_index[index] for index in sorted(results_by_index)]
+
+    def harvest(index: int) -> None:
+        """Collect an already-completed provider without introducing a wait."""
+        provider = pending_by_index.pop(index, None)
+        if provider is None:
+            return
         try:
-            results_by_index[index] = (provider, tasks[index].result(timeout=timeout))
+            payload = tasks[index].result(timeout=0)
+            if not isinstance(payload, dict):
+                raise TypeError("provider returned a non-object result")
+            results_by_index[index] = (provider, payload)
         except FuturesTimeoutError:
-            if on_provider_timeout is not None:
-                on_provider_timeout(provider)
-            provider_errors.append({"provider": provider, "error": "timed out: research time budget exhausted"})
+            # A completion callback and Event publication are ordered, but keep
+            # this defensive branch non-blocking if a custom task ever differs.
+            pending_by_index[index] = provider
         except Exception as e:
             provider_errors.append({"provider": provider, "error": str(e)})
 
-    provider_results: List[Tuple[str, Dict[str, Any]]] = [
-        results_by_index[index] for index in sorted(results_by_index)
-    ]
+    def drain_completed() -> None:
+        """Harvest all completions currently observable in arrival order."""
+        while True:
+            try:
+                index = completed.get_nowait()
+            except queue.Empty:
+                break
+            harvest(index)
+        # A callback is advisory. The done() fallback closes a tiny race between
+        # worker completion and queue notification without waiting on any task.
+        for index in sorted(pending_by_index):
+            if tasks[index].done():
+                harvest(index)
+
+    def quorum_reached() -> bool:
+        if not quorum_enabled:
+            return False
+        candidate_count, domain_count, contributors = _research_quorum_snapshot(
+            provider_results_in_submission_order(), result_target=quorum_result_target
+        )
+        return (
+            len(contributors) >= quorum_min_contributing_providers
+            and candidate_count >= quorum_result_target
+            and domain_count >= quorum_min_unique_domains
+        )
+
+    def mark_budget_timeouts() -> None:
+        # A final non-blocking drain avoids classifying a just-finished daemon as
+        # timed out. Remaining daemon tasks keep running but never block exit.
+        drain_completed()
+        for index in sorted(pending_by_index):
+            provider = pending_by_index.pop(index)
+            if on_provider_timeout is not None:
+                on_provider_timeout(provider)
+            provider_errors.append({"provider": provider, "error": "timed out: research time budget exhausted"})
+
+    while pending_by_index:
+        drain_completed()
+        if not pending_by_index:
+            break
+        if quorum_reached():
+            # Only incomplete tasks are preempted. Completed work was drained
+            # above, preserving recall whenever it is already available.
+            for index in sorted(pending_by_index):
+                provider = pending_by_index.pop(index)
+                provider_errors.append({"provider": provider, "error": "preempted_after_quorum"})
+            quorum_triggered = True
+            break
+
+        remaining = remaining_budget()
+        timeout = remaining
+        if timeout is not None and timeout <= 0:
+            # Preserve the existing real-time grace for fake-clock callers and
+            # races at the deadline; never wait beyond this short fixed grace.
+            timeout = _RESULT_GRACE_SECONDS
+        try:
+            index = completed.get(timeout=timeout)
+        except queue.Empty:
+            drain_completed()
+            if quorum_reached():
+                continue
+            current_remaining = remaining_budget()
+            if current_remaining is not None and current_remaining <= 0:
+                mark_budget_timeouts()
+                break
+            # A spurious/expired wait with an injected clock: loop and derive a
+            # fresh deadline instead of translating it into a provider timeout.
+            continue
+        harvest(index)
+
+    # Completion timing must not leak into the public diagnostic order.
+    provider_order = {
+        provider: index for index, provider in enumerate(research_providers)
+    }
+    provider_errors.sort(
+        key=lambda item: (
+            provider_order.get(
+                str(item.get("provider") or ""), len(provider_order)
+            ),
+            str(item.get("error") or ""),
+        )
+    )
+
+    provider_results = provider_results_in_submission_order()
 
     diversity_duplicates = []
     if diversity_rerank:
@@ -167,6 +371,14 @@ def run_research_mode(
         "dedup_count": dedup_count,
         "providers_merged": [p for p, _ in provider_results],
         "extracted_url_count": len(source_summaries),
+        "research_quorum": _quorum_metadata(
+            provider_results,
+            enabled=quorum_enabled,
+            min_contributing_providers=quorum_min_contributing_providers,
+            result_target=quorum_result_target,
+            min_unique_domains=quorum_min_unique_domains,
+            triggered=quorum_triggered,
+        ),
     }
     if diversity_rerank:
         metadata["diversity_reranked"] = len(diversity_duplicates)

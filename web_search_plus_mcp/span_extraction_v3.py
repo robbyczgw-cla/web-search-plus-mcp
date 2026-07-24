@@ -15,6 +15,15 @@ Ranker = Callable[[str, str], float]
 _TOKEN_RE = re.compile(r"[^\W_]+(?:['\N{RIGHT SINGLE QUOTATION MARK}][^\W_]+)?", re.UNICODE)
 _PARAGRAPH_BREAK_RE = re.compile(r"(?:\r?\n[\t \f\v]*){2,}")
 _SENTENCE_END_RE = re.compile(r"(?<=[.!?])(?:[\"'\N{RIGHT SINGLE QUOTATION MARK}\)\]]*)\s+")
+_MARKDOWN_HEADING_RE = re.compile(r"(?m)^[\t ]{0,3}(#{1,6})(?:[\t ]+|$)")
+
+# Heading matches add bounded, whole-section candidates rather than extending
+# ordinary passages. This independently implemented policy is inspired by the
+# Hound/Master-Fetch v11.2.0 interaction model (MIT; Bishesh Bhandari,
+# https://github.com/dondai1234/master-fetch) through respectful upstream
+# collaboration; WSP neither imports nor copies upstream code.
+_MAX_HEADING_SECTION_CANDIDATES = 2
+_MAX_HEADING_SECTION_CHARS = 1_200
 
 
 @dataclass(frozen=True)
@@ -22,6 +31,14 @@ class _Candidate:
     start: int
     end: int
     text: str
+
+
+@dataclass(frozen=True)
+class _MarkdownHeading:
+    start: int
+    level: int
+    title_start: int
+    title_end: int
 
 
 def nfc_text(text: str) -> str:
@@ -108,6 +125,65 @@ def _candidates(text: str, max_span_chars: int) -> List[_Candidate]:
     return [unique[key] for key in sorted(unique)]
 
 
+def _heading_section_candidates(
+    text: str,
+    query: str,
+    *,
+    max_span_chars: int,
+    max_sections: int,
+) -> List[_Candidate]:
+    """Return the most query-relevant bounded Markdown heading sections.
+
+    A Markdown section begins at its ATX heading and ends at the next heading
+    of the same or shallower level. Nested headings remain in their parent's
+    section. The independent section-count and character caps prevent a
+    matching title from turning a long page into unbounded context.
+    """
+    query_terms = set(_tokens(query))
+    if not query_terms or max_sections <= 0:
+        return []
+
+    headings: List[_MarkdownHeading] = []
+    for match in _MARKDOWN_HEADING_RE.finditer(text):
+        title_start = match.end()
+        title_end = text.find("\n", title_start)
+        if title_end < 0:
+            title_end = len(text)
+        headings.append(
+            _MarkdownHeading(
+                start=match.start(),
+                level=len(match.group(1)),
+                title_start=title_start,
+                title_end=title_end,
+            )
+        )
+
+    section_char_budget = min(max_span_chars, _MAX_HEADING_SECTION_CHARS)
+    ranked: List[tuple[int, _Candidate]] = []
+    for index, heading in enumerate(headings):
+        matched_terms = query_terms & set(_tokens(text[heading.title_start:heading.title_end]))
+        if not matched_terms:
+            continue
+
+        section_end = len(text)
+        for later_heading in headings[index + 1 :]:
+            if later_heading.level <= heading.level:
+                section_end = later_heading.start
+                break
+        candidate = _trimmed_candidate(
+            text,
+            heading.start,
+            min(section_end, heading.start + section_char_budget),
+        )
+        # Do not return a partial heading title merely because a caller chose
+        # an exceptionally small generic candidate limit.
+        if candidate is not None and candidate.end >= heading.title_end:
+            ranked.append((len(matched_terms), candidate))
+
+    ranked.sort(key=lambda item: (-item[0], item[1].start, item[1].end))
+    return [candidate for _, candidate in ranked[:max_sections]]
+
+
 def _lexical_score(candidate_text: str, query: str, *, start: int, total: int) -> float:
     candidate_tokens = _tokens(candidate_text)
     if not candidate_tokens:
@@ -171,8 +247,19 @@ def select_spans(
 
     normalized = nfc_text(text)
     normalized_query = nfc_text(query or "").strip()
+    heading_candidates = _heading_section_candidates(
+        normalized,
+        normalized_query,
+        max_span_chars=max_span_chars,
+        max_sections=min(max_spans, _MAX_HEADING_SECTION_CANDIDATES),
+    )
+    all_candidates = {
+        (candidate.start, candidate.end): candidate
+        for candidate in [*_candidates(normalized, max_span_chars), *heading_candidates]
+    }
     ranked = []
-    for candidate in _candidates(normalized, max_span_chars):
+    score_by_range = {}
+    for candidate in all_candidates.values():
         if ranker is None:
             score = _lexical_score(
                 candidate.text,
@@ -188,18 +275,28 @@ def select_spans(
         if not math.isfinite(score):
             raise ValueError("ranker scores must be finite")
         ranked.append((score, candidate))
+        score_by_range[(candidate.start, candidate.end)] = score
 
     ranked.sort(key=lambda item: (-item[0], item[1].start, item[1].end))
     selected: List[tuple[float, _Candidate]] = []
+    for candidate in heading_candidates:
+        if any(
+            candidate.start < existing.end and existing.start < candidate.end
+            for _, existing in selected
+        ):
+            continue
+        selected.append((score_by_range[(candidate.start, candidate.end)], candidate))
+        if len(selected) >= max_spans:
+            break
     for score, candidate in ranked:
+        if len(selected) >= max_spans:
+            break
         if any(
             candidate.start < existing.end and existing.start < candidate.end
             for _, existing in selected
         ):
             continue
         selected.append((score, candidate))
-        if len(selected) >= max_spans:
-            break
 
     selected.sort(key=lambda item: item[1].start)
     return [

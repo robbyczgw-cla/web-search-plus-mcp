@@ -116,6 +116,15 @@ DEFAULT_CONFIG = {
             "rerank": False,
             "near_duplicate_threshold": 0.6,
         },
+        # Return from Research fan-out only after independently contributing
+        # providers have filled a small, diverse result head. The target is
+        # capped so large result requests do not become latency deadlines.
+        "research_quorum": {
+            "enabled": True,
+            "min_contributing_providers": 2,
+            "result_target_cap": 5,
+            "min_unique_domains": 3,
+        },
     },
     "web": {
         # Maximum cleaned characters returned inline per extracted result before
@@ -463,6 +472,25 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
         )
     diversity["near_duplicate_threshold"] = threshold
     quality["diversity"] = diversity
+    research_quorum = quality.get("research_quorum", {})
+    if not isinstance(research_quorum, dict):
+        raise ValueError("quality.research_quorum must be an object")
+    default_research_quorum = DEFAULT_CONFIG["quality"]["research_quorum"]
+    research_quorum = {**default_research_quorum, **research_quorum}
+    if not isinstance(research_quorum["enabled"], bool):
+        raise ValueError("quality.research_quorum.enabled must be a boolean")
+    quorum_bounds = {
+        "min_contributing_providers": (2, 50),
+        "result_target_cap": (1, 50),
+        "min_unique_domains": (1, 50),
+    }
+    for name, (minimum, maximum) in quorum_bounds.items():
+        value = research_quorum[name]
+        if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+            raise ValueError(
+                f"quality.research_quorum.{name} must be an integer between {minimum} and {maximum}"
+            )
+    quality["research_quorum"] = research_quorum
     bounded = config.get(
         "bounded_context", dict(DEFAULT_CONFIG["bounded_context"])
     )

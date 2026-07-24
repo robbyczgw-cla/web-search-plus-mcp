@@ -937,6 +937,13 @@ _ALLOWED_TRANSFORMATIONS = {
     "mechanical_segmentation",
     "image_base64_replace",
 }
+_SOURCE_TYPE_VALUES = {"docs", "paper", "repo", "blog", "forum", "reference", "news", "other"}
+_SOURCE_TYPE_CONFIDENCES = {"low", "medium", "high"}
+_FETCH_PRIORITY_TIERS = {"high", "medium", "low"}
+_FETCH_PRIORITY_REASON_CODES = {
+    "cluster_consensus", "cluster_single_observation", "rank_top_3",
+    "rank_beyond_top_3", "source_type_authoritative", "source_type_general",
+}
 _DIVERSITY_FIELDS = {
     "method",
     "method_version",
@@ -1014,27 +1021,92 @@ def _transformed_text(raw: str, projected: str, transformations: List[str]) -> b
     return current == projected
 
 
+def _validate_projection_fragment(
+    fragment: Dict[str, Any], observations: Dict[str, Dict[str, Any]]
+) -> str:
+    if set(fragment) != {"observation_id", "source_field", "text", "transformations"}:
+        raise ValueError("aggregate fragment has invalid fields")
+    observation_id = fragment["observation_id"]
+    source_field = fragment["source_field"]
+    raw = (observations.get(observation_id) or {}).get(source_field)
+    text = fragment["text"]
+    transformations = fragment["transformations"]
+    if observation_id not in observations or source_field not in {"title", "snippet", "text"}:
+        raise ValueError("aggregate fragment references missing observation or source field")
+    if not isinstance(raw, str) or not isinstance(text, str):
+        raise ValueError("aggregate fragment requires string source and text")
+    if not isinstance(transformations, list) or not set(transformations) <= _ALLOWED_TRANSFORMATIONS:
+        raise ValueError("aggregate fragment has invalid transformation")
+    if not _transformed_text(raw, text, transformations):
+        raise ValueError("aggregate fragment transformation does not match observation")
+    return text
+
+
+def _validate_source_type(source_type: Any) -> None:
+    if not isinstance(source_type, dict) or set(source_type) != {
+        "value", "method", "method_version", "confidence"
+    }:
+        raise ValueError("source_type has invalid fields")
+    if source_type["value"] not in _SOURCE_TYPE_VALUES:
+        raise ValueError("source_type value is invalid")
+    if source_type["confidence"] not in _SOURCE_TYPE_CONFIDENCES:
+        raise ValueError("source_type confidence is invalid")
+    if not all(isinstance(source_type[name], str) and source_type[name] for name in ("method", "method_version")):
+        raise ValueError("source_type method metadata is invalid")
+
+
+def _validate_fetch_priority(fetch_priority: Any) -> None:
+    if not isinstance(fetch_priority, dict) or set(fetch_priority) != {"tier", "reason_codes"}:
+        raise ValueError("fetch_priority has invalid fields")
+    reasons = fetch_priority["reason_codes"]
+    if fetch_priority["tier"] not in _FETCH_PRIORITY_TIERS:
+        raise ValueError("fetch_priority tier is invalid")
+    if not isinstance(reasons, list) or not reasons or len(reasons) != len(set(reasons)):
+        raise ValueError("fetch_priority reason_codes must be unique and non-empty")
+    if any(reason not in _FETCH_PRIORITY_REASON_CODES for reason in reasons):
+        raise ValueError("fetch_priority reason code is invalid")
+
+
 def _validate_projected_text(
     projected: Dict[str, Any], observations: Dict[str, Dict[str, Any]]
 ) -> None:
     provenance = projected.get("provenance")
     if not isinstance(provenance, dict):
         raise ValueError("projected content requires provenance")
-    observation_id = provenance.get("observation_id")
-    if observation_id not in observations:
-        raise ValueError("projected content references missing observation")
-    source_field = provenance.get("source_field")
-    if source_field not in {"title", "snippet", "text"}:
-        raise ValueError("projected content has invalid source_field")
-    raw = observations[observation_id].get(source_field)
     text = projected.get("text")
-    transformations = provenance.get("transformations")
-    if not isinstance(raw, str) or not isinstance(text, str):
-        raise ValueError("single-source content requires string source and text")
-    if not isinstance(transformations, list) or not set(transformations) <= _ALLOWED_TRANSFORMATIONS:
-        raise ValueError("projected content has invalid transformation")
-    if not _transformed_text(raw, text, transformations):
-        raise ValueError("single-source transformation does not match observation")
+    if not isinstance(text, str):
+        raise ValueError("projected content requires string text")
+    if "aggregation" in provenance:
+        if set(provenance) != {"aggregation", "separator", "fragments"}:
+            raise ValueError("aggregate provenance has invalid fields")
+        if provenance["aggregation"] != "concat" or not isinstance(provenance["separator"], str) or not provenance["separator"]:
+            raise ValueError("aggregate provenance has invalid aggregation or separator")
+        fragments = provenance["fragments"]
+        if not isinstance(fragments, list) or not fragments:
+            raise ValueError("aggregate provenance requires fragments")
+        keys = [(fragment.get("observation_id"), fragment.get("source_field")) for fragment in fragments if isinstance(fragment, dict)]
+        if len(keys) != len(fragments) or len(keys) != len(set(keys)):
+            raise ValueError("aggregate fragments must map uniquely to source fields")
+        rebuilt = provenance["separator"].join(
+            _validate_projection_fragment(fragment, observations) for fragment in fragments
+        )
+        if text != rebuilt:
+            raise ValueError("aggregate projected text does not match validated fragments")
+    else:
+        observation_id = provenance.get("observation_id")
+        if observation_id not in observations:
+            raise ValueError("projected content references missing observation")
+        source_field = provenance.get("source_field")
+        if source_field not in {"title", "snippet", "text"}:
+            raise ValueError("projected content has invalid source_field")
+        raw = observations[observation_id].get(source_field)
+        transformations = provenance.get("transformations")
+        if not isinstance(raw, str):
+            raise ValueError("single-source content requires string source and text")
+        if not isinstance(transformations, list) or not set(transformations) <= _ALLOWED_TRANSFORMATIONS:
+            raise ValueError("projected content has invalid transformation")
+        if not _transformed_text(raw, text, transformations):
+            raise ValueError("single-source transformation does not match observation")
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
     if projected.get("text_sha256") != digest:
         raise ValueError("projected content sha256 mismatch")
@@ -1166,6 +1238,8 @@ class ResponseV3:
                 raise ValueError("duplicate observation_id")
             observations[observation_id] = observation
             _validate_provider_fields(observation)
+            if "source_type" in observation:
+                _validate_source_type(observation["source_type"])
         for result in self.results:
             representative = result.get("representative_observation_id")
             members = result.get("observation_ids")
@@ -1181,6 +1255,10 @@ class ResponseV3:
                     if not isinstance(projected, dict):
                         raise ValueError("content-bearing result fields must be projected objects")
                     _validate_projected_text(projected, observations)
+            if "source_type" in result:
+                _validate_source_type(result["source_type"])
+            if "fetch_priority" in result:
+                _validate_fetch_priority(result["fetch_priority"])
             _validate_result_spans(result, observations)
         for action in self.policy_actions:
             reasons = _POLICY_ACTION_REASONS.get(str(action.get("action")))

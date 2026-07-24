@@ -21,6 +21,13 @@
 
 All sources, zero invented answers.
 
+The heading-aware spans, multi-observation enrichment, and Research quorum are
+independent WSP/MCP implementations inspired by
+[Hound/Master-Fetch v11.2.0](https://github.com/dondai1234/hound/releases/tag/v11.2.0),
+the MIT-licensed project by [Bishesh Bhandari (`dondai1234`)](https://github.com/dondai1234).
+This is respectful upstream collaboration and attribution, not a Hound fork or
+a claim that the upstream work is Robby's code.
+
 Version note: `web-search-plus-mcp` uses its own MCP package version (`1.2.0`) while tracking the portable source-only Web Search Plus v3.2.0 engine. The Hermes plugin is versioned separately; its plugin-loader, Operator Console, receipts journal, and release commands are not exposed by the standalone MCP server.
 
 ## ✨ Features
@@ -33,9 +40,11 @@ Version note: `web-search-plus-mcp` uses its own MCP package version (`1.2.0`) w
 - **Classic Routing v2 authority** — registry-backed routing for multilingual/current, docs/API, arXiv, CVE/security, local/shopping, and OSS discovery
 - **Quality reports + doctor checks** — optional routing/result diagnostics plus compact offline health checks for configured providers/cache
 - **Research mode** — opt-in multi-provider search + top-source extraction with a time budget
+- **Quality-quorum research** — harvest provider completions as they arrive, stop waiting only after a conservative diversity threshold, and report every preempted provider explicitly
 - **3.1 policy layer** — budget preflight, diversity-aware reranking, self-hosted profiles, shadow-policy observations, extraction cache identity v6, and SQLite state schema v3
 - **Provider SDK** — zero-core-edit provider discovery through `providers.d` with fail-closed startup diagnostics and shared conformance checks
-- **Semantic extraction spans** — deterministic query-ranked spans through `web_extract(spans=true, spans_query=...)`
+- **Semantic extraction spans** — deterministic query-ranked spans through `web_extract(spans=true, spans_query=...)`, with bounded heading sections that retain the useful body below a matching heading
+- **Provenance-safe result enrichment** — merged cross-provider snippet fragments retain observation IDs; additive `source_type` and `fetch_priority` explain what to fetch next
 - **Onboarding CLI** — `status`, `list`, `setup`, and persistent routing `config` helpers for MCP env/config wiring
 - **Zero-install run** — `uvx web-search-plus-mcp`
 - **MCP-native** — stdio server exposing stable `web_search` and `web_extract` tools

@@ -1445,6 +1445,39 @@ def _diversity_settings(config: Dict[str, Any]) -> Tuple[bool, float]:
     return rerank, threshold
 
 
+def _research_quorum_settings(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Read validated Research early-return controls for direct callers too."""
+    raw_quality_config = config.get("quality")
+    quality_config = raw_quality_config if isinstance(raw_quality_config, dict) else {}
+    configured = quality_config.get("research_quorum")
+    configured = configured if isinstance(configured, dict) else {}
+    defaults = {
+        "enabled": True,
+        "min_contributing_providers": 2,
+        "result_target_cap": 5,
+        "min_unique_domains": 3,
+    }
+    settings = {**defaults, **configured}
+    # Validation owns persisted config; conservative fallbacks keep callers that
+    # invoke the public search helpers with hand-built config dicts safe.
+    if settings["enabled"] is not True:
+        settings["enabled"] = False
+    for name, minimum in (
+        ("min_contributing_providers", 2),
+        ("result_target_cap", 1),
+        ("min_unique_domains", 1),
+    ):
+        value = settings[name]
+        if isinstance(value, bool):
+            settings[name] = defaults[name]
+            continue
+        try:
+            settings[name] = max(minimum, int(value))
+        except (TypeError, ValueError):
+            settings[name] = defaults[name]
+    return settings
+
+
 def _finalize_research_result(
     result: Dict[str, Any],
     *,
@@ -1675,6 +1708,7 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             return error_result, 1
 
         diversity_rerank, near_duplicate_threshold = _diversity_settings(config)
+        quorum_settings = _research_quorum_settings(config)
         result = run_research_mode(
             query=args.query,
             research_providers=research_providers,
@@ -1690,6 +1724,12 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             time_budget_seconds=args.research_time_budget,
             diversity_rerank=diversity_rerank,
             near_duplicate_threshold=near_duplicate_threshold,
+            quorum_enabled=quorum_settings["enabled"],
+            quorum_min_contributing_providers=quorum_settings[
+                "min_contributing_providers"
+            ],
+            quorum_result_target_cap=quorum_settings["result_target_cap"],
+            quorum_min_unique_domains=quorum_settings["min_unique_domains"],
         )
         result = _finalize_research_result(
             result,
@@ -2111,6 +2151,7 @@ def _execute_research_v3(
     ):
         time_budget_seconds = min(time_budget_seconds, max_wall_time_ms / 1000)
     diversity_rerank, near_duplicate_threshold = _diversity_settings(config)
+    quorum_settings = _research_quorum_settings(config)
     payload = run_research_mode(
         query=str(request.input.get("query") or ""),
         research_providers=providers,
@@ -2126,6 +2167,12 @@ def _execute_research_v3(
         on_provider_timeout=timed_out_providers.add,
         diversity_rerank=diversity_rerank,
         near_duplicate_threshold=near_duplicate_threshold,
+        quorum_enabled=quorum_settings["enabled"],
+        quorum_min_contributing_providers=quorum_settings[
+            "min_contributing_providers"
+        ],
+        quorum_result_target_cap=quorum_settings["result_target_cap"],
+        quorum_min_unique_domains=quorum_settings["min_unique_domains"],
     )
     extraction_error = str(
         (payload.get("routing") or {}).get("extraction_error") or ""

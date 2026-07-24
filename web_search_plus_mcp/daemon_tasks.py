@@ -23,6 +23,8 @@ class DaemonTask:
         self._done = threading.Event()
         self._result: Any = None
         self._exc: Optional[BaseException] = None
+        self._callback_lock = threading.Lock()
+        self._callbacks = []
         self._thread = threading.Thread(
             target=self._run,
             args=(fn, args, kwargs),
@@ -37,7 +39,36 @@ class DaemonTask:
         except BaseException as exc:  # re-raised to result() callers
             self._exc = exc
         finally:
-            self._done.set()
+            # Publish completion before callbacks so a callback may safely call
+            # result(timeout=0). Copy-and-clear under the lock makes callbacks
+            # registered just before or just after completion run exactly once.
+            with self._callback_lock:
+                callbacks = self._callbacks
+                self._callbacks = []
+                self._done.set()
+            for callback in callbacks:
+                try:
+                    callback(self)
+                except Exception:
+                    # Completion notification is advisory; a consumer callback
+                    # must not turn a successful provider task into a failure.
+                    pass
+
+    def add_done_callback(self, callback: Callable[["DaemonTask"], Any]) -> None:
+        """Invoke ``callback`` once when this daemon task completes.
+
+        This is deliberately tiny Future-like surface area for completion-order
+        orchestration. Callbacks run on the daemon worker thread and must not
+        block; callers that need work should enqueue a notification only.
+        """
+        with self._callback_lock:
+            if not self._done.is_set():
+                self._callbacks.append(callback)
+                return
+        try:
+            callback(self)
+        except Exception:
+            pass
 
     def done(self) -> bool:
         return self._done.is_set()

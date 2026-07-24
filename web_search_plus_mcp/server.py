@@ -9,6 +9,7 @@ guarded auto-routing, and opt-in research mode.
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import json
 import math
 import os
@@ -466,6 +467,7 @@ def _project_v3_payload(
         if not isinstance(item, dict):
             continue
         url = _field_url(item.get("url"))
+        result: dict[str, Any]
         if capability == "extract":
             result = {"url": url, "content": _field_text(item.get("text"))}
             if isinstance(item.get("spans"), list):
@@ -474,11 +476,27 @@ def _project_v3_payload(
                 ]
                 result["span_contract_version"] = item.get("span_contract_version")
         else:
+            structured_snippet = item.get("snippet")
             result = {
                 "title": _field_text(item.get("title")),
                 "url": url,
-                "snippet": _field_text(item.get("snippet")),
+                "snippet": _field_text(structured_snippet),
             }
+            # Preserve additive, schema-validated v3.1 enrichment at the MCP
+            # boundary.  Legacy title/url/snippet remain unchanged.
+            snippet_provenance = (
+                structured_snippet.get("provenance")
+                if isinstance(structured_snippet, dict)
+                else None
+            )
+            if (
+                isinstance(snippet_provenance, dict)
+                and snippet_provenance.get("aggregation") == "concat"
+            ):
+                result["snippet_aggregate"] = deepcopy(structured_snippet)
+            for field in ("source_type", "fetch_priority"):
+                if isinstance(item.get(field), dict):
+                    result[field] = deepcopy(item[field])
         results.append(result)
     projected["results"] = results
 
