@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-07-24
+
 ### Added
 - Preserve bounded heading-aware semantic sections in `web_extract` spans, including query-free body text and deeper subheadings through the next same-or-shallower heading.
 - Add provenance-safe cross-provider snippet aggregation plus additive `source_type` and explainable `fetch_priority` result hints.
@@ -13,8 +15,11 @@
 - Count unique evidence from every completed provider when evaluating Research quorum, even if the first provider alone fills the public result page.
 - Honor MCP `quality_report=true` on the canonical v3 path by deriving diagnostics from validated results, routing receipts, provider attempts, source diversity, and cache status without issuing a second provider request.
 
+### Changed
+- Realign the standalone MCP package version from 1.2.0 to 3.3.0 so it directly names the portable Web Search Plus 3.3.0 engine generation. The stable `web_search` and `web_extract` tool names, arguments, and legacy result fields remain compatible.
+
 ### Attribution
-- These independently implemented portable improvements adapt product ideas from [Hound/Master-Fetch v11.2.0](https://github.com/dondai1234/hound/releases/tag/v11.2.0), the independent MIT-licensed project by [Bishesh Bhandari (`dondai1234`)](https://github.com/dondai1234). The implementation is reworked for WSP/MCP's own provider, provenance, budget, and receipt contracts; Hound code is neither bundled nor claimed as Robby's code.
+- These independently implemented portable improvements adapt product ideas from [Hound/Master-Fetch v11.2.0](https://github.com/dondai1234/master-fetch/releases/tag/v11.2.0), the independent MIT-licensed project by [Bishesh Bhandari (`dondai1234`)](https://github.com/dondai1234). The implementation is reworked for WSP/MCP's own provider, provenance, budget, and receipt contracts; Hound code is neither bundled nor claimed as Robby's code.
 
 ## [1.2.0] - 2026-07-22
 

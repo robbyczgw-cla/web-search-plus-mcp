@@ -7,11 +7,12 @@ build-backend = "hatchling.build"
 "docs/MIGRATION_1_0.md" = "web_search_plus_mcp/docs/MIGRATION_1_0.md"
 "docs/HOUND.md" = "web_search_plus_mcp/docs/HOUND.md"
 "docs/RELEASE_1_2.md" = "web_search_plus_mcp/docs/RELEASE_1_2.md"
+"docs/RELEASE_3_3.md" = "web_search_plus_mcp/docs/RELEASE_3_3.md"
 "wsp_sdk" = "wsp_sdk"
 
 [project]
 name = "web-search-plus-mcp"
-version = "1.2.0"
+version = "3.3.0"
 description = "Source-only multi-provider web search, extraction, evidence receipts, and onboarding for MCP clients"
 readme = "README.md"
 license = { file = "LICENSE" }

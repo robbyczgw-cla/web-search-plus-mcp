@@ -2,8 +2,8 @@
 """
 web-search-plus-mcp: Multi-provider web search MCP server.
 
-MCP wrapper around the Web Search Plus v3 source-only runtime: 12 search
-providers, 8 extraction providers, evidence-rich responses, bounded extraction,
+MCP wrapper around the Web Search Plus v3 source-only runtime: 13 search
+providers, 9 extraction providers, evidence-rich responses, bounded extraction,
 guarded auto-routing, and opt-in research mode.
 """
 from __future__ import annotations
@@ -25,7 +25,7 @@ from mcp.types import TextContent, Tool
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
-__version__ = "1.2.0"
+__version__ = "3.3.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus", version=__version__)

@@ -13,22 +13,24 @@
 
 **Give your agent the web — as real sources, never a made-up answer.** `web-search-plus-mcp` is the standalone MCP server for Web Search Plus: drop it into Claude Desktop, Cursor, NanoBot, Hermes, or any MCP-compatible host, and your agent can search and read pages across the providers *you* choose — and always see where each result came from.
 
-**New in 3.2 — and why it is genuinely fun now:**
+**New in 3.3 — better evidence, less waiting:**
 
-- 🔑 **Search with zero paid API keys.** The local, key-free **Hound** integration runs right on your own machine.
-- 🧭 **Careful, predictable routing** across 13 search and 9 extract providers — deliberate choice, safe fallbacks, no surprise costs.
-- 🧾 **Honest details on every call** — which provider ran, what failed, what came from cache. Nothing fails silently.
+- 🧩 **Heading-aware extraction spans** keep the useful body beneath a matching heading instead of returning an isolated keyword sentence.
+- 🧾 **Provenance-safe result enrichment** merges corroborating snippets without losing observation IDs, then adds explainable `source_type` and `fetch_priority` hints.
+- ⚡ **Quality-quorum Research** harvests providers as they finish and can stop waiting once enough diverse evidence exists, while every preempted provider remains visible.
 
 All sources, zero invented answers.
 
 The heading-aware spans, multi-observation enrichment, and Research quorum are
 independent WSP/MCP implementations inspired by
-[Hound/Master-Fetch v11.2.0](https://github.com/dondai1234/hound/releases/tag/v11.2.0),
+[Hound/Master-Fetch v11.2.0](https://github.com/dondai1234/master-fetch/releases/tag/v11.2.0),
 the MIT-licensed project by [Bishesh Bhandari (`dondai1234`)](https://github.com/dondai1234).
 This is respectful upstream collaboration and attribution, not a Hound fork or
 a claim that the upstream work is Robby's code.
 
-Version note: `web-search-plus-mcp` uses its own MCP package version (`1.2.0`) while tracking the portable source-only Web Search Plus v3.2.0 engine. The Hermes plugin is versioned separately; its plugin-loader, Operator Console, receipts journal, and release commands are not exposed by the standalone MCP server.
+Version note: `web-search-plus-mcp 3.3.0` aligns its public version with the portable source-only Web Search Plus v3.3.0 engine. This is a one-time version-line realignment from MCP 1.2.0, not a breaking change to the two MCP tools. The Hermes plugin remains a separate product; its plugin-loader, Operator Console, receipts journal, and release commands are not exposed by the standalone MCP server.
+
+See the [3.3 release notes](docs/RELEASE_3_3.md) for compatibility, upgrade, and attribution details.
 
 ## ✨ Features
 

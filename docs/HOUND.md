@@ -1,6 +1,6 @@
 # Hound local provider
 
-`web-search-plus-mcp` 1.2 can use [Hound](https://github.com/dondai1234/master-fetch)
+`web-search-plus-mcp` 3.3 can use [Hound](https://github.com/dondai1234/master-fetch)
 as an optional local provider for both source discovery and URL extraction.
 
 Hound is an independent MIT-licensed project created and maintained by
@@ -33,7 +33,7 @@ an operator opts in.
 - Python 3.11 or newer for Hound
 - `hound-mcp 11.1.6` or a compatible newer 11.x release
 - Hound bound to `127.0.0.1` or `::1`
-- `web-search-plus-mcp 1.2.0` or newer
+- `web-search-plus-mcp 3.3.0` or newer
 - Chromium only when browser-backed rendering is required
 
 ## Install Hound separately
@@ -75,7 +75,7 @@ Pass the endpoint to the `web-search-plus-mcp` process:
   "mcpServers": {
     "web-search-plus": {
       "command": "uvx",
-      "args": ["web-search-plus-mcp==1.2.0"],
+      "args": ["web-search-plus-mcp==3.3.0"],
       "env": {
         "HOUND_MCP_URL": "http://127.0.0.1:8765/mcp"
       }

@@ -869,7 +869,7 @@ wheels = [
 
 [[package]]
 name = "web-search-plus-mcp"
-version = "1.2.0"
+version = "3.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
