@@ -11,69 +11,35 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Glama](https://glama.ai/mcp/servers/robbyczgw-cla/web-search-plus-mcp/badge)](https://glama.ai/mcp/servers/robbyczgw-cla/web-search-plus-mcp)
 
-**Give your agent the web — as real sources, never a made-up answer.** `web-search-plus-mcp` is the standalone MCP server for Web Search Plus: drop it into Claude Desktop, Cursor, NanoBot, Hermes, or any MCP-compatible host, and your agent can search and read pages across the providers *you* choose — and always see where each result came from.
+**Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-**New in 3.3 — better evidence, less waiting:**
-
-- 🧩 **Heading-aware extraction spans** keep the useful body beneath a matching heading instead of returning an isolated keyword sentence.
-- 🧾 **Provenance-safe result enrichment** merges corroborating snippets without losing observation IDs, then adds explainable `source_type` and `fetch_priority` hints.
-- ⚡ **Quality-quorum Research** harvests providers as they finish and can stop waiting once enough diverse evidence exists, while every preempted provider remains visible.
-
-All sources, zero invented answers.
-
-The heading-aware spans, multi-observation enrichment, and Research quorum are
-independent WSP/MCP implementations inspired by
-[Hound/Master-Fetch v11.2.0](https://github.com/dondai1234/master-fetch/releases/tag/v11.2.0),
-the MIT-licensed project by [Bishesh Bhandari (`dondai1234`)](https://github.com/dondai1234).
-This is respectful upstream collaboration and attribution, not a Hound fork or
-a claim that the upstream work is Robby's code.
-
-Version note: `web-search-plus-mcp 3.3.0` aligns its public version with the portable source-only Web Search Plus v3.3.0 engine. This is a one-time version-line realignment from MCP 1.2.0, not a breaking change to the two MCP tools. The Hermes plugin remains a separate product; its plugin-loader, Operator Console, receipts journal, and release commands are not exposed by the standalone MCP server.
-
-See the [3.3 release notes](docs/RELEASE_3_3.md) for compatibility, upgrade, and attribution details.
-
-## ✨ Features
-
-- **13 search providers + auto-routing** — source-result providers only; answer-only endpoints are rejected instead of being presented as search
-- **9 extract providers with private-target protection** — Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, Serper, Hound
-- **Optional keyless Hound sidecar** — local metasearch and browser-backed extraction over loopback MCP; explicit-only by default
-- **Additive v3 evidence contract** — source observations, provider attempts, routing receipts, cache provenance, typed errors, and deterministic legacy projections
-- **Bounded extraction context** — long pages return a bounded preview plus a page-on-demand reference to the stored full text
-- **Classic Routing v2 authority** — registry-backed routing for multilingual/current, docs/API, arXiv, CVE/security, local/shopping, and OSS discovery
-- **Quality reports + doctor checks** — optional routing/result diagnostics plus compact offline health checks for configured providers/cache
-- **Research mode** — opt-in multi-provider search + top-source extraction with a time budget
-- **Quality-quorum research** — harvest provider completions as they arrive, stop waiting only after a conservative diversity threshold, and report every preempted provider explicitly
-- **3.1 policy layer** — budget preflight, diversity-aware reranking, self-hosted profiles, shadow-policy observations, extraction cache identity v6, and SQLite state schema v3
-- **Provider SDK** — zero-core-edit provider discovery through `providers.d` with fail-closed startup diagnostics and shared conformance checks
-- **Semantic extraction spans** — deterministic query-ranked spans through `web_extract(spans=true, spans_query=...)`, with bounded heading sections that retain the useful body below a matching heading
-- **Provenance-safe result enrichment** — merged cross-provider snippet fragments retain observation IDs; additive `source_type` and `fetch_priority` explain what to fetch next
-- **Onboarding CLI** — `status`, `list`, `setup`, and persistent routing `config` helpers for MCP env/config wiring
-- **Zero-install run** — `uvx web-search-plus-mcp`
-- **MCP-native** — stdio server exposing stable `web_search` and `web_extract` tools
-
-## What changes in 1.0
-
-- Native Perplexity and Kilo Perplexity answer endpoints are removed from the public provider enums because they do not expose a verified source-only mode.
-- The two MCP tool names and their legacy result fields remain stable. v3 evidence, attempts, receipts, limits, stored-content references, warnings, and typed errors are additive.
-- Existing config entries for retired answer providers are ignored in provider lists; retired default/fallback values are replaced in memory with `serper` and reported as a migration warning.
-- The MCP server keeps its stdio/subprocess boundary. Hermes-specific in-process plugin loading and Operator Console surfaces are intentionally not ported.
-
-See [Migrating to 1.0](docs/MIGRATION_1_0.md) before upgrading an existing 0.x installation.
+`web-search-plus-mcp 3.3.0` brings the Web Search Plus v3.3.0 engine to MCP apps without changing its two tools.
 
 ## 🚀 Quick Start
 
 ```bash
-# Run the MCP server instantly with uvx
+# Run it without installing anything
 uvx web-search-plus-mcp
 
-# Or install globally
+# Or install it normally
 pip install web-search-plus-mcp
 web-search-plus-mcp
 ```
 
-At least one configured provider is required. Most providers use credentials;
-Hound can instead run as a separately installed keyless local sidecar. Keyless
-does not mean offline, anonymous, unlimited, or free of local operating cost.
+Add at least one search provider. You can start with one and add more later.
+
+## ✨ What it does
+
+- **13 search providers** — use one service or let Web Search Plus choose
+- **9 page-reading providers** — turn web pages into clean text
+- **Automatic fallback** — try another provider when the first one fails
+- **Real sources** — keep the links and text the result came from
+- **Research mode** — search several providers for broader questions
+- **Optional details** — see which provider ran and how the result was found
+- **Simple setup tools** — check your config and create a starter setup
+- **Optional local search** — connect a separately installed Hound service
+
+Version 3.3 reads useful page sections more cleanly, keeps supporting details together, and can finish broad research sooner when it already has enough good sources. See the [3.3 release notes](docs/RELEASE_3_3.md) for the technical details, compatibility notes, and credits.
 
 ## 🧭 Easier onboarding
 

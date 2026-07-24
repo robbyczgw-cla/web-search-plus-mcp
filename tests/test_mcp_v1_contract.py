@@ -137,6 +137,24 @@ def test_readme_describes_current_source_only_release_surface():
         assert f"`{provider}`" not in search_tool_section
 
 
+def test_readme_starts_with_plain_language_and_quick_start():
+    readme = (ROOT / "README.md").read_text()
+    intro = readme.split("## 🧭 Easier onboarding", 1)[0].lower()
+
+    assert intro.index("## 🚀 quick start") < intro.index("## ✨ what it does")
+    for implementation_term in (
+        "heading-aware",
+        "provenance-safe",
+        "quality-quorum",
+        "observation id",
+        "fetch_priority",
+        "legacy projection",
+    ):
+        assert implementation_term not in intro
+
+    assert "better web search and clean page reading" in intro
+
+
 def test_hound_release_surfaces_preserve_attribution_and_separate_install():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
     dependencies = set(project["project"]["dependencies"])
