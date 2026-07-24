@@ -9,6 +9,9 @@
 
 ### Fixed
 - Preserve `snippet_aggregate`, `source_type`, and `fetch_priority` across the canonical v3 engine to stable MCP result projection instead of silently dropping them.
+- Honor explicit Research-provider lists independently of automatic-routing allowlists while retaining disabled/configuration/cooldown safeguards; expose cooldown omissions in routing and quality receipts.
+- Count unique evidence from every completed provider when evaluating Research quorum, even if the first provider alone fills the public result page.
+- Honor MCP `quality_report=true` on the canonical v3 path by deriving diagnostics from validated results, routing receipts, provider attempts, source diversity, and cache status without issuing a second provider request.
 
 ### Attribution
 - These independently implemented portable improvements adapt product ideas from [Hound/Master-Fetch v11.2.0](https://github.com/dondai1234/hound/releases/tag/v11.2.0), the independent MIT-licensed project by [Bishesh Bhandari (`dondai1234`)](https://github.com/dondai1234). The implementation is reworked for WSP/MCP's own provider, provenance, budget, and receipt contracts; Hound code is neither bundled nor claimed as Robby's code.

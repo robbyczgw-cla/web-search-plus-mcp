@@ -48,9 +48,10 @@ def _research_quorum_snapshot(
 ) -> Tuple[int, int, List[str]]:
     """Return unique candidate/domain/provider counts for an early-return check.
 
-    This intentionally mirrors the stable provider-order merge rather than the
-    arrival order. A provider counts only if it supplies a unique, URL-bearing
-    candidate inside the result target, so duplicate/empty responses cannot
+    This intentionally mirrors stable provider order rather than arrival order.
+    ``result_target`` is a minimum threshold, not a scan cap: all completed
+    providers must remain able to contribute evidence even when the first one
+    alone fills the public result page. Duplicate/empty responses still cannot
     manufacture a quorum.
     """
     seen_urls = set()
@@ -76,12 +77,8 @@ def _research_quorum_snapshot(
                 domain = domain[4:]
             if domain:
                 domains.add(domain)
-            if candidate_count >= result_target:
-                break
         if contributed:
             contributors.append(provider)
-        if candidate_count >= result_target:
-            break
     return candidate_count, len(domains), contributors
 
 

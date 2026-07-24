@@ -1493,6 +1493,17 @@ def _finalize_research_result(
     final_routing["mode"] = "research"
     final_routing["provider"] = "research"
     result.setdefault("routing", {}).update(final_routing)
+    if cooldown_skips:
+        result["routing"]["providers_skipped"] = [
+            {
+                "provider": item.get("provider"),
+                "reason": "cooldown",
+                "cooldown_remaining_seconds": item.get(
+                    "cooldown_remaining_seconds"
+                ),
+            }
+            for item in cooldown_skips
+        ]
     if args.freshness:
         result.setdefault("metadata", {})["freshness"] = {
             "requested": args.freshness,
@@ -1685,10 +1696,26 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         if provider and provider_configured(provider, config) and not provider_in_cooldown(provider)[0]:
             available_research_providers.add(provider)
         if args.research_providers:
-            research_providers = [
-                p for p in args.research_providers
-                if p not in disabled_providers and _provider_auto_allowed(p, auto_config) and provider_configured(p, config) and not provider_in_cooldown(p)[0]
-            ]
+            # Explicit research selection follows the same contract as an
+            # explicit single-provider call: auto-routing allowlists do not
+            # veto the caller's named provider. Disabled/unconfigured providers
+            # remain unavailable, and cooldown skips stay visible in receipts.
+            research_providers = []
+            for p in args.research_providers:
+                if p in disabled_providers or not provider_configured(p, config):
+                    continue
+                in_cooldown, remaining = provider_in_cooldown(p)
+                if in_cooldown:
+                    if not any(item.get("provider") == p for item in cooldown_skips):
+                        cooldown_skips.append(
+                            {
+                                "provider": p,
+                                "cooldown_remaining_seconds": remaining,
+                            }
+                        )
+                    continue
+                if p not in research_providers:
+                    research_providers.append(p)
         else:
             research_providers = select_research_providers(
                 primary_provider=provider,
