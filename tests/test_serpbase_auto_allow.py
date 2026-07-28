@@ -68,7 +68,7 @@ def test_serpbase_can_be_called_explicitly(monkeypatch):
     assert result["related_searches"] == ["example related"]
 
 
-def test_server_schema_exposes_serpbase_last_and_auto_allow_metadata():
+def test_server_schema_exposes_guarded_provider_metadata():
     provider_enum = next(t for t in asyncio.run(server.list_tools()) if t.name == "web_search").inputSchema["properties"]["provider"]["enum"]
 
     assert provider_enum == [
@@ -86,10 +86,13 @@ def test_server_schema_exposes_serpbase_last_and_auto_allow_metadata():
         "searxng",
         "keenable",
         "hound",
+        "octen",
     ]
     assert server.SEARCH_PROVIDERS["serpbase"]["env"] == "SERPBASE_API_KEY"
     assert server.SEARCH_PROVIDERS["serpbase"]["auto_allow"] is False
     assert server.SEARCH_PROVIDERS["querit"]["auto_allow"] is False
+    assert server.SEARCH_PROVIDERS["octen"]["env"] == "MONID_API_KEY"
+    assert server.SEARCH_PROVIDERS["octen"]["auto_allow"] is False
     assert server.ROUTING_PROVIDER_ORDER == [
         "you",
         "serper",
@@ -111,6 +114,7 @@ def test_server_schema_exposes_serpbase_last_and_auto_allow_metadata():
         "querit": False,
         "parallel": False,
         "hound": False,
+        "octen": False,
     }
 
 
@@ -129,4 +133,5 @@ def test_server_normalizes_source_only_auto_allow_preferences():
         "querit": False,
         "parallel": False,
         "hound": False,
+        "octen": False,
     }

@@ -107,8 +107,8 @@ def test_wheel_config_includes_v3_contracts_and_migration_guide():
     )
 
 
-def test_source_only_provider_surface_is_13_search_and_9_extract():
-    assert len(server.SEARCH_PROVIDERS) == 13
+def test_source_only_provider_surface_is_14_search_and_9_extract():
+    assert len(server.SEARCH_PROVIDERS) == 14
     assert len(server.EXTRACT_PROVIDERS) == 9
     assert RETIRED_ANSWER_PROVIDERS.isdisjoint(server.SEARCH_PROVIDERS)
     assert RETIRED_ANSWER_PROVIDERS.isdisjoint(server.EXTRACT_PROVIDERS)
@@ -123,7 +123,7 @@ def test_readme_describes_current_source_only_release_surface():
     readme = (ROOT / "README.md").read_text()
     assert "`web-search-plus-mcp 3.3.0`" in readme
     assert "Web Search Plus v3.3.0" in readme
-    assert "**13 search providers" in readme
+    assert "**14 search providers" in readme
 
     provider_section = readme.split("## 🔎 Search Providers", 1)[1].split(
         "## 📄 Extract Providers", 1

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+- Add Octen via Monid as a bundled, source-only Search provider through the public Provider SDK. The adapter supports native freshness plus include/exclude-domain filters and remains explicit-only by default (`auto_allow=false`).
+
+### Security and cost controls
+- Send credentials only to Monid's fixed HTTPS API origin, reject redirects, cap response bodies at 8 MiB, sanitize upstream failures, and keep Monid lifecycle errors separate from Octen provider HTTP errors.
+- Keep Octen's answer, Broad Search, image/video, and full-content modes outside this integration. Search highlights are enabled for source snippets while billable full content is explicitly disabled.
+
+### Fixed
+- Honor `ProviderSpec.supports_freshness` for discovered SDK Search providers so a successfully applied canonical freshness filter is no longer reported as unsupported.
+
 ### Documentation
 - Add a repository-specific contribution guide covering the MCP compatibility boundary, portable-engine syncs, Provider SDK intake, security/privacy requirements, CI commands, packaging, and pull-request evidence.
 - Add regression coverage that keeps the guide, README link, internal links, and CI commands synchronized.

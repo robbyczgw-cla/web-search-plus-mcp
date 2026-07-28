@@ -34,6 +34,7 @@ def test_web_search_schema_exposes_v1_source_providers_and_controls():
         "searxng",
         "keenable",
         "hound",
+        "octen",
     ]
     assert props["depth"]["enum"] == ["normal", "deep", "deep-reasoning"]
     assert props["mode"]["enum"] == ["normal", "research"]

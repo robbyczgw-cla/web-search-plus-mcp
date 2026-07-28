@@ -2,7 +2,7 @@
 """
 web-search-plus-mcp: Multi-provider web search MCP server.
 
-MCP wrapper around the Web Search Plus v3 source-only runtime: 13 search
+MCP wrapper around the Web Search Plus v3 source-only runtime: 14 search
 providers, 9 extraction providers, evidence-rich responses, bounded extraction,
 guarded auto-routing, and opt-in research mode.
 """

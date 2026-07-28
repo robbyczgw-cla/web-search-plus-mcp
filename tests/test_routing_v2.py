@@ -24,7 +24,8 @@ def test_default_auto_allow_guards_explicit_only_source_providers():
     assert auto_allow["querit"] is False
     assert auto_allow["parallel"] is False
     assert auto_allow["hound"] is False
-    assert set(auto_allow) == {"serpbase", "querit", "parallel", "hound"}
+    assert auto_allow["octen"] is False
+    assert set(auto_allow) == {"serpbase", "querit", "parallel", "hound", "octen"}
 
 
 def test_legacy_auto_allow_config_inherits_new_guarded_provider_defaults():
@@ -35,8 +36,9 @@ def test_legacy_auto_allow_config_inherits_new_guarded_provider_defaults():
 
     assert validated["auto_routing"]["auto_allow"]["parallel"] is False
     assert validated["auto_routing"]["auto_allow"]["hound"] is False
+    assert validated["auto_routing"]["auto_allow"]["octen"] is False
     assert set(validated["auto_routing"]["auto_allow"]) == {
-        "serpbase", "querit", "parallel", "hound",
+        "serpbase", "querit", "parallel", "hound", "octen",
     }
 
 
