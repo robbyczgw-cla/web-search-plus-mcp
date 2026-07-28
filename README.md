@@ -290,14 +290,21 @@ web-search-plus-mcp config set-auto-allow hound off
 
 ## Development
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for project boundaries, portable-engine sync rules, provider requirements, security constraints, and pull-request expectations.
+
+Run the same gates as CI:
+
 ```bash
+python -m pip install --upgrade pip build
 python -m pip install -e ".[test]"
 python -m pytest tests/ -q -p no:cacheprovider
-ruff check .
+ruff check --config pyproject.toml .
+python -m compileall -q web_search_plus_mcp tests
+python scripts/gen_contract_v3_schemas.py --check
 python -m build
 ```
 
-The GitHub Actions workflow runs the test suite on Python 3.10, 3.11, and 3.12, then verifies Ruff, byte-compilation, wheel creation, and source-distribution creation.
+The GitHub Actions workflow runs the test suite on Python 3.10, 3.11, and 3.12, then verifies Ruff, byte-compilation, wheel creation, source-distribution creation, and wheel/sdist parity.
 
 ## Credits
 

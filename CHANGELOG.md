@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Documentation
+- Add a repository-specific contribution guide covering the MCP compatibility boundary, portable-engine syncs, Provider SDK intake, security/privacy requirements, CI commands, packaging, and pull-request evidence.
+- Add regression coverage that keeps the guide, README link, internal links, and CI commands synchronized.
+
 ## [3.3.0] - 2026-07-24
 
 ### Added
