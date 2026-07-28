@@ -30,7 +30,7 @@ Add at least one search provider. You can start with one and add more later.
 
 ## ✨ What it does
 
-- **13 search providers** — use one service or let Web Search Plus choose
+- **14 search providers** — use one service or let Web Search Plus choose
 - **9 page-reading providers** — turn web pages into clean text
 - **Automatic fallback** — try another provider when the first one fails
 - **Real sources** — keep the links and text the result came from
@@ -137,6 +137,11 @@ You can also place a `.env` file next to the package/project with the same varia
 - **Querit** — explicit-only multilingual, real-time AI search (`QUERIT_API_KEY`, `auto_allow=false`)
 - **Keenable** — independent web index with search and extraction (`KEENABLE_API_KEY`, or opt-in keyless public tier; off by default)
 - **Hound** — explicit-only local keyless metasearch through a separately installed loopback MCP sidecar (`HOUND_MCP_URL`)
+- **Octen via Monid** — explicit-only source-result web search with native recency and domain filters (`MONID_API_KEY`, `auto_allow=false`)
+
+### Octen source search via Monid
+
+The adapter executes Octen's `/search` endpoint through [Monid's documented HTTP API](https://docs.monid.ai/api/run.html) for ranked links and highlights. It explicitly disables full-content retrieval and does not call Octen's answer or Broad Search APIs. Configure `MONID_API_KEY` from [Monid](https://app.monid.ai/access/api-keys), then select `provider="octen"`; automatic routing remains unchanged unless you deliberately enable `auto_allow`. Access and billing use Monid's prepaid wallet; see Monid for current pricing and terms.
 
 ## 📄 Extract Providers
 
@@ -224,7 +229,7 @@ Use for source discovery, current events, prices, weather, sports lineups, sched
 Parameters:
 
 - `query` — required search query
-- `provider` — `auto`, `serper`, `serpbase`, `brave`, `tavily`, `querit`, `linkup`, `exa`, `firecrawl`, `parallel`, `you`, `searxng`, `keenable`, `hound`
+- `provider` — `auto`, `serper`, `serpbase`, `brave`, `tavily`, `querit`, `linkup`, `exa`, `firecrawl`, `parallel`, `you`, `searxng`, `keenable`, `hound`, `octen`
 - `count` — results to return, default `5`, max `20`
 - `depth` — Exa depth: `normal`, `deep`, `deep-reasoning`
 - `time_range` — `hour`, `day`, `week`, `month`, `year`
