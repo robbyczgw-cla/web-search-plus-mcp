@@ -11,4 +11,4 @@ _PACKAGE_DIR = str(Path(__file__).resolve().parent)
 if _PACKAGE_DIR not in sys.path:
     sys.path.insert(0, _PACKAGE_DIR)
 
-__version__ = "3.3.0"
+__version__ = "3.4.0"

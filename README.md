@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 3.3.0` brings the Web Search Plus v3.3.0 engine to MCP apps without changing its two tools.
+`web-search-plus-mcp 3.4.0` brings the Web Search Plus v3.4.0 engine to MCP apps without changing its two tools.
 
 ## 🚀 Quick Start
 
@@ -39,7 +39,7 @@ Add at least one search provider. You can start with one and add more later.
 - **Simple setup tools** — check your config and create a starter setup
 - **Optional local search** — connect a separately installed Hound service
 
-Version 3.3 reads useful page sections more cleanly, keeps supporting details together, and can finish broad research sooner when it already has enough good sources. See the [3.3 release notes](docs/RELEASE_3_3.md) for the technical details, compatibility notes, and credits.
+Version 3.4 adds explicit-only Octen source search through Monid without changing automatic routing or the two-tool MCP surface. See the [3.4 release notes](docs/RELEASE_3_4.md) for setup, security boundaries, compatibility notes, and credits.
 
 ## 🧭 Easier onboarding
 
