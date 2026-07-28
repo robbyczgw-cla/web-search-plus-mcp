@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-07-28
+
 ### Added
 - Add Octen via Monid as a bundled, source-only Search provider through the public Provider SDK. The adapter supports native freshness plus include/exclude-domain filters and remains explicit-only by default (`auto_allow=false`).
 
