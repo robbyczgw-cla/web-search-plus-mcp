@@ -19,7 +19,7 @@ description = "Source-only multi-provider web search, extraction, evidence recei
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
-dependencies = ["mcp>=2.0.0,<3", "httpx>=0.27.0,<1", "jsonschema>=4.20,<5"]
+dependencies = ["mcp>=2.0.0,<3", "httpx2>=2.5.0", "jsonschema>=4.20,<5"]
 
 [project.optional-dependencies]
 test = [

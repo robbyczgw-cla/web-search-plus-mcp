@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
 from typing import Any, Callable, Coroutine
 from urllib.parse import urlsplit
 
@@ -116,7 +115,7 @@ async def _call_hound_tool_async(
     arguments: dict[str, Any],
     timeout_seconds: int,
 ) -> dict[str, Any]:
-    import httpx
+    import httpx2 as httpx
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
 
@@ -131,18 +130,18 @@ async def _call_hound_tool_async(
             http_client=http_client,
             terminate_on_close=True,
         ) as streams:
-            read_stream, write_stream, _session_id = streams
+            read_stream, write_stream = streams
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 response = await session.call_tool(
                     tool,
                     arguments,
-                    read_timeout_seconds=timedelta(seconds=timeout_seconds),
+                    read_timeout_seconds=float(timeout_seconds),
                 )
 
-    if getattr(response, "isError", False):
+    if getattr(response, "is_error", False):
         raise RuntimeError("hound_mcp_call_failed")
-    structured = getattr(response, "structuredContent", None)
+    structured = getattr(response, "structured_content", None)
     if isinstance(structured, dict):
         return structured
     for item in getattr(response, "content", ()):
