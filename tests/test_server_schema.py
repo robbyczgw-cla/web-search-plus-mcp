@@ -17,7 +17,7 @@ def tool_by_name(name):
 
 def test_web_search_schema_exposes_v1_source_providers_and_controls():
     tool = tool_by_name("web_search")
-    props = tool.inputSchema["properties"]
+    props = tool.input_schema["properties"]
 
     assert props["provider"]["enum"] == [
         "auto",
@@ -45,9 +45,9 @@ def test_web_search_schema_exposes_v1_source_providers_and_controls():
 
 def test_web_extract_tool_is_exposed_with_tavily_first_capable_schema():
     tool = tool_by_name("web_extract")
-    props = tool.inputSchema["properties"]
+    props = tool.input_schema["properties"]
 
-    assert tool.inputSchema["required"] == ["urls"]
+    assert tool.input_schema["required"] == ["urls"]
     assert props["provider"]["enum"] == [
         "auto", "tavily", "exa", "linkup", "parallel", "firecrawl",
         "you", "keenable", "serper", "hound",
