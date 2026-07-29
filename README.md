@@ -122,6 +122,15 @@ Common places to paste this snippet:
 
 You can also place a `.env` file next to the package/project with the same variables.
 
+## 🔌 MCP protocol compatibility
+
+The server uses MCP Python SDK v2 and keeps the stdio boundary dual-era compatible:
+
+- modern clients negotiate the stateless MCP `2026-07-28` protocol through `server/discover`
+- legacy handshake clients continue to negotiate MCP `2025-11-25`
+
+The package exposes stdio only; the specification's Streamable HTTP session removal, subscriptions, OAuth changes, tasks, and multi-round-trip requests do not alter the two-tool Web Search Plus surface. Both protocol paths are covered by real subprocess tests.
+
 ## 🔎 Search Providers
 
 - **You.com** — fast source-result provider for current and multilingual search

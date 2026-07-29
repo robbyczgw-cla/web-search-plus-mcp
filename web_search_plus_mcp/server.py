@@ -19,16 +19,25 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
 
-from mcp.server import Server
+from jsonschema import Draft202012Validator
+from mcp import MCPError
+from mcp.server import Server, ServerRequestContext
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import (
+    INVALID_PARAMS,
+    CallToolRequestParams,
+    CallToolResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    Tool,
+)
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
 __version__ = "3.4.1"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
-app = Server("web-search-plus", version=__version__)
 
 
 SEARCH_PROVIDERS = {
@@ -321,7 +330,6 @@ def _as_bool(value: Any) -> bool:
     return bool(value)
 
 
-@app.list_tools()
 async def list_tools() -> list[Tool]:
     tools = [
         Tool(
@@ -331,7 +339,7 @@ async def list_tools() -> list[Tool]:
                 "Routes across configured source-result providers and returns additive v3 evidence, "
                 "routing receipts, provider attempts, cache provenance, and typed errors."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Search query"},
@@ -369,7 +377,7 @@ async def list_tools() -> list[Tool]:
                 "Responses preserve bounded-context limits, truncation warnings, evidence, "
                 "and page-on-demand stored-content references."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "urls": {"type": "array", "items": {"type": "string"}, "description": "URLs to extract"},
@@ -615,7 +623,6 @@ async def _run_cmd(
     return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
 
 
-@app.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name == "web_search":
         query = arguments["query"]
@@ -698,6 +705,64 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return await _run_cmd(cmd, timeout=90, capability="extract", urls=urls)
 
     raise ValueError(f"Unknown tool: {name}")
+
+
+async def _mcp_list_tools(
+    _ctx: ServerRequestContext[Any], _params: PaginatedRequestParams | None
+) -> ListToolsResult:
+    """Adapt the stable tool definitions to the MCP SDK v2 low-level boundary."""
+    return ListToolsResult(tools=await list_tools())
+
+
+def _invalid_arguments_message(tool_name: str, error: Any) -> str:
+    """Describe schema failures without reflecting caller-controlled values."""
+    location = ".".join(str(part) for part in error.absolute_path) or "$"
+    return (
+        f"Invalid arguments for tool '{tool_name}' "
+        f"({error.validator} validation failed at {location})."
+    )
+
+
+async def _mcp_call_tool(
+    _ctx: ServerRequestContext[Any], params: CallToolRequestParams
+) -> CallToolResult:
+    """Validate and adapt one tool call to the MCP SDK v2 result contract."""
+    tools = {tool.name: tool for tool in await list_tools()}
+    tool = tools.get(params.name)
+    if tool is None:
+        raise MCPError(INVALID_PARAMS, f"Unknown tool: {params.name}")
+
+    arguments = params.arguments or {}
+    validation_error = next(
+        Draft202012Validator(tool.input_schema).iter_errors(arguments), None
+    )
+    if validation_error is not None:
+        raise MCPError(
+            INVALID_PARAMS,
+            _invalid_arguments_message(params.name, validation_error),
+        )
+
+    try:
+        content = await call_tool(params.name, arguments)
+    except Exception:
+        payload = _typed_error_payload(
+            code="wsp.mcp.tool_execution_failed",
+            message="Web Search Plus tool execution failed.",
+            error_class="internal",
+        )
+        return CallToolResult(
+            content=[TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))],
+            is_error=True,
+        )
+    return CallToolResult(content=content)
+
+
+app = Server(
+    "web-search-plus",
+    version=__version__,
+    on_list_tools=_mcp_list_tools,
+    on_call_tool=_mcp_call_tool,
+)
 
 
 async def main():

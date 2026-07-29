@@ -69,7 +69,7 @@ def test_serpbase_can_be_called_explicitly(monkeypatch):
 
 
 def test_server_schema_exposes_guarded_provider_metadata():
-    provider_enum = next(t for t in asyncio.run(server.list_tools()) if t.name == "web_search").inputSchema["properties"]["provider"]["enum"]
+    provider_enum = next(t for t in asyncio.run(server.list_tools()) if t.name == "web_search").input_schema["properties"]["provider"]["enum"]
 
     assert provider_enum == [
         "auto",

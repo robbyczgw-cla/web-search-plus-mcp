@@ -4,7 +4,8 @@
 
 ### Changed
 
-- Advance the maintained MCP Python SDK v1 dependency floor from 1.26 to 1.29 while retaining the explicit `<2` boundary until the low-level server is migrated to the breaking v2 API.
+- Advance the maintained MCP Python SDK v1 dependency floor from 1.26 to 1.29 as an independently mergeable compatibility baseline before the v2 migration.
+- Migrate the stdio MCP boundary to Python SDK v2 and the stateless 2026-07-28 protocol while retaining compatibility negotiation for legacy MCP clients.
 
 ## [3.4.1] - 2026-07-30
 

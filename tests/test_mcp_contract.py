@@ -140,8 +140,8 @@ def test_source_only_provider_surface_is_15_search_and_9_extract():
     assert RETIRED_ANSWER_PROVIDERS.isdisjoint(server.SEARCH_PROVIDERS)
     assert RETIRED_ANSWER_PROVIDERS.isdisjoint(server.EXTRACT_PROVIDERS)
 
-    search_enum = tool("web_search").inputSchema["properties"]["provider"]["enum"]
-    extract_enum = tool("web_extract").inputSchema["properties"]["provider"]["enum"]
+    search_enum = tool("web_search").input_schema["properties"]["provider"]["enum"]
+    extract_enum = tool("web_extract").input_schema["properties"]["provider"]["enum"]
     assert search_enum == ["auto", *server.SEARCH_PROVIDERS]
     assert extract_enum == ["auto", *server.EXTRACT_PROVIDERS]
 
@@ -191,8 +191,9 @@ def test_hound_release_surfaces_preserve_attribution_and_separate_install():
     changelog = (ROOT / "CHANGELOG.md").read_text()
     combined = "\n".join((readme, guide, release, changelog))
 
-    assert "mcp>=1.29.0,<2" in dependencies
+    assert "mcp>=2.0.0,<3" in dependencies
     assert "httpx>=0.27.0,<1" in dependencies
+    assert "jsonschema>=4.20,<5" in dependencies
     assert "https://github.com/dondai1234/master-fetch" in combined
     assert "Bishesh Bhandari" in combined
     assert "MIT-licensed" in combined
