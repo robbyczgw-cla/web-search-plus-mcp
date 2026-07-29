@@ -191,7 +191,7 @@ def test_hound_release_surfaces_preserve_attribution_and_separate_install():
     changelog = (ROOT / "CHANGELOG.md").read_text()
     combined = "\n".join((readme, guide, release, changelog))
 
-    assert "mcp>=1.26.0,<2" in dependencies
+    assert "mcp>=1.29.0,<2" in dependencies
     assert "httpx>=0.27.0,<1" in dependencies
     assert "https://github.com/dondai1234/master-fetch" in combined
     assert "Bishesh Bhandari" in combined
