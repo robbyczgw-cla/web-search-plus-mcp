@@ -117,7 +117,7 @@ def test_hound_endpoint_rejects_non_loopback_or_ambiguous_urls(url):
 
 def test_hound_mcp_transport_disables_redirects_and_environment_proxies(monkeypatch):
     _spec, module = _provider_globals()
-    import httpx
+    import httpx2 as httpx
     import mcp.client.streamable_http as streamable_http
 
     captured = {}
@@ -173,6 +173,94 @@ def test_hound_mcp_transport_disables_redirects_and_environment_proxies(monkeypa
     assert captured["client_kwargs"]["follow_redirects"] is False
     assert captured["client_kwargs"]["trust_env"] is False
     assert captured["terminate_on_close"] is True
+
+
+def test_hound_mcp_v2_bridge_uses_two_streams_float_timeout_and_snake_case(monkeypatch):
+    _spec, module = _provider_globals()
+    import httpx2 as httpx
+    import mcp
+    import mcp.client.streamable_http as streamable_http
+
+    captured = {}
+
+    class ProbeHttpClient:
+        def __init__(self, **kwargs):
+            captured["client_kwargs"] = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class ProbeTransport:
+        async def __aenter__(self):
+            return "read-stream", "write-stream"
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class ProbeSession:
+        def __init__(self, read_stream, write_stream):
+            captured["streams"] = (read_stream, write_stream)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def initialize(self):
+            captured["initialized"] = True
+
+        async def call_tool(
+            self, tool, arguments, *, read_timeout_seconds
+        ):
+            captured.update(
+                tool=tool,
+                arguments=arguments,
+                read_timeout_seconds=read_timeout_seconds,
+            )
+            return SimpleNamespace(
+                is_error=False,
+                structured_content={"results": []},
+                content=[],
+            )
+
+    def fake_streamable_http_client(
+        endpoint, *, http_client, terminate_on_close
+    ):
+        captured.update(
+            endpoint=endpoint,
+            http_client=http_client,
+            terminate_on_close=terminate_on_close,
+        )
+        return ProbeTransport()
+
+    monkeypatch.setattr(httpx, "AsyncClient", ProbeHttpClient)
+    monkeypatch.setattr(mcp, "ClientSession", ProbeSession)
+    monkeypatch.setattr(
+        streamable_http,
+        "streamable_http_client",
+        fake_streamable_http_client,
+    )
+
+    result = asyncio.run(
+        module["_call_hound_tool_async"](
+            "http://127.0.0.1:8765/mcp",
+            "mcp_smart_search",
+            {"query": "example"},
+            30,
+        )
+    )
+
+    assert result == {"results": []}
+    assert captured["streams"] == ("read-stream", "write-stream")
+    assert captured["initialized"] is True
+    assert captured["tool"] == "mcp_smart_search"
+    assert captured["arguments"] == {"query": "example"}
+    assert captured["read_timeout_seconds"] == 30.0
+    assert isinstance(captured["read_timeout_seconds"], float)
 
 
 def test_hound_call_sanitizes_ordinary_transport_and_protocol_errors(monkeypatch):

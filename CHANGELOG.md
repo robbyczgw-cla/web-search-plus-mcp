@@ -6,6 +6,7 @@
 
 - Advance the maintained MCP Python SDK v1 dependency floor from 1.26 to 1.29 as an independently mergeable compatibility baseline before the v2 migration.
 - Migrate the stdio MCP boundary to Python SDK v2 and the stateless 2026-07-28 protocol while retaining compatibility negotiation for legacy MCP clients.
+- Move the optional Hound sidecar bridge to the SDK-v2 `httpx2`, two-stream transport, float-timeout, and snake_case result APIs.
 
 ## [3.4.1] - 2026-07-30
 

@@ -192,7 +192,7 @@ def test_hound_release_surfaces_preserve_attribution_and_separate_install():
     combined = "\n".join((readme, guide, release, changelog))
 
     assert "mcp>=2.0.0,<3" in dependencies
-    assert "httpx>=0.27.0,<1" in dependencies
+    assert "httpx2>=2.5.0" in dependencies
     assert "jsonschema>=4.20,<5" in dependencies
     assert "https://github.com/dondai1234/master-fetch" in combined
     assert "Bishesh Bhandari" in combined
