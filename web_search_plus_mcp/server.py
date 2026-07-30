@@ -2,7 +2,7 @@
 """
 web-search-plus-mcp: Multi-provider web search MCP server.
 
-MCP wrapper around the Web Search Plus v3 source-only runtime: 14 search
+MCP wrapper around the Web Search Plus v3 source-only runtime: 15 search
 providers, 9 extraction providers, evidence-rich responses, bounded extraction,
 guarded auto-routing, and opt-in research mode.
 """
@@ -25,7 +25,7 @@ from mcp.types import TextContent, Tool
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
-__version__ = "3.4.0"
+__version__ = "3.4.1"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 app = Server("web-search-plus", version=__version__)
@@ -328,7 +328,7 @@ async def list_tools() -> list[Tool]:
             name="web_search",
             description=(
                 "Source-only web search through the Web Search Plus v3 runtime. "
-                "Routes across 13 source-result providers and returns additive v3 evidence, "
+                "Routes across configured source-result providers and returns additive v3 evidence, "
                 "routing receipts, provider attempts, cache provenance, and typed errors."
             ),
             inputSchema={
@@ -350,7 +350,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "time_range": {"type": "string", "enum": ["hour", "day", "week", "month", "year"], "description": "Recency filter."},
                     "freshness": {"type": "string", "enum": ["day", "week", "month", "year"], "description": "Unified recency filter alias for providers that support freshness."},
-                    "search_type": {"type": "string", "enum": ["search", "news"], "default": "search", "description": "Search vertical. Serper serves news natively; other providers report unsupported metadata."},
+                    "search_type": {"type": "string", "enum": ["search", "news"], "default": "search", "description": "Search vertical. Serper and TinyFish serve news natively; other providers report unsupported metadata."},
                     "country": {"type": "string", "description": "ISO 3166-1 alpha-2 country override (e.g. at, fr)."},
                     "language": {"type": "string", "description": "ISO 639-1 language override (e.g. de), or auto via config defaults."},
                     "include_domains": {"type": "array", "items": {"type": "string"}, "description": "Restrict to these domains."},

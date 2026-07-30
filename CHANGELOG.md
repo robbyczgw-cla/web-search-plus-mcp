@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-07-30
+
+### Added
+
+- Add explicit-only TinyFish source search with BYOK credentials, a fixed official HTTPS origin, redirect refusal, opaque upstream errors, and fail-closed query, domain, URL, response, and aggregate-size bounds.
+- Add native Exa freshness support by converting unified day/week/month/year values into absolute UTC `startPublishedDate` and `endPublishedDate` bounds.
+
+### Fixed
+
+- Report explicit Exa `start_date` and `end_date` overrides in freshness metadata instead of generated bounds that were not sent upstream.
+
+### Security and documentation
+
+- Keep TinyFish outside automatic routing and fallback by default (`auto_allow=false`) and disclose its published Customer Data rights for analysis, training, fine-tuning, evaluation, and model improvement.
+- Preserve the stable two-tool MCP surface and 9-provider extraction surface while increasing source-search providers from 14 to 15.
+
+### Credits
+
+- Exa freshness support originated in [Web Search Plus #111](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/111) by [@kesku](https://github.com/kesku).
+- TinyFish provider integration originated in [Web Search Plus #115](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/115).
+
 ## [3.4.0] - 2026-07-28
 
 ### Added

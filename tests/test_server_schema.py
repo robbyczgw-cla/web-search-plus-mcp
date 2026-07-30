@@ -35,6 +35,7 @@ def test_web_search_schema_exposes_v1_source_providers_and_controls():
         "keenable",
         "hound",
         "octen",
+        "tinyfish",
     ]
     assert props["depth"]["enum"] == ["normal", "deep", "deep-reasoning"]
     assert props["mode"]["enum"] == ["normal", "research"]

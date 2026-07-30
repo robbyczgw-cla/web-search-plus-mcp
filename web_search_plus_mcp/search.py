@@ -977,7 +977,7 @@ Full docs: See README.md and SKILL.md
         default=argparse.SUPPRESS,
         help=(
             "Unified result vertical (search or news; case-insensitive). Providers with a "
-            "native news vertical (currently serper) serve it directly; all other providers "
+            "native news vertical (currently serper and tinyfish) serve it directly; all other providers "
             "run the normal search and result metadata reports search_type.applied=false"
         )
     )
@@ -992,7 +992,7 @@ Full docs: See README.md and SKILL.md
         help=(
             "Unified recency filter (day, week, month, year; case-insensitive). "
             "Applied natively where the provider supports it (serper, brave, querit, firecrawl, "
-            "keenable, you, and searxng); otherwise the search runs "
+            "keenable, you, searxng, exa, and tinyfish); otherwise the search runs "
             "unfiltered and result metadata reports freshness.applied=false"
         )
     )
@@ -1508,7 +1508,12 @@ def _finalize_research_result(
         result.setdefault("metadata", {})["freshness"] = {
             "requested": args.freshness,
             "providers": [
-                _providers.freshness_metadata(provider, args.freshness)
+                _providers.freshness_metadata(
+                    provider,
+                    args.freshness,
+                    start_date=getattr(args, "start_date", None),
+                    end_date=getattr(args, "end_date", None),
+                )
                 for provider in research_providers
             ],
         }
@@ -1878,7 +1883,10 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
 
         if args.freshness:
             result.setdefault("metadata", {})["freshness"] = _providers.freshness_metadata(
-                successful_provider or provider, args.freshness
+                successful_provider or provider,
+                args.freshness,
+                start_date=getattr(args, "start_date", None),
+                end_date=getattr(args, "end_date", None),
             )
 
         requested_search_type = getattr(args, "search_type", None)

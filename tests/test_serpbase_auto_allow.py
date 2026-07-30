@@ -87,12 +87,15 @@ def test_server_schema_exposes_guarded_provider_metadata():
         "keenable",
         "hound",
         "octen",
+        "tinyfish",
     ]
     assert server.SEARCH_PROVIDERS["serpbase"]["env"] == "SERPBASE_API_KEY"
     assert server.SEARCH_PROVIDERS["serpbase"]["auto_allow"] is False
     assert server.SEARCH_PROVIDERS["querit"]["auto_allow"] is False
     assert server.SEARCH_PROVIDERS["octen"]["env"] == "MONID_API_KEY"
     assert server.SEARCH_PROVIDERS["octen"]["auto_allow"] is False
+    assert server.SEARCH_PROVIDERS["tinyfish"]["env"] == "TINYFISH_API_KEY"
+    assert server.SEARCH_PROVIDERS["tinyfish"]["auto_allow"] is False
     assert server.ROUTING_PROVIDER_ORDER == [
         "you",
         "serper",
@@ -115,6 +118,7 @@ def test_server_schema_exposes_guarded_provider_metadata():
         "parallel": False,
         "hound": False,
         "octen": False,
+        "tinyfish": False,
     }
 
 
@@ -134,4 +138,5 @@ def test_server_normalizes_source_only_auto_allow_preferences():
         "parallel": False,
         "hound": False,
         "octen": False,
+        "tinyfish": False,
     }

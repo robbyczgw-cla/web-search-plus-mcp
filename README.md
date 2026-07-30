@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 3.4.0` brings the Web Search Plus v3.4.0 engine to MCP apps without changing its two tools.
+`web-search-plus-mcp 3.4.1` brings the Web Search Plus v3.4.1 engine to MCP apps without changing its two tools.
 
 ## 🚀 Quick Start
 
@@ -30,7 +30,7 @@ Add at least one search provider. You can start with one and add more later.
 
 ## ✨ What it does
 
-- **14 search providers** — use one service or let Web Search Plus choose
+- **15 search providers** — use one service or let Web Search Plus choose
 - **9 page-reading providers** — turn web pages into clean text
 - **Automatic fallback** — try another provider when the first one fails
 - **Real sources** — keep the links and text the result came from
@@ -39,7 +39,7 @@ Add at least one search provider. You can start with one and add more later.
 - **Simple setup tools** — check your config and create a starter setup
 - **Optional local search** — connect a separately installed Hound service
 
-Version 3.4 adds explicit-only Octen source search through Monid without changing automatic routing or the two-tool MCP surface. See the [3.4 release notes](docs/RELEASE_3_4.md) for setup, security boundaries, compatibility notes, and credits.
+Version 3.4.1 adds native Exa freshness bounds and explicit-only TinyFish source search without changing automatic routing or the two-tool MCP surface. See the [3.4.1 release notes](docs/RELEASE_3_4_1.md) for setup, security boundaries, compatibility notes, and credits.
 
 ## 🧭 Easier onboarding
 
@@ -138,10 +138,15 @@ You can also place a `.env` file next to the package/project with the same varia
 - **Keenable** — independent web index with search and extraction (`KEENABLE_API_KEY`, or opt-in keyless public tier; off by default)
 - **Hound** — explicit-only local keyless metasearch through a separately installed loopback MCP sidecar (`HOUND_MCP_URL`)
 - **Octen via Monid** — explicit-only source-result web search with native recency and domain filters (`MONID_API_KEY`, `auto_allow=false`)
+- **TinyFish** — explicit-only BYOK source-result search (`TINYFISH_API_KEY`, `auto_allow=false`)
 
 ### Octen source search via Monid
 
 The adapter executes Octen's `/search` endpoint through [Monid's documented HTTP API](https://docs.monid.ai/api/run.html) for ranked links and highlights. It explicitly disables full-content retrieval and does not call Octen's answer or Broad Search APIs. Configure `MONID_API_KEY` from [Monid](https://app.monid.ai/access/api-keys), then select `provider="octen"`; automatic routing remains unchanged unless you deliberately enable `auto_allow`. Access and billing use Monid's prepaid wallet; see Monid for current pricing and terms.
+
+### TinyFish source search
+
+Configure your own `TINYFISH_API_KEY` and select `provider="tinyfish"`; TinyFish remains outside automatic routing and fallback. Web Search Plus MCP does not provide, pool, proxy, or share TinyFish credentials. Review the [TinyFish Search API reference](https://docs.tinyfish.ai/search-api/reference) and [TinyFish Terms](https://www.tinyfish.ai/terms) before use: the published Terms grant broad rights over Customer Data, including queries, for analysis, training, fine-tuning, evaluation, and model improvement. This integration therefore treats TinyFish as high risk and makes no no-training claim.
 
 ## 📄 Extract Providers
 
@@ -229,7 +234,7 @@ Use for source discovery, current events, prices, weather, sports lineups, sched
 Parameters:
 
 - `query` — required search query
-- `provider` — `auto`, `serper`, `serpbase`, `brave`, `tavily`, `querit`, `linkup`, `exa`, `firecrawl`, `parallel`, `you`, `searxng`, `keenable`, `hound`, `octen`
+- `provider` — `auto`, `serper`, `serpbase`, `brave`, `tavily`, `querit`, `linkup`, `exa`, `firecrawl`, `parallel`, `you`, `searxng`, `keenable`, `hound`, `octen`, `tinyfish`
 - `count` — results to return, default `5`, max `20`
 - `depth` — Exa depth: `normal`, `deep`, `deep-reasoning`
 - `time_range` — `hour`, `day`, `week`, `month`, `year`

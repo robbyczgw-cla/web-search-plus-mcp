@@ -25,7 +25,7 @@
   "tools": [
     {
       "name": "web_search",
-      "description": "Source-only web search through the Web Search Plus v3 runtime. Routes across 13 source-result providers and returns additive v3 evidence, routing receipts, provider attempts, cache provenance, and typed errors.",
+      "description": "Source-only web search through the Web Search Plus v3 runtime. Routes across configured source-result providers and returns additive v3 evidence, routing receipts, provider attempts, cache provenance, and typed errors.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -50,7 +50,8 @@
               "searxng",
               "keenable",
               "hound",
-              "octen"
+              "octen",
+              "tinyfish"
             ],
             "description": "Force a specific provider, or use auto-routing.",
             "default": "auto"
@@ -100,7 +101,7 @@
               "news"
             ],
             "default": "search",
-            "description": "Search vertical. Serper serves news natively; other providers report unsupported metadata."
+            "description": "Search vertical. Serper and TinyFish serve news natively; other providers report unsupported metadata."
           },
           "country": {
             "type": "string",
@@ -237,7 +238,8 @@
       "searxng",
       "keenable",
       "hound",
-      "octen"
+      "octen",
+      "tinyfish"
     ],
     "extractProviders": [
       "tavily",
