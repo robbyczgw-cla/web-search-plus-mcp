@@ -350,7 +350,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "time_range": {"type": "string", "enum": ["hour", "day", "week", "month", "year"], "description": "Recency filter."},
                     "freshness": {"type": "string", "enum": ["day", "week", "month", "year"], "description": "Unified recency filter alias for providers that support freshness."},
-                    "search_type": {"type": "string", "enum": ["search", "news"], "default": "search", "description": "Search vertical. Serper serves news natively; other providers report unsupported metadata."},
+                    "search_type": {"type": "string", "enum": ["search", "news"], "default": "search", "description": "Search vertical. Serper and TinyFish serve news natively; other providers report unsupported metadata."},
                     "country": {"type": "string", "description": "ISO 3166-1 alpha-2 country override (e.g. at, fr)."},
                     "language": {"type": "string", "description": "ISO 639-1 language override (e.g. de), or auto via config defaults."},
                     "include_domains": {"type": "array", "items": {"type": "string"}, "description": "Restrict to these domains."},

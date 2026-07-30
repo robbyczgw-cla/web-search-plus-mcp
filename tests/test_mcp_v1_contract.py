@@ -12,6 +12,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
 
 import web_search_plus_mcp
 import web_search_plus_mcp.server as server
+import web_search_plus_mcp.search as search
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +35,15 @@ def test_readme_provider_enum_matches_live_schema():
     documented = re.findall(r"`([^`]+)`", provider_line)[1:]
     expected = tool("web_search").inputSchema["properties"]["provider"]["enum"]
     assert documented == expected
+
+
+def test_filter_help_and_live_schema_cover_exa_and_tinyfish():
+    help_text = search.build_parser(search._deepcopy_default_config()).format_help().lower()
+    search_type = tool("web_search").inputSchema["properties"]["search_type"]
+
+    assert "currently serper and tinyfish" in help_text
+    assert "searxng, exa, and tinyfish" in help_text
+    assert "serper and tinyfish serve news natively" in search_type["description"].lower()
 
 
 def canonical_response(*, capability="search", status="ok", results=None, error=None):

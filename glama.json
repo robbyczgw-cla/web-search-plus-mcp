@@ -101,7 +101,7 @@
               "news"
             ],
             "default": "search",
-            "description": "Search vertical. Serper serves news natively; other providers report unsupported metadata."
+            "description": "Search vertical. Serper and TinyFish serve news natively; other providers report unsupported metadata."
           },
           "country": {
             "type": "string",
