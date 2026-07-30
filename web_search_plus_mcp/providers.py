@@ -1,6 +1,7 @@
 """Provider implementations for Web Search Plus search and extraction backends."""
 
 from concurrent.futures import TimeoutError as FuturesTimeoutError
+from datetime import datetime, timedelta, timezone
 import json
 import re
 import socket
@@ -59,8 +60,7 @@ FRESHNESS_VALUES = ("day", "week", "month", "year")
 
 # Native recency formats per provider, derived from the request bodies the
 # provider functions in this module already send. Providers absent from this
-# table (tavily, exa, linkup, parallel, serpbase) have no relative-recency
-# parameter in their current API calls, so no native value is invented for them.
+# table have no relative-recency parameter in their current API calls.
 PROVIDER_FRESHNESS_FORMATS: Dict[str, Dict[str, str]] = {
     # search_serper: body["tbs"]
     "serper": {"day": "qdr:d", "week": "qdr:w", "month": "qdr:m", "year": "qdr:y"},
@@ -76,7 +76,28 @@ PROVIDER_FRESHNESS_FORMATS: Dict[str, Dict[str, str]] = {
     "you": {"day": "day", "week": "week", "month": "month", "year": "year"},
     # search_searxng: params["time_range"]
     "searxng": {"day": "day", "week": "week", "month": "month", "year": "year"},
+    # search_exa: accepts the unified value and converts it to absolute
+    # startPublishedDate/endPublishedDate bounds inside the provider function.
+    "exa": {"day": "day", "week": "week", "month": "month", "year": "year"},
 }
+
+_EXA_FRESHNESS_DAYS = {"day": 1, "week": 7, "month": 30, "year": 365}
+
+
+def exa_date_bounds(
+    freshness: Optional[str],
+    *,
+    now: Optional[datetime] = None,
+) -> tuple[Optional[str], Optional[str]]:
+    """Convert unified freshness into Exa's absolute publication-date bounds."""
+    if not freshness:
+        return None, None
+    end = now or datetime.now(timezone.utc)
+    start = end - timedelta(days=_EXA_FRESHNESS_DAYS[freshness])
+    return (
+        start.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        end.isoformat(timespec="seconds").replace("+00:00", "Z"),
+    )
 
 
 def normalize_freshness(value: Optional[str]) -> Optional[str]:
@@ -134,8 +155,27 @@ def map_freshness_for_provider(provider: str, freshness: Optional[str]) -> Optio
     return None
 
 
-def freshness_metadata(provider: str, requested: str) -> Dict[str, Any]:
+def freshness_metadata(
+    provider: str,
+    requested: str,
+    *,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> Dict[str, Any]:
     """Describe whether a provider applied the requested freshness filter."""
+    if provider == "exa" and provider_supports_freshness(provider):
+        generated_start, generated_end = exa_date_bounds(requested)
+        start = start_date or generated_start
+        end = end_date or generated_end
+        return {
+            "requested": requested,
+            "applied": True,
+            "provider": provider,
+            "native_value": {
+                "startPublishedDate": start,
+                "endPublishedDate": end,
+            },
+        }
     native = map_freshness_for_provider(provider, requested)
     if native is not None:
         return {"requested": requested, "applied": True, "provider": provider, "native_value": native}
@@ -1068,11 +1108,16 @@ def search_exa(
     include_domains: Optional[List[str]] = None,
     exclude_domains: Optional[List[str]] = None,
     text_verbosity: str = "standard",
+    freshness: Optional[str] = None,
 ) -> dict:
     """Search Exa's source-result endpoint; synthesis modes are charter-banned."""
     if exa_depth in {"deep", "deep-reasoning"}:
         raise ValueError("exa deep modes are not source-only")
     validate_provider_mode("exa", "search")
+
+    freshness_start, freshness_end = exa_date_bounds(freshness)
+    start_date = start_date or freshness_start
+    end_date = end_date or freshness_end
 
     if similar_url:
         # findSimilar does not support deep search types
