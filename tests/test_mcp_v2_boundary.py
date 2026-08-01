@@ -33,12 +33,12 @@ def test_sdk_v2_negotiates_modern_and_legacy_stdio_eras():
 
     assert modern == {
         "protocol": "2026-07-28",
-        "server_version": "3.4.0",
+        "server_version": "3.5.0",
         "tools": ["web_search", "web_extract"],
     }
     assert legacy == {
         "protocol": "2025-11-25",
-        "server_version": "3.4.0",
+        "server_version": "3.5.0",
         "tools": ["web_search", "web_extract"],
     }
 
