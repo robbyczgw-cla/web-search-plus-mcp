@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 3.4.1` brings the Web Search Plus v3.4.1 engine to MCP apps without changing its two tools.
+`web-search-plus-mcp 3.5.0` brings the Web Search Plus v3.5.0 engine to MCP apps without changing its two tools.
 
 ## 🚀 Quick Start
 
@@ -39,7 +39,7 @@ Add at least one search provider. You can start with one and add more later.
 - **Simple setup tools** — check your config and create a starter setup
 - **Optional local search** — connect a separately installed Hound service
 
-Version 3.4.1 adds native Exa freshness bounds and explicit-only TinyFish source search without changing automatic routing or the two-tool MCP surface. See the [3.4.1 release notes](docs/RELEASE_3_4_1.md) for setup, security boundaries, compatibility notes, and credits.
+Version 3.5.0 migrates the stdio boundary to MCP Python SDK v2, negotiates the stateless 2026-07-28 protocol for modern clients while retaining 2025-11-25 compatibility, and ports the optional Hound bridge. See the [3.5.0 release notes](docs/RELEASE_3_5_0.md) for setup, compatibility, security boundaries, and migration details.
 
 ## 🧭 Easier onboarding
 

@@ -2,11 +2,14 @@
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-08-01
+
 ### Changed
 
-- Advance the maintained MCP Python SDK v1 dependency floor from 1.26 to 1.29 as an independently mergeable compatibility baseline before the v2 migration.
-- Migrate the stdio MCP boundary to Python SDK v2 and the stateless 2026-07-28 protocol while retaining compatibility negotiation for legacy MCP clients.
-- Move the optional Hound sidecar bridge to the SDK-v2 `httpx2`, two-stream transport, float-timeout, and snake_case result APIs.
+- Require the MCP Python SDK v2 line (`mcp>=2.0.0,<3`) and migrate the low-level stdio boundary to the stateless `2026-07-28` protocol while retaining `2025-11-25` legacy handshake compatibility.
+- Validate tool arguments at the SDK boundary and sanitize unknown-tool, invalid-argument, and unexpected-execution failures.
+- Port the optional Hound sidecar bridge to the SDK-v2 `httpx2`, two-stream transport, float-timeout, and snake_case result APIs.
+- Keep the stable `web_search` and `web_extract` tool surface and the package stdio-only.
 
 ## [3.4.1] - 2026-07-30
 

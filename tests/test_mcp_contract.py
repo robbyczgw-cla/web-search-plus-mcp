@@ -33,13 +33,13 @@ def test_readme_provider_enum_matches_live_schema():
         line for line in readme.splitlines() if line.startswith("- `provider` —")
     )
     documented = re.findall(r"`([^`]+)`", provider_line)[1:]
-    expected = tool("web_search").inputSchema["properties"]["provider"]["enum"]
+    expected = tool("web_search").input_schema["properties"]["provider"]["enum"]
     assert documented == expected
 
 
 def test_filter_help_and_live_schema_cover_exa_and_tinyfish():
     help_text = search.build_parser(search._deepcopy_default_config()).format_help().lower()
-    search_type = tool("web_search").inputSchema["properties"]["search_type"]
+    search_type = tool("web_search").input_schema["properties"]["search_type"]
 
     assert "currently serper and tinyfish" in help_text
     assert "searxng, exa, and tinyfish" in help_text
@@ -88,17 +88,17 @@ def canonical_response(*, capability="search", status="ok", results=None, error=
     }
 
 
-def test_version_3_4_1_is_consistent_across_public_surfaces():
+def test_version_3_5_0_is_consistent_across_public_surfaces():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert project["project"]["version"] == "3.4.1"
+    assert project["project"]["version"] == "3.5.0"
     assert project["project"]["scripts"]["web-search-plus-mcp"] == (
         "web_search_plus_mcp.server:cli_main"
     )
-    assert web_search_plus_mcp.__version__ == "3.4.1"
-    assert server.__version__ == "3.4.1"
+    assert web_search_plus_mcp.__version__ == "3.5.0"
+    assert server.__version__ == "3.5.0"
     initialization = server.app.create_initialization_options()
     assert initialization.server_name == "web-search-plus"
-    assert initialization.server_version == "3.4.1"
+    assert initialization.server_version == "3.5.0"
 
 
 def test_ci_ruff_policy_is_repo_local_and_pinned():
@@ -148,8 +148,8 @@ def test_source_only_provider_surface_is_15_search_and_9_extract():
 
 def test_readme_describes_current_source_only_release_surface():
     readme = (ROOT / "README.md").read_text()
-    assert "`web-search-plus-mcp 3.4.1`" in readme
-    assert "Web Search Plus v3.4.1" in readme
+    assert "`web-search-plus-mcp 3.5.0`" in readme
+    assert "Web Search Plus v3.5.0" in readme
     assert "**15 search providers" in readme
 
     provider_section = readme.split("## 🔎 Search Providers", 1)[1].split(
