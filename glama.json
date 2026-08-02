@@ -4,7 +4,7 @@
     "robbyczgw-cla"
   ],
   "name": "web-search-plus-mcp",
-  "description": "Source-only multi-provider web search and bounded extraction with registry-backed routing, quality reports, and operator onboarding.",
+  "description": "Source-only multi-provider web search and bounded extraction for MCP SDK v2, with dual-era stdio compatibility, registry-backed routing, quality reports, and operator onboarding.",
   "repository": "https://github.com/robbyczgw-cla/web-search-plus-mcp",
   "homepage": "https://github.com/robbyczgw-cla/web-search-plus-mcp",
   "license": "MIT",
