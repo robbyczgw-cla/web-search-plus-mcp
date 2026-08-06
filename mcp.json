@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "web-search-plus": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "web-search-plus-mcp==3.6.0",
+        "web-search-plus-mcp"
+      ]
+    }
+  }
+}

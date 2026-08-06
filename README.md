@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 3.5.0` brings the Web Search Plus v3.5.0 engine to MCP apps without changing its two tools.
+`web-search-plus-mcp 3.6.0` adds portable Agent Plugins 1.0 packaging while keeping the stable MCP tools and the Web Search Plus v3.5.0 engine surface.
 
 ## 🚀 Quick Start
 
@@ -39,7 +39,7 @@ Add at least one search provider. You can start with one and add more later.
 - **Simple setup tools** — check your config and create a starter setup
 - **Optional local search** — connect a separately installed Hound service
 
-Version 3.5.0 migrates the stdio boundary to MCP Python SDK v2, negotiates the stateless 2026-07-28 protocol for modern clients while retaining 2025-11-25 compatibility, and ports the optional Hound bridge. See the [3.5.0 release notes](docs/RELEASE_3_5_0.md) for setup, compatibility, security boundaries, and migration details.
+Version 3.6.0 adds root-level Agent Plugins 1.0 manifests with an exact PyPI-pinned `uvx` launcher. The MCP SDK-v2 migration and optional Hound bridge remain documented in the [3.5.0 release notes](docs/RELEASE_3_5_0.md); see the [3.6.0 release notes](docs/RELEASE_3_6_0.md) for the portable client setup.
 
 ## 🧭 Easier onboarding
 
@@ -64,6 +64,13 @@ web-search-plus-mcp setup --preset starter
 
 The recommended starter preset is **You.com + Serper + Linkup**. It gives a practical source-only baseline for fast current search, Google-style discovery, and extraction workflows without wiring every provider on day one.
 
+## 🧩 Agent Plugins package
+
+This repository also contains a portable [Agent Plugins 1.0](https://agent-plugins.org/) package for clients that support the standard. The root [`plugin.json`](plugin.json) describes the plugin and [`mcp.json`](mcp.json) connects the MCP server through the published PyPI package.
+
+The portable configuration uses `uvx` with an exact `web-search-plus-mcp` version pin. Install [uv](https://docs.astral.sh/uv/) first, then load this repository as an Agent Plugin in a compatible client such as VS Code, Cursor, GitHub Copilot, ChatGPT/Codex, or Kiro. Provider credentials are deliberately not stored in the plugin manifest; provide the required environment variables through the client or process environment.
+
+The Agent Plugins format defines packaging and loading, not a central marketplace. Client-specific discovery and distribution remain outside the portable package contract.
 
 `status` returns a non-zero exit code when no search provider is configured, which makes it usable as a config check in scripts.
 

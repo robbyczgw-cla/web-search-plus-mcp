@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-08-06
+
+### Added
+
+- Add root-level Agent Plugins 1.0 manifests for portable client discovery through the published `web-search-plus-mcp` package.
+- Add an exact-version `uvx` stdio launcher that keeps PyPI as the runtime source of truth.
+
+### Security and compatibility
+
+- Keep provider credentials outside both manifests; clients supply them through the process environment.
+- Preserve the stable `web_search` and `web_extract` MCP tools and existing SDK-v2 stdio compatibility.
+
+### Verification
+
+- Validate both manifests against the canonical Agent Plugins schemas and exercise the exact `mcp.json` command without provider requests.
+- Run the full package tests, lint, compilation, source/wheel build, and metadata checks.
+
 ## [3.5.0] - 2026-08-01
 
 ### Changed
