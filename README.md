@@ -64,6 +64,13 @@ web-search-plus-mcp setup --preset starter
 
 The recommended starter preset is **You.com + Serper + Linkup**. It gives a practical source-only baseline for fast current search, Google-style discovery, and extraction workflows without wiring every provider on day one.
 
+## 🧩 Agent Plugins package
+
+This repository also contains a portable [Agent Plugins 1.0](https://agent-plugins.org/) package for clients that support the standard. The root [`plugin.json`](plugin.json) describes the plugin and [`mcp.json`](mcp.json) connects the MCP server through the published PyPI package.
+
+The portable configuration uses `uvx` with an exact `web-search-plus-mcp` version pin. Install [uv](https://docs.astral.sh/uv/) first, then load this repository as an Agent Plugin in a compatible client such as VS Code, Cursor, GitHub Copilot, ChatGPT/Codex, or Kiro. Provider credentials are deliberately not stored in the plugin manifest; provide the required environment variables through the client or process environment.
+
+The Agent Plugins format defines packaging and loading, not a central marketplace. Client-specific discovery and distribution remain outside the portable package contract.
 
 `status` returns a non-zero exit code when no search provider is configured, which makes it usable as a config check in scripts.
 

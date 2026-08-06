@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add Agent Plugins 1.0 root manifests for portable client discovery through the published `web-search-plus-mcp` package, with exact version pinning and no credentials in the plugin configuration.
+
 ## [3.5.0] - 2026-08-01
 
 ### Changed

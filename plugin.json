@@ -1,0 +1,16 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "web-search-plus",
+  "version": "3.5.0",
+  "description": "Source-only multi-provider web search and bounded web extraction for agent clients.",
+  "homepage": "https://websearchplus.xyz",
+  "repository": "https://github.com/robbyczgw-cla/web-search-plus-mcp",
+  "license": "MIT",
+  "keywords": [
+    "web-search",
+    "web-extraction",
+    "mcp",
+    "multi-provider",
+    "source-only"
+  ]
+}
