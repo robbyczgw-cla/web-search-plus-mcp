@@ -88,17 +88,17 @@ def canonical_response(*, capability="search", status="ok", results=None, error=
     }
 
 
-def test_version_3_6_0_is_consistent_across_public_surfaces():
+def test_version_4_0_0_is_consistent_across_public_surfaces():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert project["project"]["version"] == "3.6.0"
+    assert project["project"]["version"] == "4.0.0"
     assert project["project"]["scripts"]["web-search-plus-mcp"] == (
         "web_search_plus_mcp.server:cli_main"
     )
-    assert web_search_plus_mcp.__version__ == "3.6.0"
-    assert server.__version__ == "3.6.0"
+    assert web_search_plus_mcp.__version__ == "4.0.0"
+    assert server.__version__ == "4.0.0"
     initialization = server.app.create_initialization_options()
     assert initialization.server_name == "web-search-plus"
-    assert initialization.server_version == "3.6.0"
+    assert initialization.server_version == "4.0.0"
 
 
 def test_ci_ruff_policy_is_repo_local_and_pinned():
@@ -112,14 +112,15 @@ def test_ci_ruff_policy_is_repo_local_and_pinned():
     assert project["project"]["urls"]["Homepage"] == "https://websearchplus.xyz"
 
 
-def test_wheel_config_includes_v3_contracts_and_migration_guide():
+def test_wheel_config_includes_v4_contracts_and_migration_guide():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
     forced = project["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
     assert forced["schemas"] == "web_search_plus_mcp/schemas"
     assert forced["docs/MIGRATION_1_0.md"] == (
         "web_search_plus_mcp/docs/MIGRATION_1_0.md"
     )
-    assert forced["docs/HOUND.md"] == "web_search_plus_mcp/docs/HOUND.md"
+    assert forced["docs/DONSETCH.md"] == "web_search_plus_mcp/docs/DONSETCH.md"
+    assert forced["docs/RELEASE_4_0_0.md"] == "web_search_plus_mcp/docs/RELEASE_4_0_0.md"
     assert forced["docs/RELEASE_1_2.md"] == (
         "web_search_plus_mcp/docs/RELEASE_1_2.md"
     )
@@ -148,8 +149,8 @@ def test_source_only_provider_surface_is_15_search_and_9_extract():
 
 def test_readme_describes_current_source_only_release_surface():
     readme = (ROOT / "README.md").read_text()
-    assert "`web-search-plus-mcp 3.6.0`" in readme
-    assert "Web Search Plus v3.5.0" in readme
+    assert "`web-search-plus-mcp 4.0.0`" in readme
+    assert "DonSeTch 2.1.0" in readme
     assert "**15 search providers" in readme
 
     provider_section = readme.split("## 🔎 Search Providers", 1)[1].split(
@@ -182,24 +183,24 @@ def test_readme_starts_with_plain_language_and_quick_start():
     assert "better web search and clean page reading" in intro
 
 
-def test_hound_release_surfaces_preserve_attribution_and_separate_install():
+def test_donsetch_release_surfaces_preserve_attribution_and_separate_install():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
     dependencies = set(project["project"]["dependencies"])
     readme = (ROOT / "README.md").read_text()
-    guide = (ROOT / "docs/HOUND.md").read_text()
-    release = (ROOT / "docs/RELEASE_3_3.md").read_text()
-    changelog = (ROOT / "CHANGELOG.md").read_text()
-    combined = "\n".join((readme, guide, release, changelog))
+    guide = (ROOT / "docs/DONSETCH.md").read_text()
+    release = (ROOT / "docs/RELEASE_4_0_0.md").read_text()
+    current = "\n".join((readme, guide, release))
 
     assert "mcp>=2.0.0,<3" in dependencies
     assert "httpx2>=2.5.0" in dependencies
     assert "jsonschema>=4.20,<5" in dependencies
-    assert "https://github.com/dondai1234/master-fetch" in combined
-    assert "Bishesh Bhandari" in combined
-    assert "MIT-licensed" in combined
-    assert "separately installed" in combined
-    assert "not bundled" in combined
-    assert "https://github.com/dondai1234/hound" not in combined
+    assert "https://github.com/dondai44423/donsetch" in current
+    assert "AGPL-3.0-only" in current
+    assert "DONSETCH_BIN" in current
+    assert "separately installed" in current
+    assert "not bundled" in current
+    assert "https://github.com/dondai1234/master-fetch" not in current
+    assert "docs/HOUND.md" not in current
 
 
 def test_glama_manifest_matches_live_tool_schemas():
@@ -354,8 +355,8 @@ def test_cache_hit_projection_preserves_origin_provider_without_current_attempts
         "candidate_order": [],
         "cache_origin": {
             "execution_id": "exec_origin",
-            "selected_provider": "hound",
-            "candidate_order": ["hound"],
+            "selected_provider": "donsetch",
+            "candidate_order": ["donsetch"],
         },
     }
     canonical["provider_attempts"] = []
@@ -366,7 +367,7 @@ def test_cache_hit_projection_preserves_origin_provider_without_current_attempts
         query="cached query",
     )
 
-    assert projected["provider"] == "hound"
+    assert projected["provider"] == "donsetch"
 
 
 def test_extract_cache_hit_projection_preserves_body_and_cache_provenance(monkeypatch):
@@ -571,3 +572,40 @@ def test_subprocess_timeout_is_typed_retryable_and_secret_free(monkeypatch):
         "provider": None,
     }
     assert secret not in json.dumps(payload)
+
+
+def test_donsetch_subprocess_budget_covers_inner_stdio_timeout(monkeypatch):
+    calls = []
+
+    async def capture_run(_cmd, **kwargs):
+        calls.append(kwargs["timeout"])
+        return []
+
+    monkeypatch.setattr(server, "_run_cmd", capture_run)
+    run(server.call_tool("web_search", {
+        "query": "donsetch budget",
+        "provider": "donsetch",
+        "mode": "research",
+        "research_time_budget": 75,
+    }))
+    run(server.call_tool("web_extract", {
+        "urls": ["https://example.com"],
+        "provider": "donsetch",
+    }))
+    run(server.call_tool("web_extract", {
+        "urls": ["https://example.com", "https://example.org"],
+        "provider": "donsetch",
+    }))
+    monkeypatch.setenv("DONSETCH_BIN", "/bin/true")
+    run(server.call_tool("web_search", {
+        "query": "donsetch auto budget",
+        "provider": "auto",
+    }))
+
+    assert calls == [
+        server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS,
+        server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS,
+        server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS * 2,
+        server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS,
+    ]
+    assert calls[0] > 180

@@ -86,7 +86,7 @@ Read the registry, adapter protocol, and SDK examples before adding a provider. 
 
 External SDK providers belong under `web_search_plus_mcp/providers.d` and must satisfy the fail-closed discovery and conformance gates. Start with the shipped example fixture and its tests rather than bypassing the registry.
 
-A separately installed sidecar remains a separate upstream project. Preserve license, authorship, security boundaries, and visible attribution. Hound-specific constraints are documented in [`docs/HOUND.md`](docs/HOUND.md).
+A separately installed provider remains a separate upstream project. Preserve license, authorship, security boundaries, and visible attribution. DonSeTch-specific constraints are documented in [`docs/DONSETCH.md`](docs/DONSETCH.md).
 
 ## MCP and compatibility changes
 

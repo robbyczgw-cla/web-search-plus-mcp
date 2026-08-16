@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-08-16
+
+### Removed
+
+- Remove the optional Hound provider and `HOUND_MCP_URL` configuration.
+
+### Added
+
+- Add DonSeTch 2.1.0 as a separately installed stdio Search/Fetch provider via `DONSETCH_BIN`.
+- Keep DonSeTch explicit-only by default and document its AGPL-3.0-only separate-install boundary.
+- Normalize DonSeTch initialization, Search, Fetch, and structured errors into the existing MCP envelopes.
+
+### Verification
+
+- Exercise the adapter with DonSeTch 2.1.0 for stdio initialization, Search, Fetch, and structured error handling.
+- Keep browser and anti-bot behavior explicitly environment-dependent.
+
 ## [3.6.0] - 2026-08-06
 
 ### Added

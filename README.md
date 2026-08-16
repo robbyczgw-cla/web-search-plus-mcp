@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 3.6.0` adds portable Agent Plugins 1.0 packaging while keeping the stable MCP tools and the Web Search Plus v3.5.0 engine surface.
+`web-search-plus-mcp 4.0.0` removes the optional Hound provider and adds DonSeTch 2.1.0 as a separately installed stdio provider while keeping the stable source-only MCP tools and routing surface.
 
 ## 🚀 Quick Start
 
@@ -37,9 +37,9 @@ Add at least one search provider. You can start with one and add more later.
 - **Research mode** — search several providers for broader questions
 - **Optional details** — see which provider ran and how the result was found
 - **Simple setup tools** — check your config and create a starter setup
-- **Optional local search** — connect a separately installed Hound service
+- **Optional local search** — connect a separately installed DonSeTch executable through the WSP provider adapter
 
-Version 3.6.0 adds root-level Agent Plugins 1.0 manifests with an exact PyPI-pinned `uvx` launcher. The MCP SDK-v2 migration and optional Hound bridge remain documented in the [3.5.0 release notes](docs/RELEASE_3_5_0.md); see the [3.6.0 release notes](docs/RELEASE_3_6_0.md) for the portable client setup.
+Version 4.0.0 removes the optional Hound provider and adds the separately installed DonSeTch 2.1.0 stdio adapter. See the [4.0.0 release notes](docs/RELEASE_4_0_0.md) and [DonSeTch guide](docs/DONSETCH.md) for migration, licensing, and runtime boundaries.
 
 ## 🧭 Easier onboarding
 
@@ -152,7 +152,7 @@ The package exposes stdio only; the specification's Streamable HTTP session remo
 - **SerpBase** — explicit-only Google SERP API (`SERPBASE_API_KEY`, `auto_allow=false`)
 - **Querit** — explicit-only multilingual, real-time AI search (`QUERIT_API_KEY`, `auto_allow=false`)
 - **Keenable** — independent web index with search and extraction (`KEENABLE_API_KEY`, or opt-in keyless public tier; off by default)
-- **Hound** — explicit-only local keyless metasearch through a separately installed loopback MCP sidecar (`HOUND_MCP_URL`)
+- **DonSeTch** — explicit-only local Search/Fetch provider through a separately installed stdio executable (`DONSETCH_BIN`)
 - **Octen via Monid** — explicit-only source-result web search with native recency and domain filters (`MONID_API_KEY`, `auto_allow=false`)
 - **TinyFish** — explicit-only BYOK source-result search (`TINYFISH_API_KEY`, `auto_allow=false`)
 
@@ -174,7 +174,7 @@ Configure your own `TINYFISH_API_KEY` and select `provider="tinyfish"`; TinyFish
 - **You.com** — LLM-ready snippets/content where available
 - **Keenable** — keyed or explicitly opted-in public extraction
 - **Serper** — fast webpage scraper extraction
-- **Hound** — explicit-only local fetch, browser rendering, PDF, and OCR fallback through MCP
+- **DonSeTch** — explicit-only local Markdown fetch through a separately installed stdio executable
 
 `auto_routing.extract_provider_priority` can override the auto-extraction order without changing search routing. Explicit provider calls still try the requested provider first.
 
@@ -194,21 +194,21 @@ KEENABLE_ALLOW_PUBLIC=1
 
 Use an API key for private or production use. The public endpoint sends queries and fetched URLs to a shared unauthenticated service and remains near the tail of the public default fallback order unless the operator configures a different extraction priority.
 
-### Hound local keyless sidecar
+### DonSeTch local provider
 
-[Hound / Master Fetch](https://github.com/dondai1234/master-fetch) is an
-independent MIT-licensed project created and maintained by
-[Bishesh Bhandari (`dondai1234`)](https://github.com/dondai1234). It is not
-bundled with this package. Web Search Plus connects to a separately installed
-Hound service through an uncredentialed loopback-only MCP endpoint.
+[DonSeTch](https://github.com/dondai44423/donsetch) 2.1.0 is an independent
+AGPL-3.0-only project. It is not bundled with this package. Web Search Plus
+starts the separately installed executable as a stdio MCP process using
+`DONSETCH_BIN` and projects its `web_search` and `web_fetch` results into the
+normal source-only envelopes.
 
-Hound avoids commercial search API credentials, but uses local resources and
-public network egress; engines may throttle or change behavior, browser-backed
-fetches can be slow, and no SLA is implied. Hound therefore remains
-`explicit-only` unless the operator enables `auto_allow`.
+DonSeTch remains `explicit-only` unless the operator enables `auto_allow`. The
+adapter was tested for stdio initialization, Search, Fetch, and structured
+errors; browser-based retrieval depends on the host environment and is not
+guaranteed.
 
-See the [Hound setup and security guide](docs/HOUND.md) for installation,
-configuration, trade-offs, and tested versions.
+See the [DonSeTch setup and security guide](docs/DONSETCH.md) for installation,
+configuration, licensing, migration, and tested boundaries.
 
 ### Private/internal extraction target guard
 
@@ -250,7 +250,7 @@ Use for source discovery, current events, prices, weather, sports lineups, sched
 Parameters:
 
 - `query` — required search query
-- `provider` — `auto`, `serper`, `serpbase`, `brave`, `tavily`, `querit`, `linkup`, `exa`, `firecrawl`, `parallel`, `you`, `searxng`, `keenable`, `hound`, `octen`, `tinyfish`
+- `provider` — `auto`, `serper`, `serpbase`, `brave`, `tavily`, `querit`, `linkup`, `exa`, `firecrawl`, `parallel`, `you`, `searxng`, `keenable`, `donsetch`, `octen`, `tinyfish`
 - `count` — results to return, default `5`, max `20`
 - `depth` — Exa depth: `normal`, `deep`, `deep-reasoning`
 - `time_range` — `hour`, `day`, `week`, `month`, `year`
@@ -278,7 +278,7 @@ Example MCP arguments:
 Parameters:
 
 - `urls` — required list of URLs
-- `provider` — `auto`, `tavily`, `exa`, `linkup`, `parallel`, `firecrawl`, `you`, `keenable`, `serper`, `hound`
+- `provider` — `auto`, `tavily`, `exa`, `linkup`, `parallel`, `firecrawl`, `you`, `keenable`, `serper`, `donsetch`
 - `format` — `markdown` or `html`
 - `include_images` — include image metadata when supported
 - `include_raw_html` — include raw HTML when supported
@@ -310,8 +310,8 @@ Guarded providers can still be called explicitly. To let one participate in `pro
 ```bash
 web-search-plus-mcp config set-auto-allow parallel on
 web-search-plus-mcp config set-auto-allow parallel off
-web-search-plus-mcp config set-auto-allow hound on
-web-search-plus-mcp config set-auto-allow hound off
+web-search-plus-mcp config set-auto-allow donsetch on
+web-search-plus-mcp config set-auto-allow donsetch off
 ```
 
 ## Development

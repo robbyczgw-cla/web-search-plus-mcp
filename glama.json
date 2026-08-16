@@ -49,7 +49,7 @@
               "you",
               "searxng",
               "keenable",
-              "hound",
+              "donsetch",
               "octen",
               "tinyfish"
             ],
@@ -177,7 +177,7 @@
               "you",
               "keenable",
               "serper",
-              "hound"
+              "donsetch"
             ],
             "default": "auto"
           },
@@ -237,7 +237,7 @@
       "you",
       "searxng",
       "keenable",
-      "hound",
+      "donsetch",
       "octen",
       "tinyfish"
     ],
@@ -250,7 +250,7 @@
       "you",
       "keenable",
       "serper",
-      "hound"
+      "donsetch"
     ]
   }
 }

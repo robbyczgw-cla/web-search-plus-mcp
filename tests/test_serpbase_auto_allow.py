@@ -85,7 +85,7 @@ def test_server_schema_exposes_guarded_provider_metadata():
         "you",
         "searxng",
         "keenable",
-        "hound",
+        "donsetch",
         "octen",
         "tinyfish",
     ]
@@ -116,7 +116,7 @@ def test_server_schema_exposes_guarded_provider_metadata():
         "serpbase": False,
         "querit": False,
         "parallel": False,
-        "hound": False,
+        "donsetch": False,
         "octen": False,
         "tinyfish": False,
     }
@@ -136,7 +136,7 @@ def test_server_normalizes_source_only_auto_allow_preferences():
         "serpbase": True,
         "querit": False,
         "parallel": False,
-        "hound": False,
+        "donsetch": False,
         "octen": False,
         "tinyfish": False,
     }

@@ -102,7 +102,7 @@ def test_server_parallel_metadata_and_default_provider_append():
     }
     assert server.EXTRACT_PROVIDERS == [
         "tavily", "exa", "linkup", "parallel", "firecrawl",
-        "you", "keenable", "serper", "hound",
+        "you", "keenable", "serper", "donsetch",
     ]
     assert server._default_behavior_config()["auto_routing"]["auto_allow"]["parallel"] is False
 

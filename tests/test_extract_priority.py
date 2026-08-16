@@ -13,7 +13,7 @@ DEFAULT_EXTRACT_ORDER = [
     "you",
     "keenable",
     "serper",
-    "hound",
+    "donsetch",
 ]
 
 
@@ -37,7 +37,7 @@ def test_partial_extract_priority_is_completed_in_registry_order():
         "firecrawl",
         "you",
         "keenable",
-        "hound",
+        "donsetch",
     ]
 
 
