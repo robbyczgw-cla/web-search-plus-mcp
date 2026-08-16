@@ -6,7 +6,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "web-search-plus-mcp==3.6.0",
+        "web-search-plus-mcp==4.0.0",
         "web-search-plus-mcp"
       ]
     }

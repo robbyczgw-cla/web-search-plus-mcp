@@ -35,7 +35,7 @@ from mcp.types import (
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
-__version__ = "3.6.0"
+__version__ = "4.0.0"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 
@@ -62,6 +62,7 @@ PROVIDER_ALIASES = {"kilo_perplexity": "kilo-perplexity"}
 RETIRED_ANSWER_PROVIDERS = {"perplexity", "kilo-perplexity"}
 ROUTING_PROVIDER_ORDER = list(DEFAULT_PROVIDER_PRIORITY)
 DEFAULT_SEARCH_SUBPROCESS_TIMEOUT_SECONDS = 75
+DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS = 195
 RESEARCH_SUBPROCESS_GRACE_SECONDS = 10
 
 
@@ -80,6 +81,12 @@ def _research_subprocess_timeout(value: Any) -> int:
         budget = 55.0
     budget = min(75.0, max(1.0, budget))
     return math.ceil(budget) + RESEARCH_SUBPROCESS_GRACE_SECONDS
+
+
+def _donsetch_outer_budget_applies(provider: str) -> bool:
+    return provider == "donsetch" or (
+        provider == "auto" and bool(os.environ.get("DONSETCH_BIN"))
+    )
 
 
 def _valid_provider(provider: str) -> bool:
@@ -667,9 +674,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return await _run_cmd(
             cmd,
             timeout=(
-                _research_subprocess_timeout(research_time_budget)
-                if mode == "research"
-                else DEFAULT_SEARCH_SUBPROCESS_TIMEOUT_SECONDS
+                DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS
+                if _donsetch_outer_budget_applies(provider)
+                else (
+                    _research_subprocess_timeout(research_time_budget)
+                    if mode == "research"
+                    else DEFAULT_SEARCH_SUBPROCESS_TIMEOUT_SECONDS
+                )
             ),
             capability="search",
             query=query,
@@ -702,7 +713,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if _as_bool(arguments.get("spans", False)):
             cmd.append("--spans")
         _append_optional(cmd, "--spans-query", arguments.get("spans_query"))
-        return await _run_cmd(cmd, timeout=90, capability="extract", urls=urls)
+        provider = _canonical_provider(arguments.get("provider", "auto"))
+        timeout = (
+            DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS * max(1, len(urls))
+            if _donsetch_outer_budget_applies(provider)
+            else 90
+        )
+        return await _run_cmd(cmd, timeout=timeout, capability="extract", urls=urls)
 
     raise ValueError(f"Unknown tool: {name}")
 

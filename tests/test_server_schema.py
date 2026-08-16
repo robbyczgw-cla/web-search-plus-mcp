@@ -33,7 +33,7 @@ def test_web_search_schema_exposes_v1_source_providers_and_controls():
         "you",
         "searxng",
         "keenable",
-        "hound",
+        "donsetch",
         "octen",
         "tinyfish",
     ]
@@ -50,7 +50,7 @@ def test_web_extract_tool_is_exposed_with_tavily_first_capable_schema():
     assert tool.input_schema["required"] == ["urls"]
     assert props["provider"]["enum"] == [
         "auto", "tavily", "exa", "linkup", "parallel", "firecrawl",
-        "you", "keenable", "serper", "hound",
+        "you", "keenable", "serper", "donsetch",
     ]
     assert props["render_js"]["type"] == "boolean"
     assert props["spans"]["type"] == "boolean"
@@ -274,10 +274,10 @@ def test_web_extract_call_maps_mcp_args_to_cli(monkeypatch):
     assert result[0].text == '{"results": []}'
 
 
-def test_extract_provider_registry_order_includes_hound_last():
+def test_extract_provider_registry_order_includes_donsetch_last():
     expected = [
         "tavily", "exa", "linkup", "parallel", "firecrawl",
-        "you", "keenable", "serper", "hound",
+        "you", "keenable", "serper", "donsetch",
     ]
     assert search.EXTRACT_PROVIDER_PRIORITY == expected
     assert server.EXTRACT_PROVIDERS == expected
