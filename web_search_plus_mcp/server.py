@@ -35,7 +35,7 @@ from mcp.types import (
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
-__version__ = "4.0.0"
+__version__ = "4.0.1"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 
@@ -806,6 +806,15 @@ def _status_payload() -> dict[str, Any]:
     }
     if config_warning:
         payload["config_warning"] = config_warning
+    spec = PROVIDER_SPECS.get("donsetch")
+    inspect = getattr(getattr(spec, "execute_search", None), "__globals__", {}).get(
+        "inspect_donsetch_readiness"
+    )
+    if callable(inspect):
+        payload["donsetch"] = inspect(
+            key=os.environ.get("DONSETCH_BIN"),
+            config=behavior_config,
+        )
     return payload
 
 
@@ -897,6 +906,15 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             for name, meta in payload["providers"].items():
                 mark = "✓" if meta["configured"] else "·"
                 print(f"  {mark} {name}: {meta['env']} ({', '.join(meta['capabilities'])})")
+            donsetch = payload.get("donsetch") or {}
+            if donsetch.get("binary_configured") or donsetch.get("state") not in {None, "missing"}:
+                print(
+                    "DonSeTch binary: "
+                    f"state={donsetch.get('state')}, "
+                    f"version={donsetch.get('version') or 'unknown'}, "
+                    f"compatibility={donsetch.get('compatibility')}, "
+                    f"tested={donsetch.get('tested_version')}"
+                )
         return 0 if payload["search_configured"] else 1
     if args.command == "list":
         if args.what == "providers":

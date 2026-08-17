@@ -223,6 +223,7 @@ def test_web_search_call_maps_mcp_args_to_cli(monkeypatch):
 
 def test_web_search_max_research_budget_has_outer_timeout_grace(monkeypatch):
     seen = {}
+    monkeypatch.delenv("DONSETCH_BIN", raising=False)
 
     def fake_run(cmd, capture_output, text, env, timeout):
         seen["timeout"] = timeout

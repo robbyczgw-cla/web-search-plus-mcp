@@ -1,7 +1,7 @@
 # DonSeTch local provider
 
 Web Search Plus 4.0 can use [DonSeTch](https://github.com/dondai44423/donsetch)
-2.1.0 as a separately installed local provider for source-only Search and
+2.3.1 as a separately installed local provider for source-only Search and
 Extract. DonSeTch is an independent AGPL-3.0-only project. Web Search Plus
 does not bundle, copy, or redistribute its binary.
 
@@ -16,7 +16,7 @@ routing or fallback.
 The upstream project distributes a platform binary through npm:
 
 ```bash
-npm install -g donsetch@2.1.0
+npm install -g donsetch@2.3.1
 command -v donsetch
 donsetch --version
 donsetch doctor
@@ -100,6 +100,6 @@ longer read by WSP, and `HOUND_MCP_URL` has no effect in version 4.0.
   subprocess budget per URL, covering the adapter's 180-second stdio timeout;
   this also applies when `auto_allow` explicitly enables DonSeTch. Other
   provider budgets remain unchanged.
-- This integration was tested against DonSeTch 2.1.0 for stdio MCP
+- This integration was tested against DonSeTch 2.3.1 for stdio MCP
   initialization, Search, Fetch, and structured error handling. Successful
   browser/anti-bot execution remains an environment-dependent open gate.
