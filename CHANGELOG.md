@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-08-17
+
+### Fixed
+
+- Reuse one initialized DonSeTch stdio MCP session for every URL in a single extract request.
+- Reap the DonSeTch child on timeout, initialize failure, tool errors, malformed MCP output, and broken pipes.
+- Report DonSeTch binary readiness from status instead of treating `DONSETCH_BIN` as an API key.
+
+### Changed
+
+- Bump the tested DonSeTch version to 2.3.1 (live-tested for stdio Search and multi-URL Fetch).
+- Capture a bounded, sanitized DonSeTch stderr excerpt for diagnostics. Successful Search/Extract payloads do not include raw stderr.
+
 ## [4.0.0] - 2026-08-16
 
 ### Removed
