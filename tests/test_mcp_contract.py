@@ -88,17 +88,17 @@ def canonical_response(*, capability="search", status="ok", results=None, error=
     }
 
 
-def test_version_4_0_1_is_consistent_across_public_surfaces():
+def test_version_4_0_2_is_consistent_across_public_surfaces():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert project["project"]["version"] == "4.0.1"
+    assert project["project"]["version"] == "4.0.2"
     assert project["project"]["scripts"]["web-search-plus-mcp"] == (
         "web_search_plus_mcp.server:cli_main"
     )
-    assert web_search_plus_mcp.__version__ == "4.0.1"
-    assert server.__version__ == "4.0.1"
+    assert web_search_plus_mcp.__version__ == "4.0.2"
+    assert server.__version__ == "4.0.2"
     initialization = server.app.create_initialization_options()
     assert initialization.server_name == "web-search-plus"
-    assert initialization.server_version == "4.0.1"
+    assert initialization.server_version == "4.0.2"
 
 
 def test_ci_ruff_policy_is_repo_local_and_pinned():
@@ -149,7 +149,7 @@ def test_source_only_provider_surface_is_15_search_and_9_extract():
 
 def test_readme_describes_current_source_only_release_surface():
     readme = (ROOT / "README.md").read_text()
-    assert "`web-search-plus-mcp 4.0.1`" in readme
+    assert "`web-search-plus-mcp 4.0.2`" in readme
     assert "DonSeTch 2.3.1" in readme
     assert "**15 search providers" in readme
 
