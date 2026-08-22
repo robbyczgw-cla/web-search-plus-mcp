@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 4.0.2` adds optional Parallel Search modes (`turbo`, `fast`, `basic`, `advanced`) and lets Parallel join automatic routing when a key is configured. 4.0.1 hardened the DonSeTch stdio session, cleanup, and binary readiness reporting and tests against DonSeTch 2.3.1. 4.0.0 removed the optional Hound provider and added the DonSeTch stdio provider while keeping the stable source-only MCP tools and routing surface.
+`web-search-plus-mcp 4.0.2` adds Parallel Search modes (`turbo`, `fast`, `basic`, `advanced`, default `fast`) and lets Parallel join automatic routing when a key is configured. 4.0.1 hardened the DonSeTch stdio session, cleanup, and binary readiness reporting and tests against DonSeTch 2.3.1. 4.0.0 removed the optional Hound provider and added the DonSeTch stdio provider while keeping the stable source-only MCP tools and routing surface.
 
 ## 🚀 Quick Start
 
@@ -39,7 +39,7 @@ Add at least one search provider. You can start with one and add more later.
 - **Simple setup tools** — check your config and create a starter setup
 - **Optional local search** — connect a separately installed DonSeTch executable through the WSP provider adapter
 
-Version 4.0.2 adds optional Parallel Search modes. Version 4.0.1 hardens DonSeTch process reuse and diagnostics. Version 4.0.0 removed the optional Hound provider and added the separately installed DonSeTch 2.1.0 stdio adapter. See the [4.0.0 release notes](docs/RELEASE_4_0_0.md) and [DonSeTch guide](docs/DONSETCH.md) for migration, licensing, and runtime boundaries.
+Version 4.0.2 adds Parallel Search modes (default `fast`). Version 4.0.1 hardens DonSeTch process reuse and diagnostics. Version 4.0.0 removed the optional Hound provider and added the separately installed DonSeTch 2.1.0 stdio adapter. See the [4.0.0 release notes](docs/RELEASE_4_0_0.md) and [DonSeTch guide](docs/DONSETCH.md) for migration, licensing, and runtime boundaries.
 
 ## 🧭 Easier onboarding
 

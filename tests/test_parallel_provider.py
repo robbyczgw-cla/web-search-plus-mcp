@@ -35,9 +35,9 @@ def test_parallel_search_normalizes_excerpts_and_metadata(monkeypatch):
         "objective": "parallel api",
         "search_queries": ["parallel api site:docs.parallel.ai -site:reddit.com"],
         "client_model": "claude-sonnet-4",
+        "mode": "fast",
     }
-    assert "mode" not in captured["body"]
-    assert result["metadata"]["mode"] is None
+    assert result["metadata"]["mode"] == "fast"
     assert captured["timeout"] == 45
     assert result["provider"] == "parallel"
     assert result["results"][0]["snippet"] == "First excerpt\n\nSecond excerpt"
@@ -134,12 +134,12 @@ def test_search_parallel_rejects_unknown_mode():
         raise AssertionError("search_parallel should reject unknown modes")
 
 
-def test_parallel_mode_config_default_is_unset_and_stays_auto_allowed():
+def test_parallel_mode_config_default_is_fast_and_stays_auto_allowed():
     config = search._deepcopy_default_config()
-    assert config["parallel"].get("mode") is None
+    assert config["parallel"].get("mode") == "fast"
     assert config["auto_routing"]["auto_allow"].get("parallel", True) is True
     validated = search._validate_runtime_config(config)
-    assert validated["parallel"].get("mode") is None
+    assert validated["parallel"].get("mode") == "fast"
     assert validated["auto_routing"]["auto_allow"].get("parallel", True) is True
 
 
