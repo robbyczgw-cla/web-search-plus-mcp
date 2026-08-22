@@ -17,6 +17,7 @@ def test_serpbase_and_querit_are_explicit_only_by_default(monkeypatch):
     monkeypatch.delenv("KILOCODE_API_KEY", raising=False)
     monkeypatch.delenv("YOU_API_KEY", raising=False)
     monkeypatch.delenv("SEARXNG_INSTANCE_URL", raising=False)
+    monkeypatch.delenv("PARALLEL_API_KEY", raising=False)
 
     config = search._deepcopy_default_config()
     routing = search.auto_route_provider("iphone 16 price today", config)
@@ -115,7 +116,6 @@ def test_server_schema_exposes_guarded_provider_metadata():
     assert config["auto_routing"]["auto_allow"] == {
         "serpbase": False,
         "querit": False,
-        "parallel": False,
         "donsetch": False,
         "octen": False,
         "tinyfish": False,
@@ -135,7 +135,6 @@ def test_server_normalizes_source_only_auto_allow_preferences():
     assert config["auto_routing"]["auto_allow"] == {
         "serpbase": True,
         "querit": False,
-        "parallel": False,
         "donsetch": False,
         "octen": False,
         "tinyfish": False,

@@ -45,6 +45,10 @@ try:
     from .request_gate_v3 import validate_outbound_body, validate_provider_mode
 except ImportError:  # pragma: no cover - direct script execution
     from request_gate_v3 import validate_outbound_body, validate_provider_mode
+try:
+    from .config import normalize_parallel_search_mode
+except ImportError:  # pragma: no cover - direct script execution
+    from config import normalize_parallel_search_mode
 
 
 # Extra scheduling headroom added on top of the per-request HTTP timeout when
@@ -1200,12 +1204,14 @@ def search_parallel(
     api_url: str = "https://api.parallel.ai/v1/search",
     timeout: int = 45,
     client_model: Optional[str] = None,
+    mode: Optional[str] = None,
 ) -> dict:
     """Search using Parallel's web search API.
 
     Parallel returns source URLs plus long LLM-ready excerpts. Its API does not
     currently accept a generic max_results parameter, so results are trimmed
-    locally to the requested count.
+    locally to the requested count. ``mode`` defaults to ``fast``; set turbo,
+    basic, or advanced to override.
     """
     search_query = query
     if include_domains:
@@ -1213,12 +1219,15 @@ def search_parallel(
     if exclude_domains:
         search_query += " " + " ".join(f"-site:{domain}" for domain in exclude_domains)
 
+    normalized_mode = normalize_parallel_search_mode(mode) or "fast"
     body: Dict[str, Any] = {
         "objective": query,
         "search_queries": [search_query],
     }
     if client_model:
         body["client_model"] = client_model
+    if normalized_mode:
+        body["mode"] = normalized_mode
 
     headers = {"x-api-key": api_key, "Content-Type": "application/json"}
     data = make_request(api_url, headers, body, timeout=timeout)
@@ -1252,6 +1261,7 @@ def search_parallel(
             "search_id": data.get("search_id"),
             "session_id": data.get("session_id"),
             "result_count_raw": len(raw_results),
+            "mode": normalized_mode,
         },
     }
 
