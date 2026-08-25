@@ -88,7 +88,7 @@ def canonical_response(*, capability="search", status="ok", results=None, error=
     }
 
 
-def test_version_4_0_2_is_consistent_across_public_surfaces():
+def test_release_version_is_consistent_across_public_surfaces():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
     assert project["project"]["version"] == "4.0.3"
     assert project["project"]["scripts"]["web-search-plus-mcp"] == (
