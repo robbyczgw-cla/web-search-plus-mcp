@@ -99,6 +99,18 @@ Other presets:
 - `starter` — You.com + Serper + Linkup
 - `all` — every supported provider env var
 
+## 🤖 Grok Build plugin
+
+This repository is also a [Grok Build](https://github.com/xai-org/plugin-marketplace) plugin. Grok reads `.mcp.json` (the same pinned `uvx` server as above), `skills/web-search-plus/SKILL.md` (when and how to use `web_search` and `web_extract`), and `.grok-plugin/plugin.json` (metadata).
+
+Install directly from the repository:
+
+```bash
+grok plugin install robbyczgw-cla/web-search-plus-mcp
+```
+
+Or pick **web-search-plus** from the marketplace (`/plugin` inside Grok Build). [uv](https://docs.astral.sh/uv/) must be installed; provider keys come from your environment, the plugin ships none. Check with `grok mcp doctor`.
+
 ## ⚙️ MCP host config
 
 Canonical stdio snippet for Claude Desktop, Cursor, NanoBot, or Hermes native MCP:

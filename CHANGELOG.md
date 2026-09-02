@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Grok Build plugin packaging: `.mcp.json` (pinned `uvx` stdio server), `skills/web-search-plus/SKILL.md`, and `.grok-plugin/plugin.json`. Installable with `grok plugin install robbyczgw-cla/web-search-plus-mcp`; no provider keys are shipped.
+
 ## [4.0.3] - 2026-08-25
 
 ### Changed
