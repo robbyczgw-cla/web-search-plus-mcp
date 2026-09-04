@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 4.0.3` tests the local DonSeTch adapter against 3.2.1. 4.0.2 adds Parallel Search modes (`turbo`, `fast`, `basic`, `advanced`, default `fast`) and lets Parallel join automatic routing when a key is configured. 4.0.1 hardened the DonSeTch stdio session, cleanup, and binary readiness reporting and tests against DonSeTch 2.3.1. 4.0.0 removed the optional Hound provider and added the DonSeTch stdio provider while keeping the stable source-only MCP tools and routing surface.
+`web-search-plus-mcp 4.0.4` preserves dash-prefixed queries across MCP and the search engine, consolidates runtime checks, and includes Grok Build plugin packaging. See the [4.0.4 release notes](docs/RELEASE_4_0_4.md). Version 4.0.3 tests the local DonSeTch adapter against 3.2.1. 4.0.2 adds Parallel Search modes (`turbo`, `fast`, `basic`, `advanced`, default `fast`) and lets Parallel join automatic routing when a key is configured. 4.0.1 hardened the DonSeTch stdio session, cleanup, and binary readiness reporting and tests against DonSeTch 2.3.1. 4.0.0 removed the optional Hound provider and added the DonSeTch stdio provider while keeping the stable source-only MCP tools and routing surface.
 
 ## 🚀 Quick Start
 

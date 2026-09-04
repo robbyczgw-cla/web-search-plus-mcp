@@ -206,7 +206,7 @@ def test_web_search_call_maps_mcp_args_to_cli(monkeypatch):
     }))
 
     cmd = seen["cmd"]
-    assert "--query" in cmd and "latest Hermes release" in cmd
+    assert "--query=latest Hermes release" in cmd
     assert "--provider" in cmd and "linkup" in cmd
     assert "--max-results" in cmd and "7" in cmd
     assert "--exa-depth" in cmd and "deep" in cmd
@@ -269,7 +269,7 @@ def test_web_extract_call_maps_mcp_args_to_cli(monkeypatch):
     assert "--include-raw-html" in cmd
     assert "--render-js" in cmd
     assert "--spans" in cmd
-    assert "--spans-query" in cmd and "installation steps" in cmd
+    assert "--spans-query=installation steps" in cmd
     assert "--contract-v3" in cmd
     assert seen["timeout"] == 90
     assert result[0].text == '{"results": []}'

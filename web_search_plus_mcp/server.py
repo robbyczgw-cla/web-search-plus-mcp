@@ -35,7 +35,7 @@ from mcp.types import (
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
-__version__ = "4.0.3"
+__version__ = "4.0.4"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 
@@ -645,8 +645,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         cmd = [
             sys.executable,
             str(SEARCH_SCRIPT),
-            "--query",
-            query,
+            f"--query={query}",
             "--provider",
             provider,
             "--max-results",
@@ -712,7 +711,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             cmd.append("--render-js")
         if _as_bool(arguments.get("spans", False)):
             cmd.append("--spans")
-        _append_optional(cmd, "--spans-query", arguments.get("spans_query"))
+        if arguments.get("spans_query") is not None:
+            cmd.append(f"--spans-query={arguments['spans_query']}")
         provider = _canonical_provider(arguments.get("provider", "auto"))
         timeout = (
             DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS * max(1, len(urls))

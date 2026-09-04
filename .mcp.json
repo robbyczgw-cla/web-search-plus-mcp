@@ -3,7 +3,7 @@
     "web-search-plus": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["--from", "web-search-plus-mcp==4.0.3", "web-search-plus-mcp"]
+      "args": ["--from", "web-search-plus-mcp==4.0.4", "web-search-plus-mcp"]
     }
   }
 }

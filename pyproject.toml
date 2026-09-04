@@ -7,6 +7,7 @@ build-backend = "hatchling.build"
 "docs/MIGRATION_1_0.md" = "web_search_plus_mcp/docs/MIGRATION_1_0.md"
 "docs/DONSETCH.md" = "web_search_plus_mcp/docs/DONSETCH.md"
 "docs/RELEASE_4_0_0.md" = "web_search_plus_mcp/docs/RELEASE_4_0_0.md"
+"docs/RELEASE_4_0_4.md" = "web_search_plus_mcp/docs/RELEASE_4_0_4.md"
 "docs/RELEASE_1_2.md" = "web_search_plus_mcp/docs/RELEASE_1_2.md"
 "docs/RELEASE_3_3.md" = "web_search_plus_mcp/docs/RELEASE_3_3.md"
 "docs/RELEASE_3_4.md" = "web_search_plus_mcp/docs/RELEASE_3_4.md"
@@ -16,7 +17,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "web-search-plus-mcp"
-version = "4.0.3"
+version = "4.0.4"
 description = "Source-only multi-provider web search, extraction, evidence receipts, and onboarding for MCP clients"
 readme = "README.md"
 license = { file = "LICENSE" }
