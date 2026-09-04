@@ -87,7 +87,7 @@ Example:
 2. `web_extract` the one or two URLs that actually answer the question.
 3. Cite the URLs you used. Say when sources disagree.
 4. If `web_search` returns an error that no provider is configured, tell the
-   user to run `uvx --from web-search-plus-mcp==4.0.3 web-search-plus-mcp status`
+   user to run `uvx --from web-search-plus-mcp==4.0.4 web-search-plus-mcp status`
    and set at least one provider key (see Setup). Do not guess results.
 
 ## Setup (first run)
@@ -109,13 +109,13 @@ Optional: `TAVILY_API_KEY`, `EXA_API_KEY`, `FIRECRAWL_API_KEY`, `PARALLEL_API_KE
 Check what is configured:
 
 ```bash
-uvx --from web-search-plus-mcp==4.0.3 web-search-plus-mcp status
+uvx --from web-search-plus-mcp==4.0.4 web-search-plus-mcp status
 ```
 
 Write a starter `.env` template:
 
 ```bash
-uvx --from web-search-plus-mcp==4.0.3 web-search-plus-mcp setup --preset starter
+uvx --from web-search-plus-mcp==4.0.4 web-search-plus-mcp setup --preset starter
 ```
 
 Full provider list, routing rules, and tool reference:
