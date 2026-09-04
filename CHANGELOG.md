@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve queries beginning with `-` through structured search requests and subprocess adapters. Treat `spans_query` as data even when it resembles a CLI flag.
+- Reject malformed section shapes in the shared budget-preflight helper.
+
+### Changed
+
+- Share daily-budget settings and adapter-signature validation without removing either enforcement boundary.
+- Replace prose-only compatibility assertions with export and defensive-copy checks; remove the nonexistent `search_provider` from the compatibility inventory.
+- Remove empty section headers and the pass-through contract-error factory.
+
 ### Added
 
 - Grok Build plugin packaging: `.mcp.json` (pinned `uvx` stdio server), `skills/web-search-plus/SKILL.md`, and `.grok-plugin/plugin.json`. Installable with `grok plugin install robbyczgw-cla/web-search-plus-mcp`; no provider keys are shipped.

@@ -645,8 +645,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         cmd = [
             sys.executable,
             str(SEARCH_SCRIPT),
-            "--query",
-            query,
+            f"--query={query}",
             "--provider",
             provider,
             "--max-results",
@@ -712,7 +711,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             cmd.append("--render-js")
         if _as_bool(arguments.get("spans", False)):
             cmd.append("--spans")
-        _append_optional(cmd, "--spans-query", arguments.get("spans_query"))
+        if arguments.get("spans_query") is not None:
+            cmd.append(f"--spans-query={arguments['spans_query']}")
         provider = _canonical_provider(arguments.get("provider", "auto"))
         timeout = (
             DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS * max(1, len(urls))
