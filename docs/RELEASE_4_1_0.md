@@ -11,7 +11,7 @@ Version-line alignment with Hermes Web Search Plus 4.1.0. Stable MCP tool names,
 
 DonSeTch remains a separately installed optional provider ([dondai44423/donsetch](https://github.com/dondai44423/donsetch), AGPL-3.0-only). Search and extraction stay source-only. No automatic backend selection is introduced.
 
-## Hermes-only native backend (not in this package)
+## Hermes-only native backend (not ported to this package)
 
 Hermes Web Search Plus 4.1.0 adds an opt-in `wsp` native backend so Hermes `web_search` and `web_extract` can call the in-process WSP engine. That adapter lives only in the Hermes plugin. This MCP package does not ship, port, or register a native Hermes `WebSearchProvider`.
 
