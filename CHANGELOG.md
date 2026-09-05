@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-09-05
+
+- Align the public MCP version line with Hermes Web Search Plus 4.1.0.
+- Carry DonSeTch 3.6.1 compact MCP evidence and namespaced diagnostics; retain older structured responses; preserve rank/URL binding; force stdio only for the DonSeTch child process.
+- Document that the opt-in Hermes native `wsp` backend is Hermes-plugin-only and is not ported into this MCP package. MCP clients keep the existing `web_search` and `web_extract` tools.
+- Credit [@LugMuad](https://github.com/LugMuad) for the Hermes-only native integration direction in [hermes-web-search-plus#125](https://github.com/robbyczgw-cla/hermes-web-search-plus/issues/125), and keep DonSeTch attribution as the separately installed upstream project ([dondai44423/donsetch](https://github.com/dondai44423/donsetch), AGPL-3.0-only).
+
+## [4.0.5] - Unpublished candidate, included in 4.1.0
+
+- Sync DonSeTch 3.6.1 compact MCP evidence and namespaced diagnostics; retain older structured responses.
+- Preserve rank/URL binding and force stdio only for the DonSeTch child process.
+
 ## [4.0.4] - 2026-09-04
 
 ### Fixed
