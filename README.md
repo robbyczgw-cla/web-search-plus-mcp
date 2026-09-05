@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 4.0.4` preserves dash-prefixed queries across MCP and the search engine, consolidates runtime checks, and includes Grok Build plugin packaging. See the [4.0.4 release notes](docs/RELEASE_4_0_4.md). Version 4.0.3 tests the local DonSeTch adapter against 3.2.1. 4.0.2 adds Parallel Search modes (`turbo`, `fast`, `basic`, `advanced`, default `fast`) and lets Parallel join automatic routing when a key is configured. 4.0.1 hardened the DonSeTch stdio session, cleanup, and binary readiness reporting and tests against DonSeTch 2.3.1. 4.0.0 removed the optional Hound provider and added the DonSeTch stdio provider while keeping the stable source-only MCP tools and routing surface.
+`web-search-plus-mcp 4.0.5` supports DonSeTch 3.6.1 compact MCP responses, preserving search evidence and fetch metadata while retaining older structured responses. See the [4.0.5 release notes](docs/RELEASE_4_0_5.md). Version 4.0.4 preserves dash-prefixed queries across MCP and the search engine, consolidates runtime checks, and includes Grok Build plugin packaging. See the [4.0.4 release notes](docs/RELEASE_4_0_4.md). Version 4.0.3 tests the local DonSeTch adapter against 3.2.1. 4.0.2 adds Parallel Search modes (`turbo`, `fast`, `basic`, `advanced`, default `fast`) and lets Parallel join automatic routing when a key is configured. 4.0.1 hardened the DonSeTch stdio session, cleanup, and binary readiness reporting and tests against DonSeTch 2.3.1. 4.0.0 removed the optional Hound provider and added the DonSeTch stdio provider while keeping the stable source-only MCP tools and routing surface.
 
 ## 🚀 Quick Start
 
@@ -208,7 +208,7 @@ Use an API key for private or production use. The public endpoint sends queries 
 
 ### DonSeTch local provider
 
-[DonSeTch](https://github.com/dondai44423/donsetch) 3.2.1 is an independent
+[DonSeTch](https://github.com/dondai44423/donsetch) 3.6.1 is an independent
 AGPL-3.0-only project. It is not bundled with this package. Web Search Plus
 starts the separately installed executable as a stdio MCP process using
 `DONSETCH_BIN` and projects its `web_search` and `web_fetch` results into the

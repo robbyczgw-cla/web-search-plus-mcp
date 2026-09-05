@@ -1,6 +1,6 @@
 {
   "name": "web-search-plus",
-  "version": "4.0.4",
+  "version": "4.0.5",
   "description": "Source-only multi-provider web search and bounded URL extraction. Adds the web_search and web_extract MCP tools plus a skill that explains when and how to use them.",
   "author": {
     "name": "Robby Czesany",

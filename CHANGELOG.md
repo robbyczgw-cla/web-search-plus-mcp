@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [4.0.5] - 2026-09-05
+
+- Sync DonSeTch 3.6.1 compact MCP evidence and namespaced diagnostics; retain older structured responses.
+- Preserve rank/URL binding and force stdio only for the DonSeTch child process.
+
 ## [4.0.4] - 2026-09-04
 
 ### Fixed
