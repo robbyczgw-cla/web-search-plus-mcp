@@ -246,6 +246,59 @@ def test_exa_time_range_only_applies_native_freshness():
     assert 160 <= _exa_window_hours(meta["native_value"]) <= 176
 
 
+def test_exa_search_returns_the_bounds_put_on_the_wire():
+    captured = {}
+
+    def fake_request(_url, _headers, body, timeout=30):
+        captured["body"] = body
+        return {"results": []}
+
+    with mock.patch.object(providers, "make_request", fake_request):
+        result = providers.search_exa("latest exa changelog", "exa-test-key", freshness="week")
+
+    native = result["metadata"]["applied_published_dates"]
+    assert captured["body"]["startPublishedDate"] == native["startPublishedDate"]
+    assert captured["body"]["endPublishedDate"] == native["endPublishedDate"]
+
+
+def test_exa_metadata_keeps_sent_bounds_when_clock_would_move():
+    sent = {
+        "startPublishedDate": "2026-01-01T00:00:00Z",
+        "endPublishedDate": "2026-01-02T00:00:00Z",
+    }
+
+    def fake_exa(**call):
+        return {
+            "provider": "exa",
+            "query": call["query"],
+            "results": [{"url": "https://example.test/a", "title": "A", "snippet": "s"}],
+            "images": [],
+            "answer": "",
+            "metadata": {"applied_published_dates": dict(sent)},
+        }
+
+    with mock.patch.object(search, "provider_in_cooldown", lambda p: (False, 0)):
+        with mock.patch.object(search, "cache_get", lambda **kw: None):
+            with mock.patch.object(search, "cache_put", lambda **kw: None):
+                with mock.patch.object(search, "reset_provider_health", lambda p: None):
+                    with mock.patch.object(search, "validate_api_key", lambda prov, config=None: "exa-test-key"):
+                        with mock.patch.dict("os.environ", {"EXA_API_KEY": "exa-test-key"}):
+                            with mock.patch.object(
+                                providers,
+                                "exa_date_bounds",
+                                return_value=("2099-01-01T00:00:00Z", "2099-01-08T00:00:00Z"),
+                            ):
+                                with mock.patch.object(search, "search_exa", fake_exa):
+                                    result = search.run_search_request(
+                                        query="latest exa changelog",
+                                        provider="exa",
+                                        time_range="day",
+                                    )
+
+    assert result["metadata"]["freshness"]["native_value"] == sent
+    assert "applied_published_dates" not in result["metadata"]
+
+
 def _tavily_v3_payload():
     return {
         "contract_version": "3.0",
@@ -357,3 +410,33 @@ def test_mcp_search_time_range_wins_projected_freshness_metadata(monkeypatch):
         "provider": "tavily",
         "native_value": "day",
     }
+
+
+def test_mcp_search_keeps_exa_freshness_already_on_payload(monkeypatch):
+    sent = {
+        "requested": "week",
+        "applied": True,
+        "provider": "exa",
+        "native_value": {
+            "startPublishedDate": "2026-01-01T00:00:00Z",
+            "endPublishedDate": "2026-01-08T00:00:00Z",
+        },
+    }
+    v3 = _tavily_v3_payload()
+    v3["routing_receipt"]["selected_provider"] = "exa"
+    v3["provider_attempts"][0]["provider"] = "exa"
+    v3["metadata"] = {"freshness": sent}
+
+    def fake_run(cmd, capture_output, text, env, timeout):
+        return SimpleNamespace(returncode=0, stdout=json.dumps(v3), stderr="")
+
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    payload = json.loads(
+        asyncio.run(
+            server.call_tool(
+                "web_search",
+                {"query": "latest exa changelog", "provider": "exa", "time_range": "week"},
+            )
+        )[0].text
+    )
+    assert payload["metadata"]["freshness"] == sent

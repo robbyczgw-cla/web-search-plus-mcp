@@ -576,11 +576,16 @@ def _project_v3_payload(
 
     requested = recency_time_range or recency_freshness
     provider_name = projected.get("provider")
+    existing_freshness = None
+    metadata = projected.get("metadata")
+    if isinstance(metadata, dict):
+        existing_freshness = metadata.get("freshness")
     if (
         capability == "search"
         and requested
         and isinstance(provider_name, str)
         and provider_name != "research"
+        and not isinstance(existing_freshness, dict)
     ):
         try:
             from .providers import freshness_metadata
