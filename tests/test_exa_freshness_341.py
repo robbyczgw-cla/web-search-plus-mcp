@@ -17,6 +17,12 @@ def test_exa_freshness_uses_absolute_utc_bounds():
     )
     assert start == "2026-07-18T12:34:56Z"
     assert end == "2026-07-25T12:34:56Z"
+    hour_start, hour_end = providers.exa_date_bounds(
+        "hour",
+        now=datetime(2026, 7, 25, 12, 34, 56, tzinfo=timezone.utc),
+    )
+    assert hour_start == "2026-07-25T11:34:56Z"
+    assert hour_end == "2026-07-25T12:34:56Z"
 
 
 def test_exa_freshness_metadata_reports_native_date_range():

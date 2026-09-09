@@ -488,6 +488,22 @@ def _typed_error_payload(
     }
 
 
+def _freshness_from_v3_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    metadata = payload.get("metadata")
+    if isinstance(metadata, dict) and isinstance(metadata.get("freshness"), dict):
+        return metadata["freshness"]
+    for warning in payload.get("warnings") or []:
+        if not isinstance(warning, dict):
+            continue
+        details = warning.get("details")
+        if warning.get("code") != "wsp.freshness.applied" or not isinstance(details, dict):
+            continue
+        freshness = details.get("freshness")
+        if isinstance(freshness, dict):
+            return freshness
+    return None
+
+
 def _project_v3_payload(
     payload: dict[str, Any],
     *,
@@ -576,16 +592,14 @@ def _project_v3_payload(
 
     requested = recency_time_range or recency_freshness
     provider_name = projected.get("provider")
-    existing_freshness = None
-    metadata = projected.get("metadata")
-    if isinstance(metadata, dict):
-        existing_freshness = metadata.get("freshness")
-    if (
+    existing_freshness = _freshness_from_v3_payload(payload) or _freshness_from_v3_payload(projected)
+    if isinstance(existing_freshness, dict):
+        projected.setdefault("metadata", {})["freshness"] = existing_freshness
+    elif (
         capability == "search"
         and requested
         and isinstance(provider_name, str)
         and provider_name != "research"
-        and not isinstance(existing_freshness, dict)
     ):
         try:
             from .providers import freshness_metadata

@@ -246,6 +246,16 @@ def test_exa_time_range_only_applies_native_freshness():
     assert 160 <= _exa_window_hours(meta["native_value"]) <= 176
 
 
+def test_exa_time_range_hour_applies_one_hour_window():
+    seen, result = _run_exa_search(time_range="hour")
+    assert seen["freshness"] == "hour"
+    assert not result.get("error")
+    meta = result["metadata"]["freshness"]
+    assert meta["requested"] == "hour"
+    assert meta["applied"] is True
+    assert 0.5 <= _exa_window_hours(meta["native_value"]) <= 1.5
+
+
 def test_exa_search_returns_the_bounds_put_on_the_wire():
     captured = {}
 
@@ -426,6 +436,42 @@ def test_mcp_search_keeps_exa_freshness_already_on_payload(monkeypatch):
     v3["routing_receipt"]["selected_provider"] = "exa"
     v3["provider_attempts"][0]["provider"] = "exa"
     v3["metadata"] = {"freshness": sent}
+
+    def fake_run(cmd, capture_output, text, env, timeout):
+        return SimpleNamespace(returncode=0, stdout=json.dumps(v3), stderr="")
+
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    payload = json.loads(
+        asyncio.run(
+            server.call_tool(
+                "web_search",
+                {"query": "latest exa changelog", "provider": "exa", "time_range": "week"},
+            )
+        )[0].text
+    )
+    assert payload["metadata"]["freshness"] == sent
+
+
+def test_mcp_search_uses_v3_warning_freshness_when_metadata_dropped(monkeypatch):
+    sent = {
+        "requested": "week",
+        "applied": True,
+        "provider": "exa",
+        "native_value": {
+            "startPublishedDate": "2026-01-01T00:00:00Z",
+            "endPublishedDate": "2026-01-08T00:00:00Z",
+        },
+    }
+    v3 = _tavily_v3_payload()
+    v3["routing_receipt"]["selected_provider"] = "exa"
+    v3["provider_attempts"][0]["provider"] = "exa"
+    v3["warnings"] = [
+        {
+            "code": "wsp.freshness.applied",
+            "message": "Native recency filter applied to the provider request.",
+            "details": {"freshness": sent},
+        }
+    ]
 
     def fake_run(cmd, capture_output, text, env, timeout):
         return SimpleNamespace(returncode=0, stdout=json.dumps(v3), stderr="")
