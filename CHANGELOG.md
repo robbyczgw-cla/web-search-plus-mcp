@@ -6,7 +6,7 @@
 
 - Prefer Exa `highlights` over leading page text when both are present.
 - Send Parallel Search `max_results` and domain filters in `advanced_settings` instead of `site:` query stuffing.
-- Forward Tavily `time_range` from the unified freshness filter and report `freshness.applied=true`.
+- Forward Tavily `time_range` from the unified freshness filter; `--time-range` wins if both are set; MCP search output reports `metadata.freshness` from the sent value.
 
 ## [4.1.0] - 2026-09-05
 

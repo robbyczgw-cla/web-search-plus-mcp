@@ -496,6 +496,8 @@ def _project_v3_payload(
     urls: Optional[list[str]] = None,
     request_mode: Optional[str] = None,
     quality_report_requested: bool = False,
+    recency_time_range: Optional[str] = None,
+    recency_freshness: Optional[str] = None,
 ) -> dict[str, Any]:
     """Project canonical v3 output to the stable MCP shape, additively."""
     projected = {key: value for key, value in payload.items() if key not in {"results", "error"}}
@@ -571,6 +573,24 @@ def _project_v3_payload(
         projected["error_v3"] = error_v3
     elif isinstance(error_value, str) and error_value.strip():
         projected["error"] = error_value.strip()
+
+    requested = recency_time_range or recency_freshness
+    provider_name = projected.get("provider")
+    if (
+        capability == "search"
+        and requested
+        and isinstance(provider_name, str)
+        and provider_name != "research"
+    ):
+        try:
+            from .providers import freshness_metadata
+        except ImportError:
+            from providers import freshness_metadata
+
+        projected.setdefault("metadata", {})["freshness"] = freshness_metadata(
+            provider_name,
+            requested,
+        )
     return projected
 
 
@@ -583,6 +603,8 @@ async def _run_cmd(
     urls: Optional[list[str]] = None,
     request_mode: Optional[str] = None,
     quality_report_requested: bool = False,
+    recency_time_range: Optional[str] = None,
+    recency_freshness: Optional[str] = None,
 ) -> list[TextContent]:
     try:
         result = await asyncio.to_thread(
@@ -626,6 +648,8 @@ async def _run_cmd(
             urls=urls,
             request_mode=request_mode,
             quality_report_requested=quality_report_requested,
+            recency_time_range=recency_time_range,
+            recency_freshness=recency_freshness,
         )
     return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
 
@@ -685,6 +709,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             query=query,
             request_mode=mode,
             quality_report_requested=quality_report_requested,
+            recency_time_range=arguments.get("time_range"),
+            recency_freshness=arguments.get("freshness"),
         )
 
     if name == "web_extract":

@@ -1412,13 +1412,16 @@ def _finalize_research_result(
             }
             for item in cooldown_skips
         ]
-    if args.freshness:
+    requested_freshness = _providers.effective_recency(
+        getattr(args, "time_range", None), args.freshness
+    )
+    if requested_freshness:
         result.setdefault("metadata", {})["freshness"] = {
-            "requested": args.freshness,
+            "requested": requested_freshness,
             "providers": [
                 _providers.freshness_metadata(
                     provider,
-                    args.freshness,
+                    requested_freshness,
                     start_date=getattr(args, "start_date", None),
                     end_date=getattr(args, "end_date", None),
                 )
@@ -1789,10 +1792,13 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
 
         result["routing"] = routing_info
 
-        if args.freshness:
+        requested_freshness = _providers.effective_recency(
+            getattr(args, "time_range", None), args.freshness
+        )
+        if requested_freshness:
             result.setdefault("metadata", {})["freshness"] = _providers.freshness_metadata(
                 successful_provider or provider,
-                args.freshness,
+                requested_freshness,
                 start_date=getattr(args, "start_date", None),
                 end_date=getattr(args, "end_date", None),
             )
