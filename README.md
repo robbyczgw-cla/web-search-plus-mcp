@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 4.1.0` supports DonSeTch 3.6.1 search results and page extraction. Existing MCP tools and setup stay the same. The matching Hermes plugin adds an optional native backend; this MCP package does not need or include that adapter. See the [4.1.0 release notes](docs/RELEASE_4_1_0.md).
+`web-search-plus-mcp 4.1.1` keeps DonSeTch 3.6.1 search results and page extraction, and forwards Exa highlights, Parallel result limits/domain filters, and Tavily recency. Existing MCP tools and setup stay the same. The matching Hermes plugin adds an optional native backend; this MCP package does not need or include that adapter. See the [4.1.1 release notes](docs/RELEASE_4_1_1.md).
 
 ## 🚀 Quick Start
 

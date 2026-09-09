@@ -35,7 +35,7 @@ from mcp.types import (
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
-__version__ = "4.1.0"
+__version__ = "4.1.1"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 
@@ -488,6 +488,22 @@ def _typed_error_payload(
     }
 
 
+def _freshness_from_v3_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    metadata = payload.get("metadata")
+    if isinstance(metadata, dict) and isinstance(metadata.get("freshness"), dict):
+        return metadata["freshness"]
+    for warning in payload.get("warnings") or []:
+        if not isinstance(warning, dict):
+            continue
+        details = warning.get("details")
+        if warning.get("code") != "wsp.freshness.applied" or not isinstance(details, dict):
+            continue
+        freshness = details.get("freshness")
+        if isinstance(freshness, dict):
+            return freshness
+    return None
+
+
 def _project_v3_payload(
     payload: dict[str, Any],
     *,
@@ -496,6 +512,8 @@ def _project_v3_payload(
     urls: Optional[list[str]] = None,
     request_mode: Optional[str] = None,
     quality_report_requested: bool = False,
+    recency_time_range: Optional[str] = None,
+    recency_freshness: Optional[str] = None,
 ) -> dict[str, Any]:
     """Project canonical v3 output to the stable MCP shape, additively."""
     projected = {key: value for key, value in payload.items() if key not in {"results", "error"}}
@@ -571,6 +589,27 @@ def _project_v3_payload(
         projected["error_v3"] = error_v3
     elif isinstance(error_value, str) and error_value.strip():
         projected["error"] = error_value.strip()
+
+    requested = recency_time_range or recency_freshness
+    provider_name = projected.get("provider")
+    existing_freshness = _freshness_from_v3_payload(payload) or _freshness_from_v3_payload(projected)
+    if isinstance(existing_freshness, dict):
+        projected.setdefault("metadata", {})["freshness"] = existing_freshness
+    elif (
+        capability == "search"
+        and requested
+        and isinstance(provider_name, str)
+        and provider_name not in {"research", "exa"}
+    ):
+        try:
+            from .providers import freshness_metadata
+        except ImportError:
+            from providers import freshness_metadata
+
+        projected.setdefault("metadata", {})["freshness"] = freshness_metadata(
+            provider_name,
+            requested,
+        )
     return projected
 
 
@@ -583,6 +622,8 @@ async def _run_cmd(
     urls: Optional[list[str]] = None,
     request_mode: Optional[str] = None,
     quality_report_requested: bool = False,
+    recency_time_range: Optional[str] = None,
+    recency_freshness: Optional[str] = None,
 ) -> list[TextContent]:
     try:
         result = await asyncio.to_thread(
@@ -626,6 +667,8 @@ async def _run_cmd(
             urls=urls,
             request_mode=request_mode,
             quality_report_requested=quality_report_requested,
+            recency_time_range=recency_time_range,
+            recency_freshness=recency_freshness,
         )
     return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
 
@@ -685,6 +728,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             query=query,
             request_mode=mode,
             quality_report_requested=quality_report_requested,
+            recency_time_range=arguments.get("time_range"),
+            recency_freshness=arguments.get("freshness"),
         )
 
     if name == "web_extract":

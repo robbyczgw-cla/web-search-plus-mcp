@@ -42,7 +42,7 @@ def test_filter_help_and_live_schema_cover_exa_and_tinyfish():
     search_type = tool("web_search").input_schema["properties"]["search_type"]
 
     assert "currently serper and tinyfish" in help_text
-    assert "searxng, exa, and tinyfish" in help_text
+    assert "searxng, exa, tavily, and tinyfish" in help_text
     assert "serper and tinyfish serve news natively" in search_type["description"].lower()
 
 
@@ -90,15 +90,15 @@ def canonical_response(*, capability="search", status="ok", results=None, error=
 
 def test_release_version_is_consistent_across_public_surfaces():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert project["project"]["version"] == "4.1.0"
+    assert project["project"]["version"] == "4.1.1"
     assert project["project"]["scripts"]["web-search-plus-mcp"] == (
         "web_search_plus_mcp.server:cli_main"
     )
-    assert web_search_plus_mcp.__version__ == "4.1.0"
-    assert server.__version__ == "4.1.0"
+    assert web_search_plus_mcp.__version__ == "4.1.1"
+    assert server.__version__ == "4.1.1"
     initialization = server.app.create_initialization_options()
     assert initialization.server_name == "web-search-plus"
-    assert initialization.server_version == "4.1.0"
+    assert initialization.server_version == "4.1.1"
 
 
 def test_ci_ruff_policy_is_repo_local_and_pinned():
@@ -121,6 +121,7 @@ def test_wheel_config_includes_v4_contracts_and_migration_guide():
     )
     assert forced["docs/DONSETCH.md"] == "web_search_plus_mcp/docs/DONSETCH.md"
     assert forced["docs/RELEASE_4_0_0.md"] == "web_search_plus_mcp/docs/RELEASE_4_0_0.md"
+    assert forced["docs/RELEASE_4_1_1.md"] == "web_search_plus_mcp/docs/RELEASE_4_1_1.md"
     assert forced["docs/RELEASE_4_1_0.md"] == "web_search_plus_mcp/docs/RELEASE_4_1_0.md"
     assert forced["docs/RELEASE_1_2.md"] == (
         "web_search_plus_mcp/docs/RELEASE_1_2.md"
@@ -151,7 +152,7 @@ def test_source_only_provider_surface_is_15_search_and_9_extract():
 def test_readme_describes_current_source_only_release_surface():
     readme = (ROOT / "README.md").read_text()
     release = (ROOT / "docs/RELEASE_4_1_0.md").read_text()
-    assert "`web-search-plus-mcp 4.1.0`" in readme
+    assert "`web-search-plus-mcp 4.1.1`" in readme
     assert "DonSeTch 3.6.1" in readme
     assert "**15 search providers" in readme
     assert "not ported" in readme.lower() or "not ported" in release.lower()

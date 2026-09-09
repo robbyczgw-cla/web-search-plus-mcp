@@ -33,7 +33,14 @@ def test_parallel_search_normalizes_excerpts_and_metadata(monkeypatch):
     assert captured["headers"]["x-api-key"] == "parallel-test-key"
     assert captured["body"] == {
         "objective": "parallel api",
-        "search_queries": ["parallel api site:docs.parallel.ai -site:reddit.com"],
+        "search_queries": ["parallel api"],
+        "advanced_settings": {
+            "max_results": 1,
+            "source_policy": {
+                "include_domains": ["docs.parallel.ai"],
+                "exclude_domains": ["reddit.com"],
+            },
+        },
         "client_model": "claude-sonnet-4",
         "mode": "fast",
     }
