@@ -599,7 +599,7 @@ def _project_v3_payload(
         capability == "search"
         and requested
         and isinstance(provider_name, str)
-        and provider_name != "research"
+        and provider_name not in {"research", "exa"}
     ):
         try:
             from .providers import freshness_metadata

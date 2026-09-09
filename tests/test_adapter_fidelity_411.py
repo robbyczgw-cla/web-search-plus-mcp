@@ -192,17 +192,18 @@ def test_tavily_time_range_only_reports_applied_metadata():
 
 def _run_exa_search(**kwargs):
     seen = {}
+    real_exa = providers.search_exa
 
     def fake_exa(**call):
         seen.update(call)
-        return {
-            "provider": "exa",
-            "query": call["query"],
-            "results": [{"url": "https://example.test/a", "title": "A", "snippet": "s"}],
-            "images": [],
-            "answer": "",
-            "metadata": {},
+        wire_response = {"results": [{"url": "https://example.test/a", "title": "A", "text": "s"}]}
+        with mock.patch.object(providers, "make_request", return_value=wire_response) as http:
+            result = real_exa(**call)
+        body = http.call_args.args[2]
+        assert result["metadata"]["applied_published_dates"] == {
+            key: body[key] for key in ("startPublishedDate", "endPublishedDate") if key in body
         }
+        return result
 
     with mock.patch.object(search, "provider_in_cooldown", lambda p: (False, 0)):
         with mock.patch.object(search, "cache_get", lambda **kw: None):

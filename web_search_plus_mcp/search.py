@@ -1219,7 +1219,7 @@ def main():
                 "provider": args.provider or "auto",
                 "count": args.max_results,
                 "depth": args.exa_depth,
-                "time_range": args.time_range,
+                "time_range": getattr(args, "time_range", None),
                 "freshness": args.freshness,
                 "search_type": args.search_type,
                 "include_domains": args.include_domains,
@@ -1309,7 +1309,7 @@ def _legacy_search_cache_context(
     return {
         "locale": f"{locale_country}:{locale_language}",
         "freshness": args.freshness,
-        "time_range": args.time_range,
+        "time_range": getattr(args, "time_range", None),
         "include_domains": sorted(args.include_domains)
         if args.include_domains
         else None,
@@ -1386,6 +1386,18 @@ def _research_quorum_settings(config: Dict[str, Any]) -> Dict[str, Any]:
     return settings
 
 
+def _result_freshness(provider, requested, result):
+    """Preserve execution evidence, including cached and per-provider receipts."""
+    metadata = result.setdefault("metadata", {})
+    existing = metadata.get("freshness")
+    if isinstance(existing, dict) and existing.get("requested") == requested:
+        return existing
+    return _providers.freshness_metadata(
+        provider, requested,
+        applied_published_dates=metadata.pop("applied_published_dates", None) or {},
+    )
+
+
 def _finalize_research_result(
     result: Dict[str, Any],
     *,
@@ -1395,6 +1407,7 @@ def _finalize_research_result(
     providers_considered: List[str],
     research_providers: List[str],
     cooldown_skips: List[Dict[str, Any]],
+    provider_payloads: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Apply the shared public Research Mode metadata and quality envelope."""
     final_routing = dict(routing_info)
@@ -1419,11 +1432,9 @@ def _finalize_research_result(
         result.setdefault("metadata", {})["freshness"] = {
             "requested": requested_freshness,
             "providers": [
-                _providers.freshness_metadata(
-                    provider,
-                    requested_freshness,
-                    start_date=getattr(args, "start_date", None),
-                    end_date=getattr(args, "end_date", None),
+                _result_freshness(
+                    provider, requested_freshness,
+                    (provider_payloads or {}).get(provider) or {},
                 )
                 for provider in research_providers
             ],
@@ -1562,6 +1573,8 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
     # kwargs-building lives in provider_dispatch.SEARCH_DISPATCH; the caller
     # namespace (globals()) is passed so adapters resolve search_<provider>
     # late and honour monkeypatches on this module (search.search_you etc.).
+    provider_payloads = {}
+
     def execute_search(prov: str) -> Dict[str, Any]:
         validate_provider_mode(prov, "search")
         key = validate_api_key(prov, config)
@@ -1579,6 +1592,7 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
                 for item in (provider_result.get("results") or [])
                 if isinstance(item, dict)
             ]
+        provider_payloads[prov] = provider_result
         return provider_result
 
     def execute_with_retry(prov: str) -> Dict[str, Any]:
@@ -1682,6 +1696,7 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             providers_considered=providers_considered,
             research_providers=research_providers,
             cooldown_skips=cooldown_skips,
+            provider_payloads=provider_payloads,
         )
         return result, 0
 
@@ -1796,14 +1811,8 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             getattr(args, "time_range", None), args.freshness
         )
         if requested_freshness:
-            applied_dates = {}
-            if isinstance(result.get("metadata"), dict):
-                applied_dates = result["metadata"].pop("applied_published_dates", None) or {}
-            result.setdefault("metadata", {})["freshness"] = _providers.freshness_metadata(
-                successful_provider or provider,
-                requested_freshness,
-                start_date=applied_dates.get("startPublishedDate") or getattr(args, "start_date", None),
-                end_date=applied_dates.get("endPublishedDate") or getattr(args, "end_date", None),
+            result.setdefault("metadata", {})["freshness"] = _result_freshness(
+                successful_provider or provider, requested_freshness, result,
             )
 
         requested_search_type = getattr(args, "search_type", None)
@@ -2149,6 +2158,7 @@ def _execute_research_v3(
         providers_considered=providers,
         research_providers=providers,
         cooldown_skips=[],
+        provider_payloads=payloads_by_provider,
     )
 
     raw_results = []

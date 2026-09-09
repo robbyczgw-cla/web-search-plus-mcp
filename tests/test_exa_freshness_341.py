@@ -30,9 +30,15 @@ def test_exa_freshness_metadata_reports_native_date_range():
         providers,
         "exa_date_bounds",
         return_value=("2026-07-18T12:34:56Z", "2026-07-25T12:34:56Z"),
-    ) as bounds:
-        metadata = providers.freshness_metadata("exa", "week")
+    ) as bounds, mock.patch.object(providers, "make_request", return_value={"results": []}) as http:
+        result = providers.search_exa("q", "exa-test-key", freshness="week")
+        metadata = providers.freshness_metadata(
+            "exa", "week", applied_published_dates=result["metadata"]["applied_published_dates"]
+        )
     bounds.assert_called_once_with("week")
+    assert metadata["native_value"] == {
+        key: http.call_args.args[2][key] for key in ("startPublishedDate", "endPublishedDate")
+    }
     assert metadata == {
         "requested": "week",
         "applied": True,
@@ -49,12 +55,15 @@ def test_exa_freshness_metadata_reports_explicit_date_overrides():
         providers,
         "exa_date_bounds",
         return_value=("2026-07-18T12:34:56Z", "2026-07-25T12:34:56Z"),
-    ):
+    ) as bounds, mock.patch.object(providers, "make_request", return_value={"results": []}) as http:
+        result = providers.search_exa("q", "exa-test-key", freshness="week", start_date="2020-01-01T00:00:00Z")
         metadata = providers.freshness_metadata(
-            "exa",
-            "week",
-            start_date="2020-01-01T00:00:00Z",
+            "exa", "week", applied_published_dates=result["metadata"]["applied_published_dates"]
         )
+    bounds.assert_called_once_with("week")
+    assert metadata["native_value"] == {
+        key: http.call_args.args[2][key] for key in ("startPublishedDate", "endPublishedDate")
+    }
     assert metadata["native_value"] == {
         "startPublishedDate": "2020-01-01T00:00:00Z",
         "endPublishedDate": "2026-07-25T12:34:56Z",
