@@ -900,7 +900,7 @@ Full docs: See README.md and SKILL.md
         help=(
             "Unified recency filter (day, week, month, year; case-insensitive). "
             "Applied natively where the provider supports it (serper, brave, querit, firecrawl, "
-            "keenable, you, searxng, exa, and tinyfish); otherwise the search runs "
+            "keenable, you, searxng, exa, tavily, and tinyfish); otherwise the search runs "
             "unfiltered and result metadata reports freshness.applied=false"
         )
     )

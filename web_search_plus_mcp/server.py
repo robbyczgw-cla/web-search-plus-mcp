@@ -35,7 +35,7 @@ from mcp.types import (
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
-__version__ = "4.1.0"
+__version__ = "4.1.1"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 

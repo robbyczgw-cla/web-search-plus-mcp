@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [4.1.1] - 2026-09-09
+
+- Prefer Exa `highlights` over leading page text when both are present.
+- Send Parallel Search `max_results` and domain filters in `advanced_settings` instead of `site:` query stuffing.
+- Forward Tavily `time_range` from the unified freshness filter and report `freshness.applied=true`.
+
 ## [4.1.0] - 2026-09-05
 
 - Align the public MCP version line with Hermes Web Search Plus 4.1.0.
