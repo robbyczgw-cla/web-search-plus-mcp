@@ -925,7 +925,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     setup.add_argument("--json", action="store_true")
     setup.add_argument("--config-path", help=f"Override config path instead of {CONFIG_ENV_VAR}/default")
     jev = setup.add_mutually_exclusive_group()
-    jev.add_argument("--jev", action="store_true", help="Enable optional Jev (TypeSafe System One). Default off.")
+    jev.add_argument("--jev", action="store_true", help="Enable optional Jev. Default off.")
     jev.add_argument("--no-jev", action="store_true", help="Leave optional Jev disabled (default).")
     setup.add_argument(
         "--jev-decisions",
