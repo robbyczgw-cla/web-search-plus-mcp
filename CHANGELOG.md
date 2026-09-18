@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-09-18
+
+- Align the public MCP version line with Hermes Web Search Plus 4.2.0.
 - Optional Jev (TypeSafe System One), default off: search-type overlay (keyword proposes `news`, Jev confirms at confidence ≥ 0.95), extract quality, and language fill when WSP inferred none. Enable with `setup --jev --jev-key-file PATH`. The key is never written to `config.json`.
 
 ## [4.1.1] - 2026-09-09
