@@ -165,6 +165,15 @@ DEFAULT_CONFIG = {
         "full_text_ttl_seconds": 604800,
         "full_text_max_bytes": 268435456,
     },
+    "jev": {
+        "enabled": False,
+        "search_type": False,
+        "extract_quality": False,
+        "language_fill": False,
+        "min_confidence": 0.85,
+        "search_type_min_confidence": 0.95,
+        "timeout_s": 8.0,
+    },
     # Note: provider country/language keys are intentionally absent from the
     # built-in defaults so search_locale.resolve_locale can treat a present
     # key as an explicit user override from config.json.
@@ -550,6 +559,40 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     config["budget_preflight"] = budget_preflight
     config["quality"] = quality
     config["bounded_context"] = bounded
+    jev = config.get("jev", dict(DEFAULT_CONFIG["jev"]))
+    if not isinstance(jev, dict):
+        raise ValueError("jev must be an object")
+    merged_jev = {**DEFAULT_CONFIG["jev"], **jev}
+    if not isinstance(merged_jev.get("enabled"), bool):
+        raise ValueError("jev.enabled must be a boolean")
+    if str(merged_jev.get("api_key") or "").strip():
+        raise ValueError("jev.api_key is not allowed; use TYPESAFE_API_KEY_FILE")
+    merged_jev.pop("api_key", None)
+    for flag in ("search_type", "extract_quality", "language_fill"):
+        if not isinstance(merged_jev.get(flag), bool):
+            raise ValueError(f"jev.{flag} must be a boolean")
+    try:
+        min_conf = float(merged_jev.get("min_confidence", 0.85))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("jev.min_confidence must be a number") from exc
+    if min_conf < 0.0 or min_conf > 1.0:
+        raise ValueError("jev.min_confidence must be between 0.0 and 1.0")
+    merged_jev["min_confidence"] = min_conf
+    try:
+        st_conf = float(merged_jev.get("search_type_min_confidence", 0.95))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("jev.search_type_min_confidence must be a number") from exc
+    if st_conf < 0.0 or st_conf > 1.0:
+        raise ValueError("jev.search_type_min_confidence must be between 0.0 and 1.0")
+    merged_jev["search_type_min_confidence"] = st_conf
+    try:
+        timeout_s = float(merged_jev.get("timeout_s", 8.0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("jev.timeout_s must be a number") from exc
+    if timeout_s < 1.0 or timeout_s > 60.0:
+        raise ValueError("jev.timeout_s must be between 1 and 60")
+    merged_jev["timeout_s"] = timeout_s
+    config["jev"] = merged_jev
     return apply_profile_effects(config)
 
 

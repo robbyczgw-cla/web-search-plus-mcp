@@ -167,6 +167,7 @@ def apply_bounded_context(
     plan: ExtractContextPlan,
     *,
     store: ContentStore,
+    config: Dict[str, Any] | None = None,
 ) -> ResponseV3:
     """Bound inline extracted text without destroying full source observations."""
     results = deepcopy(response.results)

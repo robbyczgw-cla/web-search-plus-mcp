@@ -389,7 +389,25 @@ def _extract_plus_core(
                 else execute_provider_with_retry(prov, execute_extract)
             )
             res_list = result.get("results") or []
+            try:
+                from .jev_optional import filter_extract_results
+            except ImportError:  # pragma: no cover - direct script execution
+                from jev_optional import filter_extract_results
+
+            res_list, jev_meta = filter_extract_results(res_list, config=config)
+            result["results"] = res_list
+            if jev_meta:
+                result.setdefault("metadata", {})["jev_extract_quality"] = jev_meta
             all_failed = bool(res_list) and all(r.get("error") for r in res_list)
+            if not res_list and jev_meta:
+                if engine_owned_attempt:
+                    raise ProviderContractFailure("jev_extract_quality_rejected")
+                errors.append({
+                    "provider": prov,
+                    "error": "jev_extract_quality_rejected",
+                    "details": jev_meta,
+                })
+                continue
             if all_failed:
                 if engine_owned_attempt:
                     raise ProviderContractFailure("all_urls_failed")
@@ -677,6 +695,7 @@ def _finalize_extract_response(
         source_request,
         bounded_plan,
         store=store,
+        config=config,
     )
 
 
