@@ -1480,6 +1480,16 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
     instead of spawning a subprocess.
     """
     config = apply_profile_effects(config)
+    if getattr(args, "query", None):
+        try:
+            from .jev_optional import maybe_search_type
+        except ImportError:  # pragma: no cover
+            from jev_optional import maybe_search_type
+
+        resolved, _jev_meta = maybe_search_type(
+            args.query, getattr(args, "search_type", None), config=config
+        )
+        args.search_type = resolved
 
     # Determine provider
     if args.provider == "auto" or (args.provider is None and not args.similar_url):

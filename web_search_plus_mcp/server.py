@@ -34,6 +34,7 @@ from mcp.types import (
 )
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
+from . import jev_setup
 
 __version__ = "4.1.1"
 
@@ -860,15 +861,21 @@ def _status_payload() -> dict[str, Any]:
             key=os.environ.get("DONSETCH_BIN"),
             config=behavior_config,
         )
+    payload["jev"] = jev_setup.status_payload(os.environ, behavior_config)
     return payload
 
 
-def _canonical_snippet(env_file: str = ".env") -> dict[str, Any]:
+def _canonical_snippet(env_file: str = ".env", *, include_jev: bool = False, jev_key_file: str | None = None) -> dict[str, Any]:
     env = {
         "LINKUP_API_KEY": "your_linkup_key",
         "TAVILY_API_KEY": "your_tavily_key",
         "BRAVE_API_KEY": "your_brave_key",
     }
+    if include_jev:
+        if jev_key_file:
+            env["TYPESAFE_API_KEY_FILE"] = jev_key_file
+        else:
+            env["TYPESAFE_API_KEY"] = "your_typesafe_key"
     return {
         "mcpServers": {
             "web-search-plus": {
@@ -881,13 +888,23 @@ def _canonical_snippet(env_file: str = ".env") -> dict[str, Any]:
     }
 
 
-def _write_env_template(path: Path, preset: str, overwrite: bool) -> None:
-    keys = PRESETS[preset]
+def _write_env_template(
+    path: Path,
+    preset: str,
+    overwrite: bool,
+    extra_keys: Optional[list[str]] = None,
+    extra_values: Optional[dict[str, str]] = None,
+) -> None:
+    keys = list(PRESETS[preset])
+    extra_values = extra_values or {}
+    for key in extra_keys or []:
+        if key not in keys:
+            keys.append(key)
     if path.exists() and not overwrite:
         raise SystemExit(f"Refusing to overwrite existing {path}. Pass --force to replace it.")
     lines = ["# web-search-plus-mcp provider config"]
     for key in keys:
-        lines.append(f"{key}=")
+        lines.append(f"{key}={extra_values.get(key, '')}")
     path.write_text("\n".join(lines) + "\n")
 
 
@@ -906,6 +923,15 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     setup.add_argument("--dry-run", action="store_true")
     setup.add_argument("--force", action="store_true")
     setup.add_argument("--json", action="store_true")
+    setup.add_argument("--config-path", help=f"Override config path instead of {CONFIG_ENV_VAR}/default")
+    jev = setup.add_mutually_exclusive_group()
+    jev.add_argument("--jev", action="store_true", help="Enable optional Jev (TypeSafe System One). Default off.")
+    jev.add_argument("--no-jev", action="store_true", help="Leave optional Jev disabled (default).")
+    setup.add_argument(
+        "--jev-decisions",
+        help="Comma-separated Jev decisions: search_type,extract_quality,language_fill",
+    )
+    setup.add_argument("--jev-key-file", help="Path written as TYPESAFE_API_KEY_FILE (never paste the key on the CLI)")
     config_p = sub.add_parser("config", help="Inspect or change routing preferences in config.json")
     config_p.add_argument("--config-path", help=f"Override config path instead of {CONFIG_ENV_VAR}/default")
     config_sub = config_p.add_subparsers(dest="config_command", required=True)
@@ -960,6 +986,11 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
                     f"compatibility={donsetch.get('compatibility')}, "
                     f"tested={donsetch.get('tested_version')}"
                 )
+            jev = payload.get("jev") or {}
+            on = "on" if jev.get("enabled") else "off"
+            key = "yes" if jev.get("key_present") else "no"
+            chosen = [name for name, flag in (jev.get("decisions") or {}).items() if flag]
+            print(f"Jev: {on}, key={key}, decisions={', '.join(chosen) or 'none'}")
         return 0 if payload["search_configured"] else 1
     if args.command == "list":
         if args.what == "providers":
@@ -971,14 +1002,57 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         return 0
     if args.command == "setup":
         path = Path(args.env_file).expanduser()
-        payload = {"preset": args.preset, "env_file": str(path), "keys": PRESETS[args.preset], "snippet": _canonical_snippet(str(path))}
+        if getattr(args, "config_path", None):
+            os.environ[CONFIG_ENV_VAR] = args.config_path
+        want_jev = True if getattr(args, "jev", False) else False
+        try:
+            jev_decisions = jev_setup.parse_decisions(getattr(args, "jev_decisions", None))
+        except ValueError as exc:
+            raise SystemExit(str(exc))
+        jev_key_file = getattr(args, "jev_key_file", None)
+        extra_keys: list[str] = []
+        extra_values: dict[str, str] = {}
+        if want_jev:
+            if jev_key_file:
+                extra_keys.append(jev_setup.JEV_ENV_FILE)
+                extra_values[jev_setup.JEV_ENV_FILE] = str(Path(jev_key_file).expanduser())
+            else:
+                extra_keys.append(jev_setup.JEV_ENV)
+        keys = list(PRESETS[args.preset]) + extra_keys
+        payload = {
+            "preset": args.preset,
+            "env_file": str(path),
+            "keys": keys,
+            "snippet": _canonical_snippet(str(path), include_jev=want_jev, jev_key_file=jev_key_file),
+            "jev": {
+                "enabled": want_jev,
+                "decisions": list(jev_decisions) if want_jev else [],
+                "key_env": extra_keys[0] if extra_keys else None,
+            },
+        }
         if not args.dry_run:
-            _write_env_template(path, args.preset, args.force)
+            _write_env_template(
+                path,
+                args.preset,
+                args.force,
+                extra_keys=extra_keys,
+                extra_values=extra_values,
+            )
+            if want_jev:
+                config, _warning = _load_behavior_config()
+                jev_setup.apply_jev_config(config, enabled=True, decisions=jev_decisions)
+                written = _write_behavior_config(config)
+                payload["config_path"] = str(written)
         if args.json:
             print(json.dumps(payload, indent=2, ensure_ascii=False))
         else:
             action = "Would write" if args.dry_run else "Wrote"
-            print(f"{action} {path} with preset {args.preset}: {', '.join(PRESETS[args.preset])}")
+            print(f"{action} {path} with preset {args.preset}: {', '.join(keys)}")
+            print("\n".join(jev_setup.plan_lines(
+                want_enable=want_jev or False,
+                decisions=jev_decisions,
+                has_key=bool(jev_key_file) or jev_setup.key_present(os.environ),
+            )))
             print("\nCanonical MCP stdio snippet:")
             print(json.dumps(payload["snippet"], indent=2))
         return 0

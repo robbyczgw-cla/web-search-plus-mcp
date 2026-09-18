@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Optional Jev (TypeSafe System One), default off: search-type overlay (keyword proposes `news`, Jev confirms at confidence ≥ 0.95), extract quality, and language fill when WSP inferred none. Enable with `setup --jev --jev-key-file PATH`. The key is never written to `config.json`.
+
 ## [4.1.1] - 2026-09-09
 
 - Prefer Exa `highlights` over leading page text when both are present.
