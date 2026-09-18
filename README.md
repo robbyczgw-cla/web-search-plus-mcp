@@ -13,7 +13,13 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 4.2.0` matches Hermes Web Search Plus 4.2.0. Optional Jev (TypeSafe) is off by default; enable with `setup --jev --jev-key-file PATH`. DonSeTch 3.6.1 search/extract and 4.1.1 adapter fidelity stay. Existing MCP tools and setup stay the same. The matching Hermes plugin adds an optional native backend; this MCP package does not need or include that adapter. The Windows `fcntl` import fix from Hermes [#129](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/129) is not ported here. See the [4.2.0 release notes](docs/RELEASE_4_2_0.md).
+`web-search-plus-mcp 4.2.0` matches Hermes Web Search Plus 4.2.0.
+
+### What's new in 4.2.0
+
+Optional **Jev** is off by default. Enable with `setup --jev --jev-key-file PATH`. Jev can confirm a `news` search type, score extract bodies, and fill language when inference returned none. It is not a search provider. Keep the key in `TYPESAFE_API_KEY_FILE`, never in `config.json`.
+
+Existing MCP tools and setup stay the same. DonSeTch 3.6.1 search/extract and 4.1.1 adapter fidelity stay. The matching Hermes plugin adds an optional native backend; this MCP package does not include that adapter. The Windows `fcntl` import fix from Hermes [#129](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/129) is not ported here. See the [4.2.0 release notes](docs/RELEASE_4_2_0.md).
 
 ## 🚀 Quick Start
 

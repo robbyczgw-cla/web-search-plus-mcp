@@ -4,14 +4,14 @@ Same public version as Hermes Web Search Plus 4.2.0. MCP tool names, arguments, 
 
 ## Optional Jev
 
-TypeSafe System One is available and **off by default**. It is not a search provider.
+**Jev** is available and **off by default**. It is not a search provider.
 
 ```bash
 uvx --from web-search-plus-mcp==4.2.0 web-search-plus-mcp setup --preset starter \
-  --jev --jev-key-file /path/to/typesafe_api_key
+  --jev --jev-key-file /path/to/jev_api_key
 ```
 
-`--no-jev` leaves it disabled. The TypeSafe key is stored as `TYPESAFE_API_KEY_FILE` and is never written to `config.json`.
+`--no-jev` leaves it disabled. Store the key as `TYPESAFE_API_KEY_FILE`; it is never written to `config.json`.
 
 When enabled, three decisions can run:
 
