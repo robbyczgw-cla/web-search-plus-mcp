@@ -21,7 +21,7 @@ When enabled, three decisions can run:
 
 Missing SDK, missing key, timeout, or low confidence leaves WSP behavior unchanged.
 
-The opt-in Hermes native `wsp` backend remains Hermes-plugin-only. DonSeTch stays a separately installed upstream project.
+The opt-in Hermes native `wsp` backend remains Hermes-plugin-only. DonSeTch stays a separately installed upstream project. The Windows `fcntl` import fix from Hermes [#129](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/129) ([@gzwahoo](https://github.com/gzwahoo)) is not ported here.
 
 ## Upgrade
 
