@@ -13,13 +13,17 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 4.2.0` matches Hermes Web Search Plus 4.2.0.
+`web-search-plus-mcp 4.2.1` matches Hermes Web Search Plus 4.2.1.
+
+### What's new in 4.2.1
+
+`web_search` now accepts `no_cache` and `cache_ttl`, matching the CLI. The optional DonSeTch 4.2.9 adapter stays separately installed. See the [4.2.1 release notes](docs/RELEASE_4_2_1.md).
 
 ### What's new in 4.2.0
 
 Optional **Jev** is off by default. Enable with `setup --jev --jev-key-file PATH`. Jev can confirm a `news` search type, score extract bodies, and fill language when inference returned none. It is not a search provider. Keep the key in `TYPESAFE_API_KEY_FILE`, never in `config.json`.
 
-Existing MCP tools and setup stay the same. DonSeTch 3.6.1 search/extract and 4.1.1 adapter fidelity stay. The matching Hermes plugin adds an optional native backend; this MCP package does not include that adapter. The Windows `fcntl` import fix from Hermes [#129](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/129) is not ported here. See the [4.2.0 release notes](docs/RELEASE_4_2_0.md).
+Existing MCP tools and setup stay the same. The matching Hermes plugin adds an optional native backend; this MCP package does not include that adapter. The Windows `fcntl` import fix from Hermes [#129](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/129) is not ported here. See the [4.2.0 release notes](docs/RELEASE_4_2_0.md).
 
 ## 🚀 Quick Start
 
@@ -214,7 +218,7 @@ Use an API key for private or production use. The public endpoint sends queries 
 
 ### DonSeTch local provider
 
-[DonSeTch](https://github.com/dondai44423/donsetch) 3.6.1 is an independent
+[DonSeTch](https://github.com/dondai44423/donsetch) 4.2.9 is an independent
 AGPL-3.0-only project. It is not bundled with this package. Web Search Plus
 starts the separately installed executable as a stdio MCP process using
 `DONSETCH_BIN` and projects its `web_search` and `web_fetch` results into the
