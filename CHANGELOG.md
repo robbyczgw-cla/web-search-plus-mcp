@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Expose `no_cache` and `cache_ttl` on the MCP `web_search` tool so clients can bypass or shorten the search cache, matching the CLI flags.
+
 ## [4.2.0] - 2026-09-18
 
 - Align the public MCP version line with Hermes Web Search Plus 4.2.0.

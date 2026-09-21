@@ -374,6 +374,17 @@ async def list_tools() -> list[Tool]:
                     "mode": {"type": "string", "enum": ["normal", "research"], "default": "normal", "description": "normal fast path or opt-in research mode."},
                     "quality_report": {"type": "boolean", "default": False, "description": "Attach routing/result diagnostics."},
                     "research_time_budget": {"type": "number", "default": 55.0, "minimum": 1, "maximum": 75, "description": "Best-effort budget for research mode."},
+                    "no_cache": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Bypass the search cache and fetch live results. Use for recency queries when a cached hit would be stale.",
+                    },
+                    "cache_ttl": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 86400,
+                        "description": "Search-cache TTL in seconds. Default is 3600 if omitted.",
+                    },
                 },
                 "required": ["query"],
             },
@@ -714,6 +725,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         quality_report_requested = _as_bool(arguments.get("quality_report", False))
         if quality_report_requested:
             cmd.append("--quality-report")
+        if _as_bool(arguments.get("no_cache", False)):
+            cmd.append("--no-cache")
+        _append_optional(cmd, "--cache-ttl", arguments.get("cache_ttl"))
         return await _run_cmd(
             cmd,
             timeout=(
