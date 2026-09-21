@@ -1,6 +1,6 @@
 # Web Search Plus MCP 4.2.1
 
-Same public version as Hermes Web Search Plus 4.2.1. MCP tool names, arguments, and legacy result fields stay the same.
+Matches the Hermes plugin's public version, 4.2.1. MCP tool names and legacy result fields stay the same. Search adds two optional arguments: `no_cache` and `cache_ttl`.
 
 ## Cache freshness
 
