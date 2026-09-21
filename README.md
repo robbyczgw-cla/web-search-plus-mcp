@@ -279,6 +279,8 @@ Parameters:
 - `mode` — `normal` or `research`
 - `quality_report` — include routing/result diagnostics
 - `research_time_budget` — best-effort wall-clock budget for research mode
+- `no_cache` — bypass the search cache and fetch live results
+- `cache_ttl` — search-cache TTL in seconds (default 3600)
 
 Example MCP arguments:
 

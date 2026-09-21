@@ -145,6 +145,17 @@
             "minimum": 1,
             "maximum": 75,
             "description": "Best-effort budget for research mode."
+          },
+          "no_cache": {
+            "type": "boolean",
+            "default": false,
+            "description": "Bypass the search cache and fetch live results. Use for recency queries when a cached hit would be stale."
+          },
+          "cache_ttl": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400,
+            "description": "Search-cache TTL in seconds. Default is 3600 if omitted."
           }
         },
         "required": [

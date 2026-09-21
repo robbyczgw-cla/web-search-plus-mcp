@@ -41,6 +41,46 @@ def test_web_search_schema_exposes_v1_source_providers_and_controls():
     assert props["mode"]["enum"] == ["normal", "research"]
     assert props["quality_report"]["type"] == "boolean"
     assert props["research_time_budget"]["maximum"] == 75
+    assert props["no_cache"]["type"] == "boolean"
+    assert props["no_cache"]["default"] is False
+    assert props["cache_ttl"]["type"] == "integer"
+    assert props["cache_ttl"]["minimum"] == 1
+    assert props["cache_ttl"]["maximum"] == 86400
+
+
+def test_mcp_search_forwards_no_cache_and_cache_ttl(monkeypatch):
+    seen = {}
+
+    def fake_run(cmd, capture_output, text, env, timeout):
+        seen["cmd"] = cmd
+        return SimpleNamespace(returncode=0, stdout=json.dumps({"ok": True}), stderr="")
+
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    run(
+        server.call_tool(
+            "web_search",
+            {"query": "latest rates", "no_cache": True, "cache_ttl": 60},
+        )
+    )
+    cmd = seen["cmd"]
+    assert "--no-cache" in cmd
+    assert cmd[cmd.index("--no-cache") + 1] != "True"
+    ttl_idx = cmd.index("--cache-ttl")
+    assert cmd[ttl_idx + 1] == "60"
+
+
+def test_mcp_search_omits_cache_flags_by_default(monkeypatch):
+    seen = {}
+
+    def fake_run(cmd, capture_output, text, env, timeout):
+        seen["cmd"] = cmd
+        return SimpleNamespace(returncode=0, stdout=json.dumps({"ok": True}), stderr="")
+
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    run(server.call_tool("web_search", {"query": "stable docs"}))
+    cmd = seen["cmd"]
+    assert "--no-cache" not in cmd
+    assert "--cache-ttl" not in cmd
 
 
 def test_web_extract_tool_is_exposed_with_tavily_first_capable_schema():
