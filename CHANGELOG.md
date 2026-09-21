@@ -2,7 +2,10 @@
 
 ## [Unreleased]
 
+## [4.2.1] - 2026-09-21
+
 - Expose `no_cache` and `cache_ttl` on the MCP `web_search` tool so clients can bypass or shorten the search cache, matching the CLI flags.
+- Pin the optional DonSeTch adapter `TESTED_VERSION` to **4.2.9**. Status reports `tested` for 4.2.9 and `compatible_unverified` for any other parsed version, including 3.x. A different major is not treated as broken. DonSeTch stays separately installed. Attribution: [dondai44423/donsetch](https://github.com/dondai44423/donsetch), AGPL-3.0-only.
 
 ## [4.2.0] - 2026-09-18
 
