@@ -9,11 +9,9 @@ import gzip
 import json
 import os
 import socket
-import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from unittest import mock
 
 import pytest

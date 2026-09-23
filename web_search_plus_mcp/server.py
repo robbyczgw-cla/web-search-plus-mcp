@@ -694,7 +694,9 @@ async def _run_in_process(engine: Any, cmd: list[str], timeout: int) -> Optional
     task = DaemonTask(engine.run_cli_contract_v3, argv)
     try:
         payload, _exit_code = await asyncio.to_thread(task.result, timeout)
-    except FuturesTimeoutError:
+    except (FuturesTimeoutError, asyncio.TimeoutError, TimeoutError):
+        # Before 3.11 these are distinct classes, and asyncio re-raises the
+        # future's timeout as asyncio.TimeoutError across to_thread.
         # The worker thread is a daemon bounded by per-provider HTTP timeouts.
         return _subprocess_timeout_payload()
     except ValueError as exc:
