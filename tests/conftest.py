@@ -39,3 +39,20 @@ def _isolate_runtime_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(provider_health, "PROVIDER_HEALTH_FILE", cache_root / "provider_health.json")
     monkeypatch.setattr(provider_stats, "CACHE_DIR", cache_root)
     monkeypatch.setattr(provider_stats, "PROVIDER_STATS_FILE", cache_root / "provider_stats.json")
+
+
+@pytest.fixture(autouse=True)
+def _default_to_subprocess_dispatch(request, monkeypatch):
+    """Existing server tests intercept ``subprocess.run`` to inspect argv.
+
+    Keep them on the subprocess path; tests marked ``inprocess`` exercise the
+    in-process engine (the production default) explicitly.
+    """
+    if request.node.get_closest_marker("inprocess"):
+        monkeypatch.delenv("WSP_FORCE_SUBPROCESS", raising=False)
+    else:
+        monkeypatch.setenv("WSP_FORCE_SUBPROCESS", "1")
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "inprocess: run MCP tool calls through the in-process engine")

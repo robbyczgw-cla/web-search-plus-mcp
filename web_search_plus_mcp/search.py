@@ -35,7 +35,6 @@ import sys
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
-from urllib.request import urlopen
 try:
     from .http_client import (  # noqa: F401 - re-exported for backward-compatible tests/imports
         ProviderRequestError,
@@ -44,6 +43,7 @@ try:
         _read_response_body,
         make_get_request,
         make_request,
+        urlopen,  # pooled keep-alive opener; monkeypatch seam
     )
 except ImportError:  # pragma: no cover - direct script execution
     from http_client import (  # noqa: F401 - re-exported for backward-compatible tests/imports
@@ -53,6 +53,7 @@ except ImportError:  # pragma: no cover - direct script execution
         _read_response_body,
         make_get_request,
         make_request,
+        urlopen,  # pooled keep-alive opener; monkeypatch seam
     )
 try:
     from . import http_client as _http_client
@@ -1104,6 +1105,85 @@ Full docs: See README.md and SKILL.md
     return parser
 
 
+def _v3_extract_request_from_args(args) -> RequestV3:
+    """Build the canonical extract RequestV3 from parsed ``--contract-v3`` CLI args."""
+    return legacy_request_to_v3(
+        Capability.EXTRACT,
+        {
+            "urls": args.extract_urls,
+            "provider": args.provider or "auto",
+            "format": args.output_format,
+            "include_images": args.extract_images,
+            "include_raw_html": args.include_raw_html,
+            "render_js": args.render_js,
+            "spans": args.spans,
+            "spans_query": args.spans_query,
+            "allow_fallback": (
+                args.allow_fallback or (args.provider or "auto") == "auto"
+            ),
+            "no_cache": args.no_cache,
+            "cache_ttl": args.cache_ttl,
+        },
+    )
+
+
+def _v3_search_request_from_args(args) -> RequestV3:
+    """Build the canonical search RequestV3 from parsed ``--contract-v3`` CLI args."""
+    return legacy_request_to_v3(
+        Capability.SEARCH,
+        {
+            "query": args.query,
+            "provider": args.provider or "auto",
+            "count": args.max_results,
+            "depth": args.exa_depth,
+            "time_range": getattr(args, "time_range", None),
+            "freshness": args.freshness,
+            "search_type": args.search_type,
+            "include_domains": args.include_domains,
+            "exclude_domains": args.exclude_domains,
+            "mode": args.mode,
+            "quality_report": args.quality_report,
+            "research_time_budget": args.research_time_budget,
+            "country": args.country,
+            "language": args.language,
+            "allow_fallback": (
+                args.allow_fallback or (args.provider or "auto") == "auto"
+            ),
+            "no_cache": args.no_cache,
+            "cache_ttl": args.cache_ttl,
+        },
+    )
+
+
+def run_cli_contract_v3(argv: List[str], *, config: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], int]:
+    """In-process equivalent of ``search.py <argv>`` for ``--contract-v3`` calls.
+
+    Parses ``argv`` with the same parser and config defaults as ``main()`` and
+    returns ``(payload, exit_code)`` without printing, so a long-lived host (the
+    MCP server) can skip interpreter startup per call. Only ``--contract-v3``
+    search and extract are supported; anything else raises ``ValueError``.
+    Argument errors raise ``SystemExit`` exactly like the CLI parser does.
+    """
+    config = load_config() if config is None else config
+    parser = build_parser(config)
+    args = parser.parse_args(argv)
+    if (
+        not args.contract_v3
+        or args.command is not None
+        or args.clear_cache
+        or args.cache_stats
+        or args.explain_routing
+    ):
+        raise ValueError("run_cli_contract_v3 only supports --contract-v3 search and extract")
+    if args.extract_urls is not None:
+        payload = run_extract_request_v3(_v3_extract_request_from_args(args), config=config).to_dict()
+    else:
+        if not args.query and not args.similar_url:
+            parser.error("--query is required (unless using --similar-url with Exa)")
+        payload = run_search_request_v3(_v3_search_request_from_args(args), config=config).to_dict()
+    return payload, 1 if payload.get("status") == "failed" else 0
+
+
 def main():
     config = load_config()
     parser = build_parser(config)
@@ -1161,25 +1241,7 @@ def main():
 
     if args.extract_urls is not None:
         if args.contract_v3:
-            request = legacy_request_to_v3(
-                Capability.EXTRACT,
-                {
-                    "urls": args.extract_urls,
-                    "provider": args.provider or "auto",
-                    "format": args.output_format,
-                    "include_images": args.extract_images,
-                    "include_raw_html": args.include_raw_html,
-                    "render_js": args.render_js,
-                    "spans": args.spans,
-                    "spans_query": args.spans_query,
-                    "allow_fallback": (
-                        args.allow_fallback or (args.provider or "auto") == "auto"
-                    ),
-                    "no_cache": args.no_cache,
-                    "cache_ttl": args.cache_ttl,
-                },
-            )
-            result = run_extract_request_v3(request, config=config).to_dict()
+            result = run_extract_request_v3(_v3_extract_request_from_args(args), config=config).to_dict()
         else:
             result = extract_plus(
                 urls=args.extract_urls,
@@ -1212,31 +1274,7 @@ def main():
         return
 
     if args.contract_v3:
-        request = legacy_request_to_v3(
-            Capability.SEARCH,
-            {
-                "query": args.query,
-                "provider": args.provider or "auto",
-                "count": args.max_results,
-                "depth": args.exa_depth,
-                "time_range": getattr(args, "time_range", None),
-                "freshness": args.freshness,
-                "search_type": args.search_type,
-                "include_domains": args.include_domains,
-                "exclude_domains": args.exclude_domains,
-                "mode": args.mode,
-                "quality_report": args.quality_report,
-                "research_time_budget": args.research_time_budget,
-                "country": args.country,
-                "language": args.language,
-                "allow_fallback": (
-                    args.allow_fallback or (args.provider or "auto") == "auto"
-                ),
-                "no_cache": args.no_cache,
-                "cache_ttl": args.cache_ttl,
-            },
-        )
-        payload = run_search_request_v3(request, config=config).to_dict()
+        payload = run_search_request_v3(_v3_search_request_from_args(args), config=config).to_dict()
         exit_code = 1 if payload.get("status") == "failed" else 0
     else:
         payload, exit_code = _execute_search_request_core(args, config)

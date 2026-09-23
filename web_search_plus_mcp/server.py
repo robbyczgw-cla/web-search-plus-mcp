@@ -15,6 +15,8 @@ import math
 import os
 import subprocess
 import sys
+import threading
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -35,6 +37,7 @@ from mcp.types import (
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 from . import jev_setup
+from .daemon_tasks import DaemonTask
 
 __version__ = "4.3.0"
 
@@ -625,6 +628,116 @@ def _project_v3_payload(
     return projected
 
 
+_search_engine: Any = None
+_search_engine_failed = False
+_search_engine_lock = threading.Lock()
+
+
+def _force_subprocess() -> bool:
+    """Operators can opt back into one search.py process per call."""
+    return os.environ.get("WSP_FORCE_SUBPROCESS", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _load_search_engine() -> Any:
+    """Import the bundled search engine once; None means use the subprocess path."""
+    global _search_engine, _search_engine_failed
+    if _search_engine is not None or _search_engine_failed:
+        return _search_engine
+    with _search_engine_lock:
+        if _search_engine is None and not _search_engine_failed:
+            try:
+                from . import search as engine
+
+                if not callable(getattr(engine, "run_cli_contract_v3", None)):
+                    raise ImportError("search.run_cli_contract_v3 missing")
+                _search_engine = engine
+            except Exception as exc:  # pragma: no cover - defensive fallback
+                _search_engine_failed = True
+                print(
+                    json.dumps({"warning": f"in-process search engine unavailable, using subprocess: {exc}"}),
+                    file=sys.stderr,
+                )
+    return _search_engine
+
+
+def _subprocess_failed_payload(*, invalid_response: bool = False) -> dict[str, Any]:
+    return _typed_error_payload(
+        code="wsp.subprocess.invalid_response" if invalid_response else "wsp.subprocess.failed",
+        message=(
+            "Web Search Plus subprocess returned an invalid response."
+            if invalid_response
+            else "Web Search Plus subprocess failed."
+        ),
+        error_class="internal",
+    )
+
+
+def _subprocess_timeout_payload() -> dict[str, Any]:
+    return _typed_error_payload(
+        code="wsp.subprocess.timeout",
+        message="Web Search Plus subprocess timed out.",
+        error_class="timeout",
+        retryable=True,
+    )
+
+
+async def _run_in_process(engine: Any, cmd: list[str], timeout: int) -> Optional[dict[str, Any]]:
+    """Run ``search.py <argv>`` inside this process.
+
+    Same argv, parser, config reload and v3 pipeline as the subprocess path,
+    minus interpreter startup per call; it also lets http_client keep provider
+    connections alive between calls. Error and timeout payloads match the
+    subprocess path so clients see no difference. Returns None when the argv is
+    outside the in-process scope, so the caller falls back to the subprocess.
+    """
+    argv = [str(part) for part in cmd[2:]]
+    task = DaemonTask(engine.run_cli_contract_v3, argv)
+    try:
+        payload, _exit_code = await asyncio.to_thread(task.result, timeout)
+    except (FuturesTimeoutError, asyncio.TimeoutError, TimeoutError):
+        # Before 3.11 these are distinct classes, and asyncio re-raises the
+        # future's timeout as asyncio.TimeoutError across to_thread.
+        # The worker thread is a daemon bounded by per-provider HTTP timeouts.
+        return _subprocess_timeout_payload()
+    except ValueError as exc:
+        if "only supports --contract-v3" in str(exc):
+            return None
+        print(json.dumps({"error": f"in-process search failed: {type(exc).__name__}"}), file=sys.stderr)
+        return _subprocess_failed_payload()
+    except SystemExit:
+        # argparse rejected the argv; the CLI would exit 2 with usage on stderr.
+        return _subprocess_failed_payload()
+    except Exception as exc:
+        print(json.dumps({"error": f"in-process search failed: {type(exc).__name__}"}), file=sys.stderr)
+        return _subprocess_failed_payload()
+    if not isinstance(payload, dict):
+        return _subprocess_failed_payload(invalid_response=True)
+    # Round-trip through JSON so the result is exactly what the CLI would print.
+    try:
+        return json.loads(json.dumps(payload, ensure_ascii=False))
+    except (TypeError, ValueError):
+        return _subprocess_failed_payload(invalid_response=True)
+
+
+async def _run_subprocess(cmd: list[str], timeout: int) -> dict[str, Any]:
+    try:
+        result = await asyncio.to_thread(
+            subprocess.run,
+            cmd,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return _subprocess_timeout_payload()
+    raw = (result.stdout if result.returncode == 0 else result.stderr).strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return _subprocess_failed_payload(invalid_response=result.returncode == 0)
+
+
 async def _run_cmd(
     cmd: list[str],
     timeout: int,
@@ -637,40 +750,12 @@ async def _run_cmd(
     recency_time_range: Optional[str] = None,
     recency_freshness: Optional[str] = None,
 ) -> list[TextContent]:
-    try:
-        result = await asyncio.to_thread(
-            subprocess.run,
-            cmd,
-            capture_output=True,
-            text=True,
-            env=os.environ.copy(),
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        payload = _typed_error_payload(
-            code="wsp.subprocess.timeout",
-            message="Web Search Plus subprocess timed out.",
-            error_class="timeout",
-            retryable=True,
-        )
-        return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
-    raw = (result.stdout if result.returncode == 0 else result.stderr).strip()
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        payload = _typed_error_payload(
-            code=(
-                "wsp.subprocess.invalid_response"
-                if result.returncode == 0
-                else "wsp.subprocess.failed"
-            ),
-            message=(
-                "Web Search Plus subprocess returned an invalid response."
-                if result.returncode == 0
-                else "Web Search Plus subprocess failed."
-            ),
-            error_class="internal",
-        )
+    payload = None
+    engine = None if _force_subprocess() else _load_search_engine()
+    if engine is not None:
+        payload = await _run_in_process(engine, cmd, timeout)
+    if payload is None:
+        payload = await _run_subprocess(cmd, timeout)
     if isinstance(payload, dict) and payload.get("contract_version") == "3.0":
         payload = _project_v3_payload(
             payload,

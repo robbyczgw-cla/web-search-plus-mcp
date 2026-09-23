@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `web_search` and `web_extract` run the search engine inside the MCP server instead of spawning `search.py` per call. Same argv, parser, and per-call config reload; error and timeout payloads are unchanged. Live stdio medians: auto routing 1.70 s → 0.99 s, Serper −18 %. `WSP_FORCE_SUBPROCESS=1` restores one process per call. Note: `.env` is now read once at server start, so restart the server after adding a key there.
+- Provider HTTP calls reuse keep-alive connections per host (synced from Hermes Web Search Plus). Proxies and `WSP_HTTP_KEEPALIVE=0` keep plain `urlopen`.
+- `search.make_request` no longer resets the pooled opener to plain `urlopen` on every call.
+
 ## [4.3.0] - 2026-09-23
 
 - Fix adaptive routing on the v3 engine path, synced from Hermes Web Search Plus. Engine-owned search calls skipped `record_provider_outcome`, so provider performance samples stopped and routing fell back to static priority. Every real provider call, including research members and each retry, now records a sample. Cache hits and config errors still record nothing.
