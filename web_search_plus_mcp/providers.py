@@ -11,7 +11,7 @@ import time
 from typing import Any, Dict, List, Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 try:
     from .daemon_tasks import DaemonTask
@@ -26,6 +26,7 @@ try:
         _read_response_body,
         make_get_request,
         make_request,
+        urlopen,
     )
 except ImportError:  # pragma: no cover - direct script execution
     from http_client import (
@@ -36,6 +37,7 @@ except ImportError:  # pragma: no cover - direct script execution
         _read_response_body,
         make_get_request,
         make_request,
+        urlopen,
     )
 try:
     from .quality import _title_from_url
@@ -1382,7 +1384,6 @@ def search_you(
     }
 
     # Make GET request (You.com uses GET, not POST)
-    from urllib.request import Request, urlopen
     req = Request(url, headers=headers, method="GET")
 
     try:
