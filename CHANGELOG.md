@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Fix adaptive routing on the v3 engine path, synced from Hermes Web Search Plus. Engine-owned search calls skipped `record_provider_outcome`, so provider performance samples stopped and routing fell back to static priority. Every real provider call, including research members and each retry, now records a sample. Cache hits and config errors still record nothing.
+- Lock `provider_stats.json` across processes (POSIX). Concurrent writers lost up to half of the samples.
 
 ## [4.2.1] - 2026-09-21
 
