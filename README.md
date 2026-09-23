@@ -13,7 +13,11 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 4.3.0` matches Hermes Web Search Plus 4.3.0.
+`web-search-plus-mcp 4.3.1` matches Hermes Web Search Plus 4.3.1.
+
+### What's new in 4.3.1
+
+Faster: searches run inside the MCP server instead of one Python process per call, and provider connections are reused (auto routing 1.70 s → 0.99 s in live tests). Restart the server after adding a key to `.env`. See [4.3.1 notes](docs/RELEASE_4_3_1.md).
 
 ### What's new in 4.3.0
 
