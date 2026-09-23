@@ -703,11 +703,12 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             f"--query={query}",
             "--provider",
             provider,
-            "--max-results",
-            str(arguments.get("count", 5)),
             "--compact",
             "--contract-v3",
         ]
+        # Omitted or null count leaves --max-results to search.py, which reads
+        # defaults.max_results from config.json. An explicit count wins.
+        _append_optional(cmd, "--max-results", arguments.get("count"))
         depth = arguments.get("depth", "normal")
         if depth != "normal":
             cmd.extend(["--exa-depth", depth])

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Fix adaptive routing on the v3 engine path, synced from Hermes Web Search Plus. Engine-owned search calls skipped `record_provider_outcome`, so provider performance samples stopped and routing fell back to static priority. Every real provider call, including research members and each retry, now records a sample. Cache hits and config errors still record nothing.
+- Lock `provider_stats.json` across processes (POSIX). Concurrent writers lost up to half of the samples.
+- `web_search` no longer forces `--max-results 5` when the client omits `count`, so `defaults.max_results` in `config.json` applies. A `count: null` argument no longer produces `--max-results None`, which the search script rejected. An explicit `count` still wins.
+
 ## [4.2.1] - 2026-09-21
 
 - Expose `no_cache` and `cache_ttl` on the MCP `web_search` tool so clients can bypass or shorten the search cache, matching the CLI flags.
