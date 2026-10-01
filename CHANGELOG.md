@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [4.3.2] - 2026-10-01
+
+- Security hardening, synced from Hermes Web Search Plus 4.3.2: extract rejects URLs that parse differently across URL parsers and checks literal IPs and DNS answers, including IPv6 embedded-IPv4 forms; the HTTP client follows only same-origin redirects and its urllib opener is http(s)-only; responses are limited to 16 MiB on the wire and after decoding; provider-supplied error text is no longer passed on; DonSeTch runs with an allowlisted environment.
+- `include_domains`, `exclude_domains` and `urls` values that start with `-` or are empty are refused with an `invalid_request` error before any run.
+- Redirects across host, port or scheme now fail, and provider errors are less detailed.
+
 ## [4.3.1] - 2026-09-23
 
 - `web_search` and `web_extract` run the search engine inside the MCP server instead of spawning `search.py` per call. Same argv, parser, and per-call config reload; error and timeout payloads are unchanged. Live stdio medians: auto routing 1.70 s → 0.99 s, Serper −18 %. `WSP_FORCE_SUBPROCESS=1` restores one process per call. Note: `.env` is now read once at server start, so restart the server after adding a key there.
