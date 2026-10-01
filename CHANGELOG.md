@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [4.3.3] - 2026-10-01
+
+- `web_extract` converts internationalized hostnames (`müller.de`, `straße.de`, `例え.jp`) to punycode and validates and fetches the converted URL instead of rejecting them. Mixed-script labels, compatibility characters and invalid IDNA are still rejected. `idna` is a declared dependency. Synced from Hermes Web Search Plus 4.3.3.
+- Clarified: the same-origin redirect rule covers calls to provider APIs, not the pages you extract.
+
 ## [4.3.2] - 2026-10-01
 
 - Security hardening, synced from Hermes Web Search Plus 4.3.2: extract rejects URLs that parse differently across URL parsers and checks literal IPs and DNS answers, including IPv6 embedded-IPv4 forms; the HTTP client follows only same-origin redirects and its urllib opener is http(s)-only; responses are limited to 16 MiB on the wire and after decoding; provider-supplied error text is no longer passed on; DonSeTch runs with an allowlisted environment.
