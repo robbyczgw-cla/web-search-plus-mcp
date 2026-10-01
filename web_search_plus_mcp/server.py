@@ -39,7 +39,7 @@ from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EX
 from . import jev_setup
 from .daemon_tasks import DaemonTask
 
-__version__ = "4.3.1"
+__version__ = "4.3.2"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 
@@ -323,6 +323,35 @@ _load_env_file()
 def _append_optional(cmd: list[str], flag: str, value: Any) -> None:
     if value is not None and value != "":
         cmd.extend([flag, str(value)])
+
+
+def _unsafe_variadic_values(label: str, values: Any) -> Optional[str]:
+    """Return a problem text when values are unsafe behind a variadic CLI flag.
+
+    argparse in the child would read an entry such as ``--clear-cache`` as a
+    real option, so these are refused before any process or in-process run.
+    """
+    if values is None:
+        return None
+    if isinstance(values, str):
+        values = [values]
+    if not isinstance(values, (list, tuple)):
+        return f"Invalid {label}: expected a list of strings"
+    for value in values:
+        if not isinstance(value, str) or not value.strip():
+            return f"Invalid {label}: entries must be non-empty strings"
+        if value.startswith("-"):
+            return f"Invalid {label}: entries must not start with '-'"
+    return None
+
+
+def _invalid_arguments_payload(message: str) -> list[TextContent]:
+    payload = _typed_error_payload(
+        code="wsp.request.invalid_arguments",
+        message=message,
+        error_class="invalid_request",
+    )
+    return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
 
 
 def _append_list(cmd: list[str], flag: str, values: Any) -> None:
@@ -782,6 +811,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 provider=provider,
             )
             return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
+        for label in ("include_domains", "exclude_domains"):
+            problem = _unsafe_variadic_values(label, arguments.get(label))
+            if problem:
+                return _invalid_arguments_payload(problem)
         cmd = [
             sys.executable,
             str(SEARCH_SCRIPT),
@@ -837,6 +870,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         urls = arguments["urls"]
         if isinstance(urls, str):
             urls = [urls]
+        problem = _unsafe_variadic_values("urls", urls)
+        if problem or not urls:
+            return _invalid_arguments_payload(problem or "Invalid urls: at least one URL is required")
         cmd = [
             sys.executable,
             str(SEARCH_SCRIPT),
