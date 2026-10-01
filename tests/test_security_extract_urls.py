@@ -153,7 +153,7 @@ def test_normal_public_urls_still_pass(monkeypatch, url):
 
 
 def test_rejected_url_never_reaches_a_provider(monkeypatch, no_dns):
-    with mock.patch("search.extract_firecrawl") as provider:
+    with mock.patch("extract.extract_firecrawl") as provider:
         result = search.extract_plus(
             ["http://127.0.0.1\\@example.com/collect"],
             provider="firecrawl",
@@ -227,10 +227,12 @@ def test_idn_host_that_maps_to_a_private_ip_literal_is_rejected(no_dns):
 
 
 def test_idn_url_reaches_provider_only_as_punycode(monkeypatch):
-    monkeypatch.setattr(extract.socket, "getaddrinfo", _resolver("93.184.216.34"))
-    with mock.patch("search.extract_firecrawl") as provider:
+    from web_search_plus_mcp import extract as pkg_extract
+
+    monkeypatch.setattr(pkg_extract.socket, "getaddrinfo", _resolver("93.184.216.34"))
+    with mock.patch("web_search_plus_mcp.extract.extract_firecrawl") as provider:
         provider.return_value = {"provider": "firecrawl", "results": []}
-        search.extract_plus(["https://m\u00fcller.de/"], provider="firecrawl", config={"extract": {}})
+        pkg_extract.extract_plus(["https://m\u00fcller.de/"], provider="firecrawl", config={"extract": {}})
     urls = provider.call_args[0][0]
     assert urls == ["https://xn--mller-kva.de/"]
 
