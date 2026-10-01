@@ -870,10 +870,11 @@ wheels = [
 
 [[package]]
 name = "web-search-plus-mcp"
-version = "4.3.1"
+version = "4.3.3"
 source = { editable = "." }
 dependencies = [
     { name = "httpx2" },
+    { name = "idna" },
     { name = "jsonschema" },
     { name = "mcp" },
 ]
@@ -888,6 +889,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "httpx2", specifier = ">=2.5.0" },
+    { name = "idna", specifier = ">=3.4" },
     { name = "jsonschema", specifier = ">=4.20,<5" },
     { name = "mcp", specifier = ">=2.0.0,<3" },
     { name = "pytest", marker = "extra == 'test'" },

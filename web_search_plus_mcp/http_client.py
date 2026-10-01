@@ -334,7 +334,7 @@ def urlopen(req, timeout: float = 30):
 try:
     from . import __version__
 except ImportError:  # pragma: no cover
-    __version__ = "4.3.2"
+    __version__ = "4.3.3"
 
 DEFAULT_USER_AGENT = f"ClawdBot-WebSearchPlus-MCP/{__version__}"
 

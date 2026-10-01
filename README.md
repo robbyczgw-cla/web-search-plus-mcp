@@ -13,9 +13,13 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 4.3.2` matches Hermes Web Search Plus 4.3.2.
+`web-search-plus-mcp 4.3.3` matches Hermes Web Search Plus 4.3.3.
 
-### What's new in 4.3.2
+### What's new in 4.3.3
+
+`web_extract` converts internationalized hostnames such as `müller.de` to punycode instead of rejecting them. See [docs/RELEASE_4_3_3.md](docs/RELEASE_4_3_3.md).
+
+### Earlier: 4.3.2
 
 Security hardening, matching Hermes Web Search Plus 4.3.2: stricter extract URL validation, same-origin-only redirects, response size limits, no provider error text passed on, option-like domain and URL values refused before any run, and an allowlisted DonSeTch environment. Redirects across host, port or scheme now fail and provider errors are less detailed; see [docs/RELEASE_4_3_2.md](docs/RELEASE_4_3_2.md).
 
