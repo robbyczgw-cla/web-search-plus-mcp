@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [4.3.4] - 2026-10-07
+
+- Missing-key errors suggest `web-search-plus-mcp setup`, the `.env` file or the MCP client `env` block instead of an inline key in `config.json`. Synced from Hermes Web Search Plus 4.3.4.
+- DonSeTch: closing a session lets the stderr reader finish before the pipe is closed, so the sanitized stderr excerpt is no longer lost and the reader thread no longer raises `ValueError`.
+
 ## [4.3.3] - 2026-10-01
 
 - `web_extract` converts internationalized hostnames (`müller.de`, `straße.de`, `例え.jp`) to punycode and validates and fetches the converted URL instead of rejecting them. Mixed-script labels, compatibility characters and invalid IDNA are still rejected. `idna` is a declared dependency. Synced from Hermes Web Search Plus 4.3.3.
