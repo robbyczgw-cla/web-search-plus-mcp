@@ -13,9 +13,13 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 4.3.3` matches Hermes Web Search Plus 4.3.3.
+`web-search-plus-mcp 4.3.4` matches Hermes Web Search Plus 4.3.4.
 
-### What's new in 4.3.3
+### What's new in 4.3.4
+
+Missing-key errors point to `web-search-plus-mcp setup`, the `.env` file or the MCP client `env` block instead of an inline key in `config.json`, and DonSeTch no longer loses its stderr excerpt when a session closes. See [docs/RELEASE_4_3_4.md](docs/RELEASE_4_3_4.md).
+
+### Earlier: 4.3.3
 
 `web_extract` converts internationalized hostnames such as `müller.de` to punycode instead of rejecting them. See [docs/RELEASE_4_3_3.md](docs/RELEASE_4_3_3.md).
 

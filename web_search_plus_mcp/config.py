@@ -776,7 +776,7 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
                 "env_var": "SEARXNG_INSTANCE_URL",
                 "how_to_fix": [
                     "1. Set up your own SearXNG instance: https://docs.searxng.org/admin/installation.html",
-                    "2. Add to config.json: \"searxng\": {\"instance_url\": \"https://your-instance.example.com\"}",
+                    "2. Add SEARXNG_INSTANCE_URL=https://your-instance.example.com to the .env file of your MCP client or server",
                     "3. Or set environment variable: export SEARXNG_INSTANCE_URL=\"https://your-instance.example.com\"",
                     "Note: SearXNG requires a self-hosted instance with JSON format enabled.",
                 ],
@@ -805,8 +805,9 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
             "env_var": env_var,
             "how_to_fix": [
                 f"1. Get your API key from {spec.signup_url}",
-                f"2. Add to config.json: \"{provider}\": {{\"api_key\": \"your-key\"}}",
-                f"3. Or set environment variable: export {env_var}=\"your-key\"",
+                f"2. Run: web-search-plus-mcp setup --preset starter (writes a .env template), then add {env_var}",
+                f"3. Or set {env_var} in the env block of your MCP client config",
+                f"4. Or set environment variable: export {env_var}=\"your-key\"",
             ],
             "provider": provider
         }
