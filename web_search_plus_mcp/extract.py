@@ -22,6 +22,7 @@ try:
         ProviderConfigError,
         SELF_HOSTED_EXTRACT_PROVIDER_IDS,
         get_api_key,
+        validate_api_key,
         is_self_hosted_profile,
         keyless_public_allowed,
         load_config,
@@ -31,6 +32,7 @@ except ImportError:  # pragma: no cover - direct script execution
         ProviderConfigError,
         SELF_HOSTED_EXTRACT_PROVIDER_IDS,
         get_api_key,
+        validate_api_key,
         is_self_hosted_profile,
         keyless_public_allowed,
         load_config,
@@ -515,6 +517,7 @@ def _extract_plus_core(
         keyless_allowed = keyless_public_allowed(prov, config)
         if not key and not keyless_allowed:
             if engine_owned_attempt:
+                validate_api_key(prov, config)  # raises WSP setup guidance
                 raise ProviderConfigError(f"missing API key for {prov}")
             errors.append({"provider": prov, "error": "missing_api_key"})
             continue

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [4.3.5] - 2026-10-08
+
+- MCP clients see missing-key guidance. The v3 error classification replaced it with `Provider configuration is invalid`, so 4.3.4's setup hints never reached Claude Desktop, Cursor or other clients. A missing key now returns `Missing API key for <provider>` with `error_v3.details.env_var`, `how_to_fix` and `setup_required`. Only WSP's own guidance in its exact shape is passed through; other configuration error text stays redacted. Synced with Hermes Web Search Plus 4.3.5.
+- Failed tool calls set MCP `isError: true`. Before, a failed search or extract returned `isError: false` with the failure only inside the JSON text.
+- `web_extract` without a key returns the same setup guidance as `web_search`.
 - Locale: built-in config no longer ships `country`/`language` for Brave, You.com, Firecrawl, SerpBase and SearXNG. The resolver read those defaults as explicit user settings, so `defaults.locale` and query location hints were ignored for these providers (a German query with locale `at` reached Brave as `US`/`en`). Matches Hermes Web Search Plus; adds the Hermes locale test suite.
 - Research dedup keeps query parameters that identify a page (`youtube.com/watch?v=…`, `news.ycombinator.com/item?id=…`) and drops only tracking parameters. Different videos or threads were merged into one result.
 - `web_extract` no longer repeats the full page in `observations[].text`. That copy bypassed `max_context_chars` (a 105k-character page returned 168 KB); the bounded text stays in `results[].content` and the full page in `stored_content`.
