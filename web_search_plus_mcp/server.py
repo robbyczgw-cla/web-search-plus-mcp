@@ -39,7 +39,7 @@ from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EX
 from . import jev_setup
 from .daemon_tasks import DaemonTask
 
-__version__ = "4.3.4"
+__version__ = "4.3.5"
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 
@@ -561,6 +561,13 @@ def _project_v3_payload(
 ) -> dict[str, Any]:
     """Project canonical v3 output to the stable MCP shape, additively."""
     projected = {key: value for key, value in payload.items() if key not in {"results", "error"}}
+    if capability == "extract" and isinstance(projected.get("observations"), list):
+        # results[].content carries the bounded text; full observation text would
+        # bypass max_context_chars (the untruncated page stays in stored_content).
+        projected["observations"] = [
+            {**item, "text": None} if isinstance(item, dict) else item
+            for item in projected["observations"]
+        ]
     receipt = payload.get("routing_receipt") or {}
     if capability == "search" and request_mode == "research":
         provider = "research"
@@ -953,7 +960,19 @@ async def _mcp_call_tool(
             content=[TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))],
             is_error=True,
         )
-    return CallToolResult(content=content)
+    return CallToolResult(content=content, is_error=_content_reports_failure(content))
+
+
+def _content_reports_failure(content: list[TextContent]) -> bool:
+    """True when the tool payload is a failed WSP response (MCP ``isError``)."""
+    for item in content:
+        try:
+            payload = json.loads(getattr(item, "text", "") or "")
+        except (TypeError, ValueError):
+            continue
+        if isinstance(payload, dict) and payload.get("status") == "failed":
+            return True
+    return False
 
 
 app = Server(

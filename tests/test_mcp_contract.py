@@ -90,15 +90,15 @@ def canonical_response(*, capability="search", status="ok", results=None, error=
 
 def test_release_version_is_consistent_across_public_surfaces():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert project["project"]["version"] == "4.3.4"
+    assert project["project"]["version"] == "4.3.5"
     assert project["project"]["scripts"]["web-search-plus-mcp"] == (
         "web_search_plus_mcp.server:cli_main"
     )
-    assert web_search_plus_mcp.__version__ == "4.3.4"
-    assert server.__version__ == "4.3.4"
+    assert web_search_plus_mcp.__version__ == "4.3.5"
+    assert server.__version__ == "4.3.5"
     initialization = server.app.create_initialization_options()
     assert initialization.server_name == "web-search-plus"
-    assert initialization.server_version == "4.3.4"
+    assert initialization.server_version == "4.3.5"
 
 
 def test_ci_ruff_policy_is_repo_local_and_pinned():
@@ -154,7 +154,7 @@ def test_source_only_provider_surface_is_15_search_and_9_extract():
 def test_readme_describes_current_source_only_release_surface():
     readme = (ROOT / "README.md").read_text()
     release = (ROOT / "docs/RELEASE_4_1_0.md").read_text()
-    assert "`web-search-plus-mcp 4.3.4`" in readme
+    assert "`web-search-plus-mcp 4.3.5`" in readme
     assert "DonSeTch 4.2.9" in readme
     assert "**15 search providers" in readme
     assert "not ported" in readme.lower() or "not ported" in release.lower()
@@ -453,6 +453,9 @@ def test_extract_projection_preserves_bounds_and_page_on_demand_reference(monkey
         "truncated": True,
     }}
     canonical["stored_content"] = [stored]
+    canonical["observations"] = [
+        {"observation_id": "obs_1", "provider": "linkup", "text": "full page " * 12000},
+    ]
     canonical["warnings"] = [{
         "code": "wsp.content.truncated",
         "message": "Inline extracted content was deterministically truncated to the call budget.",
@@ -476,6 +479,10 @@ def test_extract_projection_preserves_bounds_and_page_on_demand_reference(monkey
     assert payload["status"] == "degraded"
     assert payload["limits_applied"]["extract"]["truncated"] is True
     assert payload["stored_content"] == [stored]
+    assert payload["observations"] == [
+        {"observation_id": "obs_1", "provider": "linkup", "text": None},
+    ]
+    assert len(content[0].text) < 10000
     assert payload["warnings"][0]["code"] == "wsp.content.truncated"
 
 
