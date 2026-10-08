@@ -561,6 +561,13 @@ def _project_v3_payload(
 ) -> dict[str, Any]:
     """Project canonical v3 output to the stable MCP shape, additively."""
     projected = {key: value for key, value in payload.items() if key not in {"results", "error"}}
+    if capability == "extract" and isinstance(projected.get("observations"), list):
+        # results[].content carries the bounded text; full observation text would
+        # bypass max_context_chars (the untruncated page stays in stored_content).
+        projected["observations"] = [
+            {**item, "text": None} if isinstance(item, dict) else item
+            for item in projected["observations"]
+        ]
     receipt = payload.get("routing_receipt") or {}
     if capability == "search" and request_mode == "research":
         provider = "research"

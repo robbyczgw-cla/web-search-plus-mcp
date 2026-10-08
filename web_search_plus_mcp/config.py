@@ -182,8 +182,6 @@ DEFAULT_CONFIG = {
         "scrape_url": "https://scrape.serper.dev",
     },
     "brave": {
-        "country": "US",
-        "search_lang": "en",
         "safesearch": "moderate",
     },
     "tavily": {
@@ -220,19 +218,15 @@ DEFAULT_CONFIG = {
 
     "firecrawl": {
         "api_url": "https://api.firecrawl.dev/v2/search",
-        "country": "US",
         "timeout": 30000,
         "sources": ["web"],
         "ignore_invalid_urls": False
     },
     "you": {
-        "country": "us",
         "safesearch": "moderate"
     },
     "serpbase": {
         "api_url": "https://api.serpbase.dev/google/search",
-        "country": "us",
-        "language": "en",
         "page": 1,
         "timeout": 30,
     },
@@ -243,7 +237,6 @@ DEFAULT_CONFIG = {
         "instance_url": None,  # Required - user must set their own instance
         "safesearch": 0,  # 0=off, 1=moderate, 2=strict
         "engines": None,  # Optional list of engines to use
-        "language": "en"
     },
     "keenable": {
         "search_url": "https://api.keenable.ai/v1/search",

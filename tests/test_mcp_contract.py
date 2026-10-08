@@ -453,6 +453,9 @@ def test_extract_projection_preserves_bounds_and_page_on_demand_reference(monkey
         "truncated": True,
     }}
     canonical["stored_content"] = [stored]
+    canonical["observations"] = [
+        {"observation_id": "obs_1", "provider": "linkup", "text": "full page " * 12000},
+    ]
     canonical["warnings"] = [{
         "code": "wsp.content.truncated",
         "message": "Inline extracted content was deterministically truncated to the call budget.",
@@ -476,6 +479,10 @@ def test_extract_projection_preserves_bounds_and_page_on_demand_reference(monkey
     assert payload["status"] == "degraded"
     assert payload["limits_applied"]["extract"]["truncated"] is True
     assert payload["stored_content"] == [stored]
+    assert payload["observations"] == [
+        {"observation_id": "obs_1", "provider": "linkup", "text": None},
+    ]
+    assert len(content[0].text) < 10000
     assert payload["warnings"][0]["code"] == "wsp.content.truncated"
 
 
