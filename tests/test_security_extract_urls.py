@@ -5,14 +5,13 @@ browser-based fetcher. Every URL whose host could be read differently by the
 two parsers is rejected before any provider or fallback runs.
 """
 from __future__ import annotations
+from web_search_plus_mcp import extract
 
 import socket
 from unittest import mock
 
 import pytest
 
-import extract
-import search
 
 
 def _resolver(*addresses):
@@ -153,8 +152,8 @@ def test_normal_public_urls_still_pass(monkeypatch, url):
 
 
 def test_rejected_url_never_reaches_a_provider(monkeypatch, no_dns):
-    with mock.patch("extract.extract_firecrawl") as provider:
-        result = search.extract_plus(
+    with mock.patch("web_search_plus_mcp.providers.extract_firecrawl") as provider:
+        result = extract.extract_plus(
             ["http://127.0.0.1\\@example.com/collect"],
             provider="firecrawl",
             config={"auto_routing": {"disabled_providers": []}},
@@ -228,12 +227,10 @@ def test_idn_host_that_maps_to_a_private_ip_literal_is_rejected(no_dns):
 
 def test_idn_url_reaches_provider_only_as_punycode(monkeypatch):
     monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test-fake-key")
-    from web_search_plus_mcp import extract as pkg_extract
-
-    monkeypatch.setattr(pkg_extract.socket, "getaddrinfo", _resolver("93.184.216.34"))
-    with mock.patch("web_search_plus_mcp.extract.extract_firecrawl") as provider:
+    monkeypatch.setattr(extract.socket, "getaddrinfo", _resolver("93.184.216.34"))
+    with mock.patch("web_search_plus_mcp.providers.extract_firecrawl") as provider:
         provider.return_value = {"provider": "firecrawl", "results": []}
-        pkg_extract.extract_plus(["https://m\u00fcller.de/"], provider="firecrawl", config={"extract": {}})
+        extract.extract_plus(["https://m\u00fcller.de/"], provider="firecrawl", config={"extract": {}})
     urls = provider.call_args[0][0]
     assert urls == ["https://xn--mller-kva.de/"]
 
@@ -270,3 +267,12 @@ def test_idn_conversion_works_without_the_idna_package(monkeypatch, no_idna_pack
 def test_deviation_characters_are_refused_without_the_idna_package(no_dns, no_idna_package, url):
     with pytest.raises((extract.ExtractUrlSecurityError, ValueError)):
         extract._validate_extract_urls([url], config={})
+
+
+
+
+def test_sharp_s_uses_idna_2008_when_the_package_is_installed(monkeypatch):
+    pytest.importorskip("idna")
+    monkeypatch.setattr(extract.socket, "getaddrinfo", _resolver("93.184.216.34"))
+    out = extract._validate_extract_urls(["http://stra\u00dfe.example/"], config={})
+    assert out == ["http://xn--strae-oqa.example/"]

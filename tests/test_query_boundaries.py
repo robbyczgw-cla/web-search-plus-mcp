@@ -1,7 +1,8 @@
 """Public search requests must remain data, never command-line options."""
+from web_search_plus_mcp import extract
 import pytest
 
-from web_search_plus_mcp import extract, search
+from web_search_plus_mcp import search, providers
 from web_search_plus_mcp.config import _deepcopy_default_config
 from web_search_plus_mcp.contract_v3 import RequestV3
 
@@ -30,7 +31,7 @@ def test_public_search_preserves_query(query, runtime_config, monkeypatch):
             'images': [], 'answer': '', 'metadata': {},
         }
 
-    monkeypatch.setattr(search, 'search_serper', provider)
+    monkeypatch.setattr(providers, 'search_serper', provider)
     result = search.run_search_request(query=query, provider='serper', count=1)
     assert seen == [query]
     assert result['query'] == query

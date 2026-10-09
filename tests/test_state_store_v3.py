@@ -224,11 +224,10 @@ def test_admission_degrades_if_store_fails_during_circuit_scan(
 ):
     store = SQLiteStateStore(tmp_path / "state.sqlite3")
 
-    def fail_during_scan(*_args, **_kwargs):
-        store._available = False
-        return None
+    def fail_during_scan():
+        raise sqlite3.OperationalError("database unavailable")
 
-    monkeypatch.setattr(store, "get_circuit", fail_during_scan)
+    monkeypatch.setattr(store, "_connect", fail_during_scan)
     decision = store.admit(_key(), now=100)
 
     assert decision.allowed is True

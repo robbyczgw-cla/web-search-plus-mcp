@@ -438,7 +438,7 @@ def test_search_runtime_honors_strict_fixed_provider_mode(tmp_path, monkeypatch,
             "confidence_threshold": 0.3,
         },
     }))
-    monkeypatch.setenv(search.CONFIG_ENV_VAR, str(config_path))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     monkeypatch.setenv("BRAVE_API_KEY", "brv-test")
     monkeypatch.setenv("TAVILY_API_KEY", "tv-test")
     monkeypatch.setattr(search.sys, "argv", ["search.py", "--query", "strict provider", "--provider", "auto", "--compact", "--no-cache"])
@@ -452,8 +452,8 @@ def test_search_runtime_honors_strict_fixed_provider_mode(tmp_path, monkeypatch,
         calls.append("tavily")
         return {"provider": "tavily", "query": kwargs.get("query"), "results": []}
 
-    monkeypatch.setattr(search, "search_brave", fake_brave)
-    monkeypatch.setattr(search, "search_tavily", fake_tavily)
+    monkeypatch.setattr(search._providers, "search_brave", fake_brave)
+    monkeypatch.setattr(search._providers, "search_tavily", fake_tavily)
     monkeypatch.setattr(search, "validate_api_key", lambda prov, config=None: f"{prov}-key-long-enough-for-test")
     search.main()
     payload = json.loads(capsys.readouterr().out)
@@ -466,7 +466,7 @@ def test_search_runtime_honors_strict_fixed_provider_mode(tmp_path, monkeypatch,
 def test_search_runtime_quarantines_semantic_invalid_config(tmp_path, monkeypatch, capsys):
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps({"defaults": {"provider": "not-real"}}))
-    monkeypatch.setenv(search.CONFIG_ENV_VAR, str(config_path))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
 
     config = search.load_config()
     stderr = capsys.readouterr().err

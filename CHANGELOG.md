@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-10-09
+
+Synced with Hermes Web Search Plus 5.0.
+
+### Breaking changes
+
+- Automatic routing picks the first provider by query type: Brave for general, news, local and community queries, Exa for docs and academic, Serper for security and shopping. In a 294-query test mix with every provider configured, Brave answered 62 % of automatic searches (4.3.5: 14 %). With a Brave key, expect more Brave usage. `auto_routing.order: "custom"` in `config.json` makes `provider_priority` the order for every query. A config that still holds the 4.x default `provider_priority` gets the new order.
+- Without a configured language, a clearly detected query language is sent to the provider: a German query is searched in German. Set `defaults.locale.language` to keep one language for every query.
+- Removed: the heuristic router (`adaptive_routing` and `confidence_threshold` are accepted and ignored), shadow routing, the source-independence estimator, reading the pre-v3 JSON search cache from the tools, and the Perplexity and Kilo-Perplexity config sections. A `defaults.provider` set to a removed provider falls back to the default.
+- Code that patched `search.search_<provider>` or `search.make_request` patches `web_search_plus_mcp.providers`; `search.QueryAnalyzer` and `search.get_compatibility_shim_policy()` are gone.
+
+### Changed
+
+- Results drop spam and pages beyond two per domain from a larger candidate list, rank the vendor a query names first in docs, security and news results, and show `[published YYYY-MM-DD]` where the provider returns a date.
+- Research mode merges provider lists with reciprocal rank fusion and returns up to two query-ranked passages per source.
+- Automatic search starts the next provider when the current one fails, returns no results, or exceeds its p75 latency (at least 2.5 s).
+- Snippets in the tool text are cut at 1,200 characters; the JSON payload keeps the full snippet.
+- `include_domains` accepts a plain string, ports, IDN domains and suffixes such as `.gov`. A filter without a usable entry is an error instead of an unfiltered search, and search operators can no longer be injected through Firecrawl. Several domains reach Firecrawl joined with `OR`. Tavily cannot filter by suffix and says so; automatic search skips it for such filters.
+- A provider is blocked only after three failures in a row; a success resets the count. A blocked provider names the reason in words ("Out of credits or quota at its last call …") instead of a bare code.
+- A search every provider answered with no results is no longer cached, a hedged win counts as a normal answer, and `[published …]` survives cache hits.
+- `wsp_sdk.api`, `wsp_sdk.errors` and `wsp_sdk.conformance` resolve to the same modules the engine uses.
+- A 402, or a 400, 403 or 429 whose body reports no funds (also gzip-encoded), is reported as "Out of credits" instead of a rate limit. A 429 with `Retry-After` stays a rate limit.
+- The engine is synced module for module from Hermes Web Search Plus 5.0 (`intents.py`, `urls.py` and `dates.py` are new). The `bench`, `extract-bench` and operator-receipt tooling stays in the Hermes plugin.
+
 ## [4.3.5] - 2026-10-08
 
 - MCP clients see missing-key guidance. The v3 error classification replaced it with `Provider configuration is invalid`, so 4.3.4's setup hints never reached Claude Desktop, Cursor or other clients. A missing key now returns `Missing API key for <provider>` with `error_v3.details.env_var`, `how_to_fix` and `setup_required`. Only WSP's own guidance in its exact shape is passed through; other configuration error text stays redacted. Synced with Hermes Web Search Plus 4.3.5.

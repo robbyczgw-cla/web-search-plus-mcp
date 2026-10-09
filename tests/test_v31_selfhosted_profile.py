@@ -1,19 +1,24 @@
 """Regression coverage for the v3.1 self-hosted/no-paid-key profile."""
 
 from __future__ import annotations
+from web_search_plus_mcp import providers
+from web_search_plus_mcp import config
+from web_search_plus_mcp import config as config_module
+from web_search_plus_mcp import extract
 
 from copy import deepcopy
+
 import pytest
 
 from web_search_plus_mcp.compat_v3 import legacy_request_to_v3
-from web_search_plus_mcp import config, extract, search
+from web_search_plus_mcp import search
 from web_search_plus_mcp.contract_v3 import Capability
 
 
 def _self_hosted_config() -> dict:
     value = deepcopy(config.DEFAULT_CONFIG)
     value["profile"] = "self_hosted"
-    return config._validate_runtime_config(value)
+    return config_module._validate_runtime_config(value)
 
 
 def test_profile_validation_accepts_both_values_rejects_others_and_keeps_standard_auto_pool() -> None:
@@ -21,13 +26,13 @@ def test_profile_validation_accepts_both_values_rejects_others_and_keeps_standar
     standard = deepcopy(config.DEFAULT_CONFIG)
     standard["profile"] = "standard"
 
-    assert config._validate_runtime_config(standard)["auto_routing"] == before
+    assert config_module._validate_runtime_config(standard)["auto_routing"] == before
     assert _self_hosted_config()["profile"] == "self_hosted"
 
     invalid = deepcopy(config.DEFAULT_CONFIG)
     invalid["profile"] = "paid_only"
     with pytest.raises(ValueError, match="profile must be standard or self_hosted"):
-        config._validate_runtime_config(invalid)
+        config_module._validate_runtime_config(invalid)
 
 
 def test_searxng_base_url_is_canonical_with_legacy_instance_url_compatibility(monkeypatch) -> None:
@@ -57,7 +62,7 @@ def test_self_hosted_derives_restricted_pools_and_explicit_keyed_search_warns(mo
     assert extract.resolve_extract_provider_priority(runtime_config) == ["keenable"]
 
     monkeypatch.setattr(
-        search,
+        providers,
         "search_serper",
         lambda **_kwargs: {
             "provider": "serper",
@@ -93,6 +98,3 @@ def test_self_hosted_auto_without_searxng_or_keenable_returns_typed_error(tmp_pa
         config=runtime_config,
     )
     assert native.error.code == "wsp.config.self_hosted_profile_unavailable"
-
-
-

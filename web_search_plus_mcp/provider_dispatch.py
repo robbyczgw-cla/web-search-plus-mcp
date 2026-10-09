@@ -6,13 +6,10 @@ per-provider adapters registered in ``SEARCH_DISPATCH`` / ``EXTRACT_DISPATCH``.
 Each adapter encapsulates exactly the provider-specific kwargs-building the
 old chain branch did, so behaviour is unchanged.
 
-Monkeypatch seam contract (do not early-bind provider functions here):
-tests patch provider functions on the *calling module* (for example
-``mock.patch.object(search, "search_you", ...)`` or
-``mock.patch("search.extract_firecrawl", ...)``). Adapters therefore receive
-the caller's namespace (a module object or its ``globals()`` dict) and resolve
-``search_<provider>`` / ``extract_<provider>`` late on every call — the same
-late-resolution pattern ``bench.py`` uses via its ``search_module`` seam.
+Provider functions are resolved late from the ``web_search_plus_mcp.providers`` module
+passed by the search, extract, and bench callers. Adapters retain the public
+Provider SDK signature and resolve ``search_<provider>`` / ``extract_<provider>``
+on every call.
 
 ``provider_registry.py`` stays data-only by design; the callable wiring lives
 here. tests/test_provider_dispatch.py enforces that these tables and the
@@ -21,40 +18,26 @@ registry capability flags can never drift apart.
 
 from __future__ import annotations
 
+import re
+
 from typing import Any, Callable, Dict
 
-try:
-    from .config import _validate_searxng_url, keyless_public_allowed
-except ImportError:  # pragma: no cover - direct script execution
-    from config import _validate_searxng_url, keyless_public_allowed
-try:
-    from .provider_adapter_protocol import (
-        ExtractAdapter,
-        SearchAdapter,
-        assert_dispatch_conformance,
-    )
-except ImportError:  # pragma: no cover - direct script execution
-    from provider_adapter_protocol import (
-        ExtractAdapter,
-        SearchAdapter,
-        assert_dispatch_conformance,
-    )
-try:
-    from .provider_registry import PROVIDER_SPECS
-except ImportError:  # pragma: no cover - direct script execution
-    from provider_registry import PROVIDER_SPECS
-try:
-    from .search_locale import resolve_locale
-except ImportError:  # pragma: no cover - direct script execution
-    from search_locale import resolve_locale
+from .config import _validate_searxng_url, keyless_public_allowed
+from .provider_adapter_protocol import (
+    ExtractAdapter,
+    SearchAdapter,
+    assert_dispatch_conformance,
+)
+from .provider_registry import PROVIDER_SPECS
+from .search_locale import resolve_locale
+from .urls import SITE_OPERATOR_LIMIT, domain_filters
 
 
 def _resolve(namespace: Any, name: str) -> Callable[..., Dict[str, Any]]:
     """Late-resolve a provider function from the caller's namespace.
 
-    Accepts either a module object (``getattr`` lookup, like bench.py's
-    ``search_module`` seam) or a ``globals()`` dict, so callers loaded under
-    non-standard module names (spec_from_file_location in tests) work too.
+    Accepts either a module object or a namespace dict, including modules
+    loaded under non-standard names in tests.
     """
     if isinstance(namespace, dict):
         return namespace[name]
@@ -67,7 +50,8 @@ def _locale(prov: str, args: Any, config: Dict[str, Any]):
     CLI flags arrive through ``args.country``/``args.language`` (None unless
     explicitly passed); everything else — explicit provider config, query
     location hints, ``defaults.locale``, us/en fallback — is resolved centrally
-    in search_locale.resolve_locale.
+    in search_locale.resolve_locale. The language is None when "auto" found no
+    confident language; the provider functions then omit the parameter.
     """
     country, language, _meta = resolve_locale(
         prov,
@@ -85,10 +69,36 @@ def _locale(prov: str, args: Any, config: Dict[str, Any]):
 # =============================================================================
 
 
+# ``site:`` as an operator, not inside ``-site:`` or a longer word.
+_SITE_OPERATOR = re.compile(r"(?<![\w-])site:", re.IGNORECASE)
+
+
+def _with_site_operators(query: str, args: Any) -> str:
+    """Add ``site:`` operators for providers without a native domain filter.
+
+    Brave, Serper, SerpBase and You.com have no include/exclude-domain field, so
+    ``include_domains`` used to be dropped silently for them. All four honour
+    ``site:`` / ``-site:`` in the query text. Entries are reduced to bare
+    hostnames by :func:`urls.domain_filters`, which raises ``ValueError`` when
+    include entries were given and none is usable: an unrestricted search must
+    not stand in for a restricted one.
+    """
+    include, exclude = domain_filters(
+        getattr(args, "include_domains", None), getattr(args, "exclude_domains", None)
+    )
+    query = query or ""
+    present = set(query.lower().split())
+    parts = [query]
+    if include and not _SITE_OPERATOR.search(query):
+        parts.append(" OR ".join(f"site:{d}" for d in include[:SITE_OPERATOR_LIMIT]))
+    parts.extend(f"-site:{d}" for d in exclude[:SITE_OPERATOR_LIMIT] if f"-site:{d}" not in present)
+    return " ".join(p for p in parts if p).strip()
+
+
 def _call_serper_search(search_module, prov, args, key, config, routing_info):
     country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_serper")(
-        query=args.query,
+        query=_with_site_operators(args.query, args),
         api_key=key,
         max_results=args.max_results,
         country=country,
@@ -103,7 +113,7 @@ def _call_serpbase_search(search_module, prov, args, key, config, routing_info):
     serpbase_config = config.get("serpbase", {})
     country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_serpbase")(
-        query=args.query,
+        query=_with_site_operators(args.query, args),
         api_key=key,
         max_results=args.max_results,
         country=country,
@@ -118,7 +128,7 @@ def _call_brave_search(search_module, prov, args, key, config, routing_info):
     brave_config = config.get("brave", {})
     country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_brave")(
-        query=args.query,
+        query=_with_site_operators(args.query, args),
         api_key=key,
         max_results=args.max_results,
         country=country,
@@ -232,7 +242,7 @@ def _call_parallel_search(search_module, prov, args, key, config, routing_info):
 def _call_you_search(search_module, prov, args, key, config, routing_info):
     country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_you")(
-        query=args.query,
+        query=_with_site_operators(args.query, args),
         api_key=key,
         max_results=args.max_results,
         country=country,

@@ -5,14 +5,8 @@ from __future__ import annotations
 import unicodedata
 from typing import Any, Dict, Mapping
 
-try:
-    from .contract_v3 import Capability, RequestV3
-except ImportError:  # pragma: no cover - direct script execution
-    from contract_v3 import Capability, RequestV3
-try:
-    from .orchestrator_v3 import ExecutedV3
-except ImportError:  # pragma: no cover - direct script execution
-    from orchestrator_v3 import ExecutedV3
+from .contract_v3 import Capability, RequestV3
+from .orchestrator_v3 import ExecutedV3
 
 
 def legacy_request_to_v3(

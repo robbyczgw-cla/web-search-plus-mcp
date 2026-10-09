@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from extract import _extract_provider_endpoint_config
-from provider_registry import PROVIDER_SPECS
+from web_search_plus_mcp.extract import _extract_provider_endpoint_config
+from web_search_plus_mcp.provider_registry import PROVIDER_SPECS
 from wsp_sdk import ProviderSpec
 
 

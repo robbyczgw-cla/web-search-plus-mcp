@@ -4,42 +4,25 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-try:
-    from .env_loader import clean_env_value as _shared_clean_env_value, is_truthy, load_env_files
-except ImportError:  # pragma: no cover
-    from env_loader import clean_env_value as _shared_clean_env_value, is_truthy, load_env_files
-try:
-    from .errors_v3 import ProviderConfigError
-except ImportError:  # pragma: no cover
-    from errors_v3 import ProviderConfigError
-try:
-    from .provider_registry import (
-        DEFAULT_AUTO_ALLOW,
-        DEFAULT_PROVIDER_PRIORITY,
-        EXTRACT_PROVIDER_IDS,
-        KEYLESS_EXTRACT_PROVIDER_IDS,
-        KEYLESS_PROVIDER_IDS,
-        PROVIDER_SPECS,
-        keyless_public_env_var,
-    )
-except ImportError:  # pragma: no cover
-    from provider_registry import (
-        DEFAULT_AUTO_ALLOW,
-        DEFAULT_PROVIDER_PRIORITY,
-        EXTRACT_PROVIDER_IDS,
-        KEYLESS_EXTRACT_PROVIDER_IDS,
-        KEYLESS_PROVIDER_IDS,
-        PROVIDER_SPECS,
-        keyless_public_env_var,
-    )
-
-
-CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
+from .env_loader import clean_env_value as _shared_clean_env_value, is_truthy, load_env_files
+from .errors_v3 import MissingProviderKeyError, ProviderConfigError
+from .provider_registry import (
+    DEFAULT_AUTO_ALLOW,
+    DEFAULT_PROVIDER_PRIORITY,
+    PRE_5_DEFAULT_PROVIDER_PRIORITY,
+    EXTRACT_PROVIDER_IDS,
+    KEYLESS_EXTRACT_PROVIDER_IDS,
+    KEYLESS_PROVIDER_IDS,
+    PROVIDER_SPECS,
+    keyless_public_env_var,
+    preset_env_vars,
+)
 
 
 class SelfHostedProfileError(ProviderConfigError):
@@ -74,13 +57,13 @@ SELF_HOSTED_SEARCH_PROVIDER_IDS = ("searxng", *KEYLESS_PROVIDER_IDS)
 SELF_HOSTED_EXTRACT_PROVIDER_IDS = tuple(KEYLESS_EXTRACT_PROVIDER_IDS)
 
 
-def _is_placeholder_env_value(value: str) -> bool:
-    """Return True for template placeholders that should not count as credentials."""
-    return _shared_clean_env_value(value) is None
-
-
 def _clean_env_value(value: str) -> Optional[str]:
     return _shared_clean_env_value(value)
+
+
+# The package directory. Defaults that
+# used to hang off this module's own location now hang off the host dir.
+HOST_DIR = Path(__file__).parent
 
 
 def _load_env_file():
@@ -95,9 +78,13 @@ DEFAULT_CONFIG = {
         "provider": "serper",
         "max_results": 5,
         # Global locale defaults for providers with country/language request
-        # parameters. country: ISO 3166-1 alpha-2 (e.g. "at"); language:
-        # ISO 639-1 code, or "auto" for conservative query language inference.
-        # Explicit per-provider sections in config.json still win.
+        # parameters (serper, brave, you, serpbase, querit, firecrawl,
+        # searxng). country: ISO 3166-1 alpha-2 (e.g. "at"); language:
+        # ISO 639-1 code, or "auto" for conservative query language
+        # detection (no language is sent when it is unsure). Unset values
+        # fall back to us/en. Explicit provider sections in config.json
+        # (e.g. serper.country) still win — see search_locale.resolve_locale
+        # for the full precedence.
         "locale": {
             "country": None,
             "language": None,
@@ -105,6 +92,9 @@ DEFAULT_CONFIG = {
     },
     "auto_routing": {
         "enabled": True,
+        # "measured": first provider by query type (docs/ROUTING.md).
+        # "custom": provider_priority as the user ordered it, for every query.
+        "order": "measured",
         "fallback_provider": "serper",
         # Low-trust / experimental providers can stay configured for explicit use
         # without being selected automatically.
@@ -112,11 +102,11 @@ DEFAULT_CONFIG = {
         "extract_provider_priority": list(EXTRACT_PROVIDER_IDS),
         "disabled_providers": [],
         "auto_allow": dict(DEFAULT_AUTO_ALLOW),
-        "confidence_threshold": 0.3,  # Below this, note low confidence
+        "confidence_threshold": 0.3,  # Accepted for compatibility; no effect since 5.0
     },
     "routing": {
-        # Fail-closed operator policy boundary. Shadow intent is accepted only
-        # when this ceiling is explicitly changed to "shadow".
+        # Always Classic. "shadow" is still accepted in config.json and treated
+        # as "classic" so older files do not quarantine.
         "policy_mode": "classic",
     },
     "budget_preflight": {
@@ -179,7 +169,9 @@ DEFAULT_CONFIG = {
     # key as an explicit user override from config.json.
     "serper": {
         "type": "search",
-        "scrape_url": "https://scrape.serper.dev",
+        # Webpage scraper endpoint; operator-overridable for compatible
+        # self-hosted/proxy services (firecrawl scrape_url pattern).
+        "scrape_url": "https://scrape.serper.dev"
     },
     "brave": {
         "safesearch": "moderate",
@@ -204,7 +196,6 @@ DEFAULT_CONFIG = {
         "depth": "normal",
         "verbosity": "standard"
     },
-
     "parallel": {
         "api_url": "https://api.parallel.ai/v1/search",
         "extract_url": "https://api.parallel.ai/v1/extract",
@@ -215,7 +206,6 @@ DEFAULT_CONFIG = {
         "max_chars_total": 120000,
         "max_chars_per_result": 60000
     },
-
     "firecrawl": {
         "api_url": "https://api.firecrawl.dev/v2/search",
         "timeout": 30000,
@@ -252,19 +242,20 @@ def _deepcopy_default_config() -> Dict[str, Any]:
 
 
 _ROUTING_PROVIDER_NAMES = set(PROVIDER_SPECS)
-_VALID_PROVIDERS = _ROUTING_PROVIDER_NAMES
+# ``set-order`` and the Desktop "Provider order" field read these as "routing by query type".
+ORDER_AUTO_WORDS = frozenset({"auto", "automatic", "measured"})
+REMOVED_PROVIDER_IDS = frozenset({"perplexity", "kilo-perplexity", "kilo_perplexity"})
+
+
+def _is_removed_provider_id(provider: str) -> bool:
+    return str(provider).strip().lower() in REMOVED_PROVIDER_IDS
 
 
 def _normalize_routing_provider_config(provider: str) -> str:
-    normalized = provider.strip().lower().replace("_", "-")
+    normalized = (provider or "").strip().lower()
     if normalized not in _ROUTING_PROVIDER_NAMES:
-        raise ProviderConfigError(f"Unknown provider '{provider}'. Valid providers: {', '.join(sorted(_ROUTING_PROVIDER_NAMES))}")
+        raise ValueError(f"unknown routing provider: {provider}")
     return normalized
-
-
-def _canonical_provider(provider: str) -> str:
-    """Backward-compatible alias used by older tests and callers."""
-    return _normalize_routing_provider_config(provider)
 
 
 def _normalize_routing_provider_list_config(value: Any) -> List[str]:
@@ -276,17 +267,32 @@ def _normalize_routing_provider_list_config(value: Any) -> List[str]:
         raise ValueError("provider list must be a string or list")
     providers = []
     seen = set()
+    removed_only = bool(raw_values)
     for raw in raw_values:
         if not raw:
             continue
+        if _is_removed_provider_id(raw):
+            continue
+        removed_only = False
         provider = _normalize_routing_provider_config(raw)
         if provider in seen:
             continue
         seen.add(provider)
         providers.append(provider)
     if not providers:
+        if removed_only:
+            return []
         raise ValueError("provider list cannot be empty")
     return providers
+
+
+def _replace_pre_5_default_priority(providers: List[str]) -> List[str]:
+    """The current default order for a provider_priority written by a 4.x setup."""
+    legacy = list(PRE_5_DEFAULT_PROVIDER_PRIORITY)
+    if providers[: len(legacy)] != legacy:
+        return providers
+    current = list(DEFAULT_CONFIG["auto_routing"].get("provider_priority", []))
+    return current + [provider for provider in providers[len(legacy):] if provider not in current]
 
 
 def _append_missing_default_providers(providers: List[str]) -> List[str]:
@@ -315,10 +321,14 @@ def _normalize_extract_provider_list_config(value: Any) -> List[str]:
         raise ValueError("extract provider list must be a string or list")
     providers = []
     seen = set()
+    removed_only = bool(raw_values)
     extract_providers = set(EXTRACT_PROVIDER_IDS)
     for raw in raw_values:
         if not raw:
             continue
+        if _is_removed_provider_id(raw):
+            continue
+        removed_only = False
         provider = _normalize_routing_provider_config(raw)
         if provider not in extract_providers:
             raise ValueError(f"provider does not support extraction: {provider}")
@@ -327,6 +337,8 @@ def _normalize_extract_provider_list_config(value: Any) -> List[str]:
         seen.add(provider)
         providers.append(provider)
     if not providers:
+        if removed_only:
+            return []
         raise ValueError("extract provider list cannot be empty")
     return providers
 
@@ -400,20 +412,36 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(auto, dict):
         raise ValueError("auto_routing must be an object")
     if config.get("default_provider"):
-        config["default_provider"] = _normalize_routing_provider_config(str(config["default_provider"]))
+        if _is_removed_provider_id(config["default_provider"]):
+            config["default_provider"] = DEFAULT_CONFIG["default_provider"]
+        else:
+            config["default_provider"] = _normalize_routing_provider_config(str(config["default_provider"]))
+    # MCP: config.json "defaults.provider" is the MCP default-provider surface.
     defaults = config.setdefault("defaults", {})
     if defaults.get("provider"):
-        defaults["provider"] = _normalize_routing_provider_config(str(defaults["provider"]))
+        if _is_removed_provider_id(defaults["provider"]):
+            defaults["provider"] = DEFAULT_CONFIG["defaults"]["provider"]
+        else:
+            defaults["provider"] = _normalize_routing_provider_config(str(defaults["provider"]))
     if auto.get("enabled", True) is False and not config.get("default_provider") and defaults.get("provider"):
         config["default_provider"] = defaults["provider"]
     if auto.get("fallback_provider"):
-        auto["fallback_provider"] = _normalize_routing_provider_config(str(auto["fallback_provider"]))
+        if _is_removed_provider_id(auto["fallback_provider"]):
+            auto["fallback_provider"] = DEFAULT_CONFIG["auto_routing"]["fallback_provider"]
+        else:
+            auto["fallback_provider"] = _normalize_routing_provider_config(str(auto["fallback_provider"]))
+    order_mode = str(auto.get("order") or "measured").strip().lower()
+    auto["order"] = order_mode if order_mode in {"measured", "custom"} else "measured"
     if auto.get("provider_priority"):
         priority = _normalize_routing_provider_list_config(auto["provider_priority"])
+        if auto["order"] != "custom":
+            priority = _replace_pre_5_default_priority(priority)
+        if not priority:
+            priority = list(DEFAULT_CONFIG["auto_routing"]["provider_priority"])
         auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
     if auto.get("extract_provider_priority"):
         extract_priority = _normalize_extract_provider_list_config(auto["extract_provider_priority"])
-        auto["extract_provider_priority"] = _append_missing_extract_providers(extract_priority)
+        auto["extract_provider_priority"] = _append_missing_extract_providers(extract_priority or list(EXTRACT_PROVIDER_IDS))
     else:
         auto["extract_provider_priority"] = list(EXTRACT_PROVIDER_IDS)
     if "disabled_providers" in auto:
@@ -428,6 +456,8 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError("auto_allow must be an object mapping provider names to booleans")
         normalized_allow = dict(DEFAULT_CONFIG["auto_routing"].get("auto_allow", {}))
         for raw_provider, allowed in raw_allow.items():
+            if _is_removed_provider_id(raw_provider):
+                continue
             provider = _normalize_routing_provider_config(str(raw_provider))
             normalized_allow[provider] = bool(allowed)
         auto["auto_allow"] = normalized_allow
@@ -446,7 +476,8 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     policy_mode = routing.get("policy_mode", "classic")
     if policy_mode not in {"classic", "shadow"}:
         raise ValueError("routing.policy_mode must be classic or shadow")
-    routing["policy_mode"] = policy_mode
+    # Retired in 5.0. Accept the old value and run Classic.
+    routing["policy_mode"] = "classic"
     parallel = config.get("parallel")
     if parallel is None:
         parallel = dict(DEFAULT_CONFIG["parallel"])
@@ -547,45 +578,41 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
         not isinstance(cache_root, str) or not cache_root.strip()
     ):
         raise ValueError("bounded_context.cache_root must be a non-empty string")
+    jev = config.get("jev", DEFAULT_CONFIG["jev"])
+    if not isinstance(jev, dict):
+        raise ValueError("jev must be an object")
+    if "api_key" in jev and str(jev.get("api_key") or "").strip():
+        raise ValueError("jev.api_key is not allowed; use TYPESAFE_API_KEY_FILE")
+    for flag in ("enabled", "search_type", "extract_quality", "language_fill"):
+        if not isinstance(jev.get(flag, False), bool):
+            raise ValueError(f"jev.{flag} must be a boolean")
+    for name, default in (("min_confidence", 0.85), ("search_type_min_confidence", 0.95)):
+        value = jev.get(name, default)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"jev.{name} must be a number")
+        if not 0.0 <= float(value) <= 1.0:
+            raise ValueError(f"jev.{name} must be between 0.0 and 1.0")
+    timeout = jev.get("timeout_s", 8.0)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or float(timeout) < 1.0:
+        raise ValueError("jev.timeout_s must be a number >= 1")
+    key_file = jev.get("api_key_file")
+    if key_file is not None and (not isinstance(key_file, str) or not key_file.strip()):
+        raise ValueError("jev.api_key_file must be a non-empty string")
+    config["jev"] = {
+        "enabled": bool(jev.get("enabled", False)),
+        "search_type": bool(jev.get("search_type", False)),
+        "extract_quality": bool(jev.get("extract_quality", False)),
+        "language_fill": bool(jev.get("language_fill", False)),
+        "min_confidence": float(jev.get("min_confidence", 0.85)),
+        "search_type_min_confidence": float(jev.get("search_type_min_confidence", 0.95)),
+        "timeout_s": float(jev.get("timeout_s", 8.0)),
+        **({"api_key_file": key_file.strip()} if isinstance(key_file, str) and key_file.strip() else {}),
+    }
     config["auto_routing"] = auto
     config["routing"] = routing
     config["budget_preflight"] = budget_preflight
     config["quality"] = quality
     config["bounded_context"] = bounded
-    jev = config.get("jev", dict(DEFAULT_CONFIG["jev"]))
-    if not isinstance(jev, dict):
-        raise ValueError("jev must be an object")
-    merged_jev = {**DEFAULT_CONFIG["jev"], **jev}
-    if not isinstance(merged_jev.get("enabled"), bool):
-        raise ValueError("jev.enabled must be a boolean")
-    if str(merged_jev.get("api_key") or "").strip():
-        raise ValueError("jev.api_key is not allowed; use TYPESAFE_API_KEY_FILE")
-    merged_jev.pop("api_key", None)
-    for flag in ("search_type", "extract_quality", "language_fill"):
-        if not isinstance(merged_jev.get(flag), bool):
-            raise ValueError(f"jev.{flag} must be a boolean")
-    try:
-        min_conf = float(merged_jev.get("min_confidence", 0.85))
-    except (TypeError, ValueError) as exc:
-        raise ValueError("jev.min_confidence must be a number") from exc
-    if min_conf < 0.0 or min_conf > 1.0:
-        raise ValueError("jev.min_confidence must be between 0.0 and 1.0")
-    merged_jev["min_confidence"] = min_conf
-    try:
-        st_conf = float(merged_jev.get("search_type_min_confidence", 0.95))
-    except (TypeError, ValueError) as exc:
-        raise ValueError("jev.search_type_min_confidence must be a number") from exc
-    if st_conf < 0.0 or st_conf > 1.0:
-        raise ValueError("jev.search_type_min_confidence must be between 0.0 and 1.0")
-    merged_jev["search_type_min_confidence"] = st_conf
-    try:
-        timeout_s = float(merged_jev.get("timeout_s", 8.0))
-    except (TypeError, ValueError) as exc:
-        raise ValueError("jev.timeout_s must be a number") from exc
-    if timeout_s < 1.0 or timeout_s > 60.0:
-        raise ValueError("jev.timeout_s must be between 1 and 60")
-    merged_jev["timeout_s"] = timeout_s
-    config["jev"] = merged_jev
     return apply_profile_effects(config)
 
 
@@ -614,44 +641,350 @@ def _quarantine_runtime_config(config_path: Path, reason: str) -> None:
         }), file=sys.stderr)
 
 
+_DESKTOP_SETTING_KEYS = ("country", "language", "max_results", "auto_routing", "provider_order", "searxng_url")
+
+
+def _coerce_yamlish_scalar(raw: str) -> Any:
+    """Match PyYAML for the scalars Desktop can write, plus the usual hand edits.
+
+    Quoted text stays a string. Unquoted null/~ and the YAML 1.1 booleans
+    match ``yaml.safe_load`` so the fallback cannot apply a different value.
+    """
+    text = raw.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+        return text[1:-1]
+    if text in {"", "~"} or text.lower() == "null":
+        return None
+    lowered = text.lower()
+    if lowered in {"true", "yes", "on"}:
+        return True
+    if lowered in {"false", "no", "off"}:
+        return False
+    if re.fullmatch(r"-?\d+", text):
+        return int(text)
+    return text
+
+
+def _yamlish_key_rest(lines: List[str], key: str) -> Optional[str]:
+    """Inline text after ``key:``. ``None`` if the key is absent.
+
+    An empty string means the value is a nested block. A non-empty string is
+    the same-line value, including a flow map.
+    """
+    escaped = re.escape(key)
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        match = re.match(rf"^(\s*){escaped}\s*:\s*(.*)$", line)
+        if not match:
+            continue
+        rest = match.group(2).strip()
+        if rest.startswith("#"):
+            rest = ""
+        return rest
+    return None
+
+
+def _yamlish_flow_map(raw: str) -> Optional[Dict[str, Any]]:
+    """Parse one flat ``{key: scalar, ...}`` map. Nested values refuse the map."""
+    text = raw.strip()
+    if "#" in text:
+        head, _, _comment = text.partition("#")
+        if head.strip().endswith("}"):
+            text = head.strip()
+    if len(text) < 2 or text[0] != "{" or text[-1] != "}":
+        return None
+    inner = text[1:-1].strip()
+    if not inner:
+        return {}
+    parts: List[str] = []
+    buf: List[str] = []
+    quote: Optional[str] = None
+    for char in inner:
+        if quote:
+            buf.append(char)
+            if char == quote:
+                quote = None
+            continue
+        if char in {'"', "'"}:
+            quote = char
+            buf.append(char)
+            continue
+        if char in "{}[]":
+            return None
+        if char == ",":
+            parts.append("".join(buf))
+            buf = []
+            continue
+        buf.append(char)
+    if quote is not None:
+        return None
+    parts.append("".join(buf))
+    parsed: Dict[str, Any] = {}
+    for part in parts:
+        piece = part.strip()
+        if not piece:
+            continue
+        if ":" not in piece:
+            return None
+        key, rest = piece.split(":", 1)
+        key = key.strip()
+        rest = rest.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", key) or rest[:1] in "[{":
+            return None
+        parsed[key] = _coerce_yamlish_scalar(rest)
+    return parsed
+
+
+def _yamlish_child_lines(lines: List[str], key: str) -> Optional[List[str]]:
+    """Return the indented block under ``key``, using the setup-helper walk.
+
+    Same shape as ``_yamlish_nested_list_item``: one indent level is peeled
+    off so a later search still sees relative structure. Inline and flow
+    values are not blocks. Lists elsewhere in the file are left untouched.
+    """
+    escaped = re.escape(key)
+    for idx, line in enumerate(lines):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        match = re.match(rf"^(\s*){escaped}\s*:\s*(.*)$", line)
+        if not match:
+            continue
+        rest = match.group(2).strip()
+        if rest.startswith("#"):
+            rest = ""
+        if rest:
+            continue
+        parent_indent = len(match.group(1))
+        block: List[str] = []
+        for child in lines[idx + 1:]:
+            if not child.strip() or child.lstrip().startswith("#"):
+                block.append("")
+                continue
+            indent = len(child) - len(child.lstrip(" "))
+            if indent <= parent_indent:
+                break
+            block.append(child[parent_indent + 1:] if len(child) > parent_indent else child)
+        return block
+    return None
+
+
+def _yamlish_scalar_map(lines: List[str]) -> Dict[str, Any]:
+    """Read one level of scalar keys. Nested and list values are skipped."""
+    parsed: Dict[str, Any] = {}
+    base: Optional[int] = None
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if "\t" in line[:indent]:
+            return {}
+        if base is None:
+            base = indent
+        if indent != base:
+            continue
+        body = line.strip()
+        if body.startswith("-") or ":" not in body:
+            continue
+        key, rest = body.split(":", 1)
+        key = key.strip()
+        rest = rest.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", key):
+            continue
+        if rest == "" or rest[0] in "[{":
+            continue
+        comment = re.search(r"\s+#", rest)
+        if comment and rest[0] not in {'"', "'"}:
+            rest = rest[:comment.start()].strip()
+        parsed[key] = _coerce_yamlish_scalar(rest)
+    return parsed
+
+
+def _yamlish_block_mapping(text: str) -> Optional[Dict[str, Any]]:
+    """Stdlib fallback for the Desktop settings block when PyYAML is absent.
+
+    A real Hermes ``config.yaml`` contains lists. This does not parse the
+    whole file. It walks ``plugins.entries.web-search-plus.settings`` and
+    returns only that scalar map, wrapped so the caller can use one path.
+    A one-line ``settings: {key: scalar}`` map is accepted. Nested flow
+    values are refused. Hermes Desktop itself writes block style.
+    """
+    lines = text.splitlines()
+    plugins = _yamlish_child_lines(lines, "plugins")
+    entries = _yamlish_child_lines(plugins or [], "entries")
+    plugin = _yamlish_child_lines(entries or [], "web-search-plus")
+    if plugin is None:
+        return {}
+    inline = _yamlish_key_rest(plugin, "settings")
+    if inline is None:
+        return {}
+    if inline:
+        settings_map = _yamlish_flow_map(inline) or {}
+    else:
+        settings = _yamlish_child_lines(plugin, "settings")
+        settings_map = _yamlish_scalar_map(settings or [])
+    return {
+        "plugins": {
+            "entries": {
+                "web-search-plus": {
+                    "settings": settings_map,
+                }
+            }
+        }
+    }
+
+
+def _read_yaml_mapping(text: str) -> Optional[Dict[str, Any]]:
+    try:
+        import yaml
+    except ImportError:
+        return _yamlish_block_mapping(text)
+    try:
+        data = yaml.safe_load(text)
+    except Exception:
+        return None
+    if data is None:
+        return {}
+    return data if isinstance(data, dict) else None
+
+
+def _desktop_settings(config_path: Path) -> Dict[str, Any]:
+    """Read the flat Desktop settings block for this plugin config, or {}.
+
+    Only ``<home>/plugins/config.json`` consults ``<home>/config.yaml``. A
+    config path outside that layout, including sterile tests, is ignored.
+    Secret and undeclared keys never leave this allowlist.
+    """
+    try:
+        if config_path.name != "config.json" or config_path.parent.name != "plugins":
+            return {}
+        yaml_path = config_path.parent.parent / "config.yaml"
+        if not yaml_path.is_file():
+            return {}
+        data = _read_yaml_mapping(yaml_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return {}
+        plugins = data.get("plugins")
+        entries = plugins.get("entries") if isinstance(plugins, dict) else None
+        plugin = entries.get("web-search-plus") if isinstance(entries, dict) else None
+        settings = plugin.get("settings") if isinstance(plugin, dict) else None
+        if not isinstance(settings, dict):
+            return {}
+        return {key: settings[key] for key in _DESKTOP_SETTING_KEYS if key in settings}
+    except Exception:
+        return {}
+
+
+def _present_desktop_text(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
+
+
+def _desktop_provider_order(raw: str) -> List[str]:
+    """The list ``setup.py config set-order`` would store for this text, or [].
+
+    set-order exits on a name it does not know. A config loader must not, so
+    names that are not providers (including removed ones) are dropped and the
+    rest keep their order. Missing default providers are appended, as for
+    every stored order.
+    """
+    names = [part for part in raw.split(",") if part.strip().lower() in _ROUTING_PROVIDER_NAMES]
+    if not names:
+        return []
+    return _append_missing_default_providers(_normalize_routing_provider_list_config(names))
+
+
+def _apply_desktop_settings(config: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
+    """Overlay declared Desktop scalars onto config.json. Empty and 0 do not wipe."""
+    if not settings:
+        return config
+    defaults = config.get("defaults")
+    if not isinstance(defaults, dict):
+        defaults = {}
+        config["defaults"] = defaults
+    locale = defaults.get("locale")
+    if not isinstance(locale, dict):
+        locale = {}
+        defaults["locale"] = locale
+    if "country" in settings:
+        country = _present_desktop_text(settings.get("country"))
+        if country:
+            locale["country"] = country.lower()
+    if "language" in settings:
+        language = _present_desktop_text(settings.get("language"))
+        if language:
+            locale["language"] = language.lower()
+    if "max_results" in settings:
+        raw_results = settings.get("max_results")
+        if isinstance(raw_results, str) and raw_results.strip().isdigit():
+            raw_results = int(raw_results.strip())
+        if isinstance(raw_results, int) and not isinstance(raw_results, bool) and raw_results > 0:
+            defaults["max_results"] = raw_results
+    if "auto_routing" in settings:
+        raw_routing = settings.get("auto_routing")
+        enabled: Optional[bool] = None
+        if isinstance(raw_routing, bool):
+            enabled = raw_routing
+        elif isinstance(raw_routing, str) and raw_routing.strip().lower() in {"true", "false"}:
+            enabled = raw_routing.strip().lower() == "true"
+        if enabled is not None:
+            auto = config.get("auto_routing")
+            if not isinstance(auto, dict):
+                auto = {}
+                config["auto_routing"] = auto
+            auto["enabled"] = enabled
+    if "provider_order" in settings:
+        raw_order = _present_desktop_text(settings.get("provider_order"))
+        if raw_order:
+            auto = config.get("auto_routing")
+            if not isinstance(auto, dict):
+                auto = {}
+                config["auto_routing"] = auto
+            if raw_order.strip().lower() in ORDER_AUTO_WORDS:
+                auto["order"] = "measured"
+            else:
+                names = _desktop_provider_order(raw_order)
+                if names:
+                    auto["order"] = "custom"
+                    auto["provider_priority"] = names
+    if "searxng_url" in settings:
+        url = _present_desktop_text(settings.get("searxng_url"))
+        if url:
+            searxng = config.get("searxng")
+            if not isinstance(searxng, dict):
+                searxng = {}
+                config["searxng"] = searxng
+            searxng["base_url"] = url
+    return config
+
+
 def load_config() -> Dict[str, Any]:
     """Load configuration from config.json if it exists, with defaults."""
     config = _deepcopy_default_config()
-    config_path = Path(os.environ.get(CONFIG_ENV_VAR) or (Path(__file__).parent.parent / "config.json"))
+    config_path = Path(os.environ.get("WEB_SEARCH_PLUS_CONFIG") or (HOST_DIR.parent / "config.json"))
 
     if config_path.exists():
         try:
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 user_config = json.load(f)
                 for key, value in user_config.items():
+                    if key in REMOVED_PROVIDER_IDS:
+                        continue
                     if isinstance(value, dict) and key in config:
                         config[key] = {**config.get(key, {}), **value}
                     else:
                         config[key] = value
             config = _validate_runtime_config(config)
-        except (json.JSONDecodeError, IOError, ValueError, TypeError, ProviderConfigError) as e:
+        except (json.JSONDecodeError, IOError, ValueError, TypeError) as e:
             _quarantine_runtime_config(config_path, str(e))
             config = _deepcopy_default_config()
 
+    config = _apply_desktop_settings(config, _desktop_settings(config_path))
     # Defaults need no migration, but applying this here keeps direct/default
     # loads on the same profile-derived path as persisted configurations.
     return apply_profile_effects(config)
-
-
-def keyless_public_allowed(provider: str, config: Dict[str, Any] = None) -> bool:
-    spec = PROVIDER_SPECS.get(provider)
-    if not (spec and spec.keyless):
-        return False
-    section = (config or {}).get(spec.config_section, {})
-    if isinstance(section, dict) and is_truthy(section.get("allow_public")):
-        return True
-    return is_truthy(os.environ.get(keyless_public_env_var(provider)))
-
-
-def provider_configured(provider: str, config: Dict[str, Any] = None) -> bool:
-    if provider == "keenable" and keyless_public_allowed(provider, config):
-        return True
-    return bool(get_api_key(provider, config))
 
 
 def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
@@ -677,6 +1010,62 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
     # Then check environment
     spec = PROVIDER_SPECS.get(provider)
     return _clean_env_value(os.environ.get(spec.env_var if spec else "", ""))
+
+
+def keyless_public_allowed(provider: str, config: Dict[str, Any] = None) -> bool:
+    """Whether a keyless provider may use its unauthenticated public endpoint.
+
+    Off by default; opt in via config.json (``<provider>.allow_public``) or the
+    ``<PROVIDER>_ALLOW_PUBLIC`` env var.
+    """
+    spec = PROVIDER_SPECS.get(provider)
+    if not (spec and spec.keyless):
+        return False
+    section = (config or {}).get(spec.config_section, {})
+    if isinstance(section, dict) and is_truthy(section.get("allow_public")):
+        return True
+    return is_truthy(os.environ.get(keyless_public_env_var(provider)))
+
+
+def provider_configured(provider: str, config: Dict[str, Any] = None) -> bool:
+    """Whether a provider can run: it has a key, or its keyless public endpoint is opted in.
+
+    Distinct from ``get_api_key`` truthiness so key-status logic never treats a
+    keyless provider as keyed.
+    """
+    if get_api_key(provider, config):
+        return True
+    return keyless_public_allowed(provider, config)
+
+
+def add_provider_setup_guidance(
+    payload: Dict[str, Any], capability: str, providers: List[str], config: Dict[str, Any],
+    *, requested_provider: str = "auto",
+) -> None:
+    """Annotate an existing failure when none of its candidates is configured.
+
+    This is diagnostic only: do not alter routing, admission, retries or receipts.
+    Configured keyless endpoints count as available without requiring a key.
+    """
+    candidates = list(dict.fromkeys(p for p in providers if p in PROVIDER_SPECS))
+    if not candidates or any(provider_configured(p, config) for p in candidates):
+        return
+    explicit = requested_provider in candidates
+    preset = "self-hosted" if is_self_hosted_profile(config) else ("extract" if capability == "extract" else "starter")
+    target = requested_provider if explicit else f"--preset {preset}"
+    command = f"web-search-plus-mcp setup {target}"
+    message = (f"Requested provider '{requested_provider}' is not configured." if explicit
+               else f"No configured {capability} provider is available for this request.")
+    payload.update({
+        "error": f"{message} Run: {command}",
+        "error_type": "requested_provider_not_configured" if explicit else "provider_setup_required",
+        "env_vars": ([PROVIDER_SPECS[requested_provider].env_var] if explicit
+                     else preset_env_vars(preset)),
+        "how_to_fix": [
+            command,
+            "Store API keys in the env block of your MCP client config or a .env file, not inline in config.json. Keyless public endpoints require explicit opt-in.",
+        ],
+    })
 
 
 def _validate_searxng_url(url: str) -> str:
@@ -751,31 +1140,17 @@ def get_searxng_instance_url(config: Dict[str, Any] = None) -> Optional[str]:
     return None
 
 
-# Backward compatibility alias
-def get_env_key(provider: str) -> Optional[str]:
-    """Get API key for provider from environment (legacy function)."""
-    return get_api_key(provider)
+def validate_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
+    """Validate and return the API key (or SearXNG instance URL), with helpful error messages.
 
-
-def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
-    """Validate and return API key (or instance URL for SearXNG), with helpful error messages."""
+    Returns None for a keyless provider whose public endpoint is opted in.
+    """
     key = get_api_key(provider, config)
 
     # Special handling for SearXNG - it needs instance URL, not API key
     if provider == "searxng":
         if not key:
-            error_msg = {
-                "error": "Missing SearXNG instance URL",
-                "env_var": "SEARXNG_INSTANCE_URL",
-                "how_to_fix": [
-                    "1. Set up your own SearXNG instance: https://docs.searxng.org/admin/installation.html",
-                    "2. Add SEARXNG_INSTANCE_URL=https://your-instance.example.com to the .env file of your MCP client or server",
-                    "3. Or set environment variable: export SEARXNG_INSTANCE_URL=\"https://your-instance.example.com\"",
-                    "Note: SearXNG requires a self-hosted instance with JSON format enabled.",
-                ],
-                "provider": provider
-            }
-            raise ProviderConfigError(json.dumps(error_msg))
+            raise MissingProviderKeyError(provider)
 
         # Validate URL format
         if not key.startswith(("http://", "https://")):
@@ -787,24 +1162,11 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
 
         return key
 
-    if not key:
-        if keyless_public_allowed(provider, config):
-            return None
-        spec = PROVIDER_SPECS[provider]
-        env_var = spec.env_var
+    if not key and keyless_public_allowed(provider, config):
+        return None
 
-        error_msg = {
-            "error": f"Missing API key for {provider}",
-            "env_var": env_var,
-            "how_to_fix": [
-                f"1. Get your API key from {spec.signup_url}",
-                f"2. Run: web-search-plus-mcp setup --preset starter (writes a .env template), then add {env_var}",
-                f"3. Or set {env_var} in the env block of your MCP client config",
-                f"4. Or set environment variable: export {env_var}=\"your-key\"",
-            ],
-            "provider": provider
-        }
-        raise ProviderConfigError(json.dumps(error_msg))
+    if not key:
+        raise MissingProviderKeyError(provider)
 
     if len(key) < 10:
         raise ProviderConfigError(json.dumps({

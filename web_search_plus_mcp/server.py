@@ -39,7 +39,7 @@ from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EX
 from . import jev_setup
 from .daemon_tasks import DaemonTask
 
-__version__ = "4.3.5"
+from . import __version__
 
 SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 

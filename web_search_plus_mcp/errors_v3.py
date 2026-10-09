@@ -2,17 +2,10 @@
 
 from __future__ import annotations
 
-try:
-    from .contract_v3 import ErrorClass, ErrorV3
-except ImportError:  # pragma: no cover - direct script execution
-    from contract_v3 import ErrorClass, ErrorV3
-try:
-    from .http_client import ProviderRequestError
-except ImportError:  # pragma: no cover - direct script execution
-    from http_client import ProviderRequestError
+from .contract_v3 import ErrorClass, ErrorV3
+from .http_client import ProviderRequestError
 from wsp_sdk.errors import ProviderConfigError, ProviderContractFailure
 import json
-import re
 
 
 _MESSAGES = {
@@ -26,6 +19,11 @@ _MESSAGES = {
     ErrorClass.INTERNAL: "Provider execution failed",
 }
 
+# WSP's own text for an account the provider reports as empty (HTTP 402, or
+# Linkup's 429 / Serper's 400 with credit wording). More useful than the
+# generic quota line, and never copied from the provider's answer.
+_OUT_OF_CREDIT_MESSAGE = "Out of credits: the provider account has no funds left; top it up or remove its key"
+
 _CODES = {
     ErrorClass.CONFIG: "wsp.config.provider_invalid",
     ErrorClass.AUTH: "wsp.provider.auth",
@@ -38,34 +36,68 @@ _CODES = {
 }
 
 
-_SETUP_MESSAGE = re.compile(r"^Missing (API key for [a-z0-9_-]{1,32}|SearXNG instance URL)$")
-_ENV_VAR = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
+class MissingProviderKeyError(ProviderConfigError):
+    """WSP's own error for a provider without a key or SearXNG URL.
+
+    The message stays the JSON guidance older readers parse. Code that shows
+    guidance rebuilds it with ``missing_key_guidance`` from the registry and
+    never copies exception text.
+    """
+
+    def __init__(self, provider: str) -> None:
+        self.provider = provider
+        super().__init__(json.dumps(missing_key_guidance(provider)))
+
+
+def missing_key_guidance(provider: str) -> dict:
+    """Setup guidance for a provider without credentials, from the registry."""
+    if provider == "searxng":
+        return {
+            "error": "Missing SearXNG instance URL",
+            "env_var": "SEARXNG_INSTANCE_URL",
+            "how_to_fix": [
+                "1. Set up your own SearXNG instance: https://docs.searxng.org/admin/installation.html",
+                "2. Add SEARXNG_INSTANCE_URL=https://your-instance.example.com to the .env file of your MCP client or server",
+                "3. Or set environment variable: export SEARXNG_INSTANCE_URL=\"https://your-instance.example.com\"",
+                "Note: SearXNG requires a self-hosted instance with JSON format enabled.",
+            ],
+            "provider": provider,
+        }
+    from .provider_registry import PROVIDER_SPECS  # lazy: the registry imports the SDK
+
+    spec = PROVIDER_SPECS[provider]
+    env_var = spec.env_var
+    return {
+        "error": f"Missing API key for {provider}",
+        "env_var": env_var,
+        "how_to_fix": [
+            f"1. Get your API key from {spec.signup_url}",
+            f"2. Run: web-search-plus-mcp setup --preset starter (writes a .env template), then add {env_var}",
+            f"3. Or set {env_var} in the env block of your MCP client config",
+            f"4. Or set environment variable: export {env_var}=\"your-key\"",
+        ],
+        "provider": provider,
+    }
 
 
 def _setup_guidance(error: BaseException) -> tuple[str, dict] | None:
-    """Return WSP's own missing-key guidance, never upstream text.
+    """Return WSP's own missing-key guidance, rebuilt from the registry.
 
-    ``config.validate_api_key`` raises ``ProviderConfigError`` with a JSON body
-    that WSP itself generated. Only that exact shape is surfaced: a fixed
-    message pattern, an env-var name and the how-to-fix steps. Anything else
-    (including the SearXNG ``provided`` URL) stays redacted.
+    Only ``MissingProviderKeyError`` (raised by ``config.validate_api_key``)
+    qualifies. Any other configuration error, including one whose text looks
+    like WSP guidance, stays redacted.
     """
+    if not isinstance(error, MissingProviderKeyError):
+        return None
     try:
-        body = json.loads(str(error))
-    except (TypeError, ValueError):
+        guidance = missing_key_guidance(error.provider)
+    except KeyError:
         return None
-    if not isinstance(body, dict):
-        return None
-    message = body.get("error")
-    env_var = body.get("env_var")
-    steps = body.get("how_to_fix")
-    if not (isinstance(message, str) and _SETUP_MESSAGE.match(message)):
-        return None
-    if not (isinstance(env_var, str) and _ENV_VAR.match(env_var)):
-        return None
-    if not (isinstance(steps, list) and steps and all(isinstance(x, str) and len(x) <= 300 for x in steps)):
-        return None
-    return message, {"env_var": env_var, "how_to_fix": list(steps[:6]), "setup_required": True}
+    return guidance["error"], {
+        "env_var": guidance["env_var"],
+        "how_to_fix": list(guidance["how_to_fix"]),
+        "setup_required": True,
+    }
 
 
 def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
@@ -83,6 +115,9 @@ def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
         error_class = ErrorClass.CONFIG
     elif isinstance(error, (TimeoutError,)):
         error_class = ErrorClass.TIMEOUT
+    elif isinstance(error, ProviderRequestError) and getattr(error, "out_of_credit", False):
+        # Keeps the provider's real status in http_status (Linkup answers 429).
+        error_class = ErrorClass.QUOTA
     elif status in {401, 403}:
         error_class = ErrorClass.AUTH
     elif status in {402, 432}:
@@ -102,6 +137,8 @@ def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
         error_class = ErrorClass.INTERNAL
 
     message = _MESSAGES[error_class]
+    if error_class is ErrorClass.QUOTA and getattr(error, "out_of_credit", False):
+        message = _OUT_OF_CREDIT_MESSAGE
     details: dict = {}
     if error_class is ErrorClass.CONFIG:
         guidance = _setup_guidance(error)

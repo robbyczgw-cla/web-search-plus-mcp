@@ -9,14 +9,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-try:
-    from .cache import CACHE_DIR
-except ImportError:  # pragma: no cover - direct script execution
-    from cache import CACHE_DIR
-try:
-    from .http_client import ProviderRequestError
-except ImportError:  # pragma: no cover - direct script execution
-    from http_client import ProviderRequestError
+from .cache import CACHE_DIR
+from .http_client import ProviderRequestError
 
 
 PROVIDER_HEALTH_FILE = CACHE_DIR / "provider_health.json"

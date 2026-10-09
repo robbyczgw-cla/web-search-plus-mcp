@@ -5,9 +5,11 @@ from __future__ import annotations
 from email.utils import parsedate_to_datetime
 from http.client import IncompleteRead
 import http.client
+from contextlib import contextmanager
 import io
 import json
 import os
+import re
 import socket
 import ssl
 import threading
@@ -17,6 +19,7 @@ import zlib
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request
+from . import __version__
 
 
 TRANSIENT_HTTP_CODES = {429, 503}
@@ -37,6 +40,8 @@ _REDIRECT_CODES = {301, 302, 303, 307, 308}
 # limited separately, so a small compressed body cannot expand without bound.
 MAX_WIRE_RESPONSE_BYTES = 16 * 1024 * 1024
 MAX_DECODED_RESPONSE_BYTES = 16 * 1024 * 1024
+# HTTP error bodies are only inspected to classify the error, never shown.
+_ERROR_BODY_LIMIT = 4096
 # Errors that mean a reused idle socket was already closed by the server.
 _STALE_CONNECTION_ERRORS = (
     http.client.RemoteDisconnected,
@@ -239,17 +244,18 @@ def _safe_opener():
     return opener
 
 
-def _read_bounded_wire(response) -> bytes:
-    """Read at most MAX_WIRE_RESPONSE_BYTES from a response, or refuse."""
+def _read_bounded_wire(response, limit: int | None = None) -> bytes:
+    """Read at most ``limit`` (default MAX_WIRE_RESPONSE_BYTES) from a response, or refuse."""
+    limit = MAX_WIRE_RESPONSE_BYTES if limit is None else limit
     declared = _response_header(response, "Content-Length").strip()
-    if declared.isdigit() and int(declared) > MAX_WIRE_RESPONSE_BYTES:
+    if declared.isdigit() and int(declared) > limit:
         raise _too_large()
     try:
-        raw = response.read(MAX_WIRE_RESPONSE_BYTES + 1)
+        raw = response.read(limit + 1)
     except TypeError:
         # Duck-typed responses whose read() takes no size argument.
         raw = response.read()
-    if len(raw) > MAX_WIRE_RESPONSE_BYTES:
+    if len(raw) > limit:
         raise _too_large()
     return raw
 
@@ -319,8 +325,33 @@ def _pooled_open(req: Request, timeout: float):
         raise URLError(exc) from exc
 
 
+_TIMEOUT_CAP = threading.local()
+
+
+@contextmanager
+def request_timeout_cap(seconds: float | None):
+    """Cap the socket timeout of every provider request made in this thread.
+
+    Providers pass their own timeouts (often 30 s). When a fallback provider
+    is waiting, a hung call should give up sooner; the engine wraps such an
+    attempt in this cap instead of threading a timeout through every adapter.
+    """
+    previous = getattr(_TIMEOUT_CAP, "seconds", None)
+    _TIMEOUT_CAP.seconds = seconds
+    try:
+        yield
+    finally:
+        _TIMEOUT_CAP.seconds = previous
+
+
+def _capped_timeout(timeout: float) -> float:
+    cap = getattr(_TIMEOUT_CAP, "seconds", None)
+    return min(timeout, cap) if cap else timeout
+
+
 def urlopen(req, timeout: float = 30):
     """Drop-in for urllib.request.urlopen: HTTP(S) only, same-origin redirects only."""
+    timeout = _capped_timeout(timeout)
     url = req.full_url if isinstance(req, Request) else str(req)
     if _origin(url) is None:
         raise ProviderRequestError("Provider URL must be an http(s) URL.", transient=False)
@@ -331,10 +362,6 @@ def urlopen(req, timeout: float = 30):
     if _proxy_applies(scheme, parts.hostname):
         return _safe_opener().open(req, timeout=timeout)
     return _pooled_open(req, timeout)
-try:
-    from . import __version__
-except ImportError:  # pragma: no cover
-    __version__ = "4.3.5"
 
 DEFAULT_USER_AGENT = f"ClawdBot-WebSearchPlus-MCP/{__version__}"
 
@@ -348,11 +375,15 @@ class ProviderRequestError(Exception):
         status_code: int | None = None,
         transient: bool = False,
         retry_after: float | None = None,
+        out_of_credit: bool = False,
     ):
         super().__init__(message)
         self.status_code = status_code
         self.transient = transient
         self.retry_after = retry_after
+        # The provider account is empty. status_code stays the provider's real
+        # status (Linkup answers 429, Serper 400); this flag drives QUOTA.
+        self.out_of_credit = out_of_credit
 
 
 def _response_header(response, name: str) -> str:
@@ -372,15 +403,15 @@ def _response_header(response, name: str) -> str:
     return ""
 
 
-def _bounded_inflate(raw: bytes, wbits: int) -> bytes:
-    """Decompress raw (possibly multi-member) data, never exceeding the decoded limit."""
+def _bounded_inflate(raw: bytes, wbits: int, limit: int) -> bytes:
+    """Decompress raw (possibly multi-member) data, never exceeding ``limit`` decoded bytes."""
     out = bytearray()
     data = raw
     while True:
         inflater = zlib.decompressobj(wbits)
-        chunk = inflater.decompress(data, MAX_DECODED_RESPONSE_BYTES - len(out) + 1)
+        chunk = inflater.decompress(data, limit - len(out) + 1)
         out += chunk
-        if len(out) > MAX_DECODED_RESPONSE_BYTES:
+        if len(out) > limit:
             raise _too_large()
         if not inflater.eof:
             raise zlib.error("truncated stream")
@@ -391,16 +422,20 @@ def _bounded_inflate(raw: bytes, wbits: int) -> bytes:
             return bytes(out)
 
 
-def _read_response_body(response) -> bytes:
-    """Read a bounded body and decode supported Content-Encoding values (bounded)."""
-    raw = _read_bounded_wire(response)
+def _read_response_body(response, limit: int | None = None) -> bytes:
+    """Read a bounded body and decode supported Content-Encoding values (bounded).
+
+    ``limit`` replaces both default bounds, for bodies that are only inspected.
+    """
+    decoded_limit = MAX_DECODED_RESPONSE_BYTES if limit is None else limit
+    raw = _read_bounded_wire(response, limit)
     if not raw:
         return raw
     encoding = _response_header(response, "Content-Encoding").strip().lower()
 
     if encoding in {"gzip", "x-gzip"} or raw.startswith(b"\x1f\x8b"):
         try:
-            return _bounded_inflate(raw, 16 + zlib.MAX_WBITS)
+            return _bounded_inflate(raw, 16 + zlib.MAX_WBITS, decoded_limit)
         except (OSError, EOFError, zlib.error):
             raise ProviderRequestError(
                 "Provider sent a corrupted gzip response body. Please retry.",
@@ -408,11 +443,11 @@ def _read_response_body(response) -> bytes:
             )
     if encoding == "deflate":
         try:
-            return _bounded_inflate(raw, zlib.MAX_WBITS)
+            return _bounded_inflate(raw, zlib.MAX_WBITS, decoded_limit)
         except zlib.error:
             # Some servers send raw deflate without the zlib wrapper.
             try:
-                return _bounded_inflate(raw, -zlib.MAX_WBITS)
+                return _bounded_inflate(raw, -zlib.MAX_WBITS, decoded_limit)
             except zlib.error:
                 raise ProviderRequestError(
                     "Provider sent a corrupted deflate response body. Please retry.",
@@ -424,7 +459,7 @@ def _read_response_body(response) -> bytes:
             "Disable brotli for this provider or install a brotli-capable transport.",
             transient=False,
         )
-    if len(raw) > MAX_DECODED_RESPONSE_BYTES:
+    if len(raw) > decoded_limit:
         raise _too_large()
     return raw
 
@@ -478,7 +513,72 @@ def _parse_retry_after(error: HTTPError) -> float | None:
     return max(0.0, retry_at.timestamp() - time.time())
 
 
+# Wording that says the account itself is empty. Some providers answer 429
+# (Linkup) or 400 (Serper) for this; it is a quota problem, not a rate limit
+# that clears in seconds. "Quota exceeded" is left out on purpose: providers
+# also use it for per-minute limits.
+_OUT_OF_CREDIT_WORDING = re.compile(
+    r"(?<![a-z0-9])(?:insufficient[ _](?:credits|funds)|(?:out of|not enough|no) credits"
+    r"|credit balance|not have enough funds)(?![a-z0-9])"
+)
+# Structured provider codes for the same thing (Linkup: INSUFFICIENT_FUNDS_CREDITS).
+_OUT_OF_CREDIT_CODES = frozenset({
+    "insufficient_funds_credits", "insufficient_credits", "insufficient_funds",
+})
+# A 429 carrying one of these is a rate limit that clears by itself, whatever
+# its body says.
+_RATE_LIMIT_HINT_HEADERS = ("Retry-After", "RateLimit-Reset", "X-RateLimit-Reset")
+
+
+def _error_body_text(error: HTTPError) -> str:
+    """The decoded start of an HTTP error body, for classification only.
+
+    Decoded like any response body (Brave answers gzip). Callers must never
+    copy this text into messages, logs or results.
+    """
+    try:
+        body = _read_response_body(error, _ERROR_BODY_LIMIT)
+    except Exception:
+        return ""
+    return body.decode("utf-8", "replace")
+
+
+def _json_error_codes(text: str) -> list[str]:
+    try:
+        data = json.loads(text)
+    except (ValueError, RecursionError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    nested = data.get("error")
+    sources = (data, nested) if isinstance(nested, dict) else (data,)
+    codes = (source.get(key) for source in sources for key in ("code", "error_code"))
+    return [code.strip().lower() for code in codes if isinstance(code, str)]
+
+
+def _out_of_credit(error: HTTPError) -> bool:
+    """True when an HTTP error says the provider account is empty."""
+    if error.code == 402:
+        return True
+    if error.code not in {400, 403, 429}:
+        return False
+    if error.code == 429 and any(_response_header(error, name).strip() for name in _RATE_LIMIT_HINT_HEADERS):
+        return False
+    text = _error_body_text(error)
+    if any(code in _OUT_OF_CREDIT_CODES for code in _json_error_codes(text)):
+        return True
+    return _OUT_OF_CREDIT_WORDING.search(text.lower()) is not None
+
+
 def _raise_provider_http_error(error: HTTPError) -> None:
+    if _out_of_credit(error):
+        raise ProviderRequestError(
+            f"Out of credits: the provider account has no funds left; top it up or "
+            f"remove its key (HTTP {error.code})",
+            status_code=error.code,
+            transient=False,
+            out_of_credit=True,
+        )
     friendly_msg = _friendly_http_error(error.code)
     raise ProviderRequestError(
         f"{friendly_msg} (HTTP {error.code})",
@@ -490,6 +590,7 @@ def _raise_provider_http_error(error: HTTPError) -> None:
 
 def make_request(url: str, headers: dict, body: dict, timeout: int = 30) -> dict:
     """Make HTTP POST request and return JSON response."""
+    timeout = _capped_timeout(timeout)
     # Ensure User-Agent is set (required by some APIs like Exa/Cloudflare)
     if "User-Agent" not in headers:
         headers["User-Agent"] = DEFAULT_USER_AGENT
@@ -516,16 +617,39 @@ def make_request(url: str, headers: dict, body: dict, timeout: int = 30) -> dict
         raise ProviderRequestError(f"Request timed out after {timeout}s. Try again or reduce max_results.", transient=True)
 
 
-def make_get_request(url: str, headers: dict, timeout: int = 30) -> dict:
-    """Make HTTP GET request and return JSON response."""
+def _capture_headers(source, names, sink: dict | None) -> None:
+    if sink is None:
+        return
+    for name in names:
+        value = _response_header(source, name)
+        if value:
+            sink[name] = value
+
+
+def make_get_request(
+    url: str,
+    headers: dict,
+    timeout: int = 30,
+    *,
+    capture_headers: tuple = (),
+    response_headers: dict | None = None,
+) -> dict:
+    """Make HTTP GET request and return JSON response.
+
+    ``capture_headers`` names response headers to copy into
+    ``response_headers``, on success and on HTTP errors.
+    """
+    timeout = _capped_timeout(timeout)
     if "User-Agent" not in headers:
         headers["User-Agent"] = DEFAULT_USER_AGENT
     req = Request(url, headers=headers, method="GET")
 
     try:
         with urlopen(req, timeout=timeout) as response:
+            _capture_headers(response, capture_headers, response_headers)
             return _read_json_response(response)
     except HTTPError as e:
+        _capture_headers(e, capture_headers, response_headers)
         _raise_provider_http_error(e)
         raise
     except URLError as e:

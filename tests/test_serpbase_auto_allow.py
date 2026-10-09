@@ -1,3 +1,4 @@
+from web_search_plus_mcp import config as runtime_config
 import asyncio
 
 import web_search_plus_mcp.search as search
@@ -19,7 +20,7 @@ def test_serpbase_and_querit_are_explicit_only_by_default(monkeypatch):
     monkeypatch.delenv("SEARXNG_INSTANCE_URL", raising=False)
     monkeypatch.delenv("PARALLEL_API_KEY", raising=False)
 
-    config = search._deepcopy_default_config()
+    config = runtime_config._deepcopy_default_config()
     routing = search.auto_route_provider("iphone 16 price today", config)
 
     assert routing["reason"] == "no_available_providers"
@@ -48,8 +49,8 @@ def test_serpbase_can_be_called_explicitly(monkeypatch):
             "session_id": "sess-1",
         }
 
-    monkeypatch.setattr(search, "make_request", fake_request)
-    result = search.search_serpbase(
+    monkeypatch.setattr(search._providers, "make_request", fake_request)
+    result = search._providers.search_serpbase(
         query="example",
         api_key="serpbase-test-key",
         max_results=1,
@@ -97,20 +98,8 @@ def test_server_schema_exposes_guarded_provider_metadata():
     assert server.SEARCH_PROVIDERS["octen"]["auto_allow"] is False
     assert server.SEARCH_PROVIDERS["tinyfish"]["env"] == "TINYFISH_API_KEY"
     assert server.SEARCH_PROVIDERS["tinyfish"]["auto_allow"] is False
-    assert server.ROUTING_PROVIDER_ORDER == [
-        "you",
-        "serper",
-        "exa",
-        "firecrawl",
-        "tavily",
-        "linkup",
-        "brave",
-        "parallel",
-        "serpbase",
-        "querit",
-        "searxng",
-        "keenable",
-    ]
+    assert server.ROUTING_PROVIDER_ORDER == list(runtime_config.DEFAULT_PROVIDER_PRIORITY)
+    assert server.ROUTING_PROVIDER_ORDER[:2] == ["brave", "serper"]
 
     config = server._default_behavior_config()
     assert config["auto_routing"]["auto_allow"] == {

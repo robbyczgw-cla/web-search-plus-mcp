@@ -14,18 +14,11 @@ import re
 from pathlib import Path
 from typing import Dict, Iterable
 
-try:
-    from .provider_adapter_protocol import (
-        SEARCH_ADAPTER_PARAMETERS as _SEARCH_PARAMETERS,
-        EXTRACT_ADAPTER_PARAMETERS as _EXTRACT_PARAMETERS,
-        _signature_matches,
-    )
-except ImportError:  # pragma: no cover - direct script execution
-    from provider_adapter_protocol import (
-        SEARCH_ADAPTER_PARAMETERS as _SEARCH_PARAMETERS,
-        EXTRACT_ADAPTER_PARAMETERS as _EXTRACT_PARAMETERS,
-        _signature_matches,
-    )
+from .provider_adapter_protocol import (
+    SEARCH_ADAPTER_PARAMETERS as _SEARCH_PARAMETERS,
+    EXTRACT_ADAPTER_PARAMETERS as _EXTRACT_PARAMETERS,
+    _signature_matches,
+)
 
 from wsp_sdk import (
     DuplicateProviderError,
@@ -35,7 +28,7 @@ from wsp_sdk import (
 )
 
 
-PROVIDERS_DIRECTORY = Path(__file__).resolve().with_name("providers.d")
+PROVIDERS_DIRECTORY = Path(__file__).resolve().parent / "providers.d"
 NON_PRODUCTION_DISCOVERY_ENV = "WSP_SDK_ALLOW_NON_PRODUCTION"
 
 
@@ -69,14 +62,14 @@ _BUILTIN_PROVIDER_SPECS = (
     ),
     ProviderSpec(
         provider="brave", env_var="BRAVE_API_KEY", display_name="Brave Search",
-        description="Independent general web index in the Routing v2 default pool.",
+        description="Independent general web index; first provider for most automatic searches.",
         config_section="brave", supports_search=True, supports_extract=False,
-        capability_labels=("search", "news", "local"), auto_allowed_by_default=True,
+        capability_labels=("search", "news", "local"), auto_allowed_by_default=True, recommended=True,
         free_tier="$5 free monthly credits", signup_url="https://api.search.brave.com/app/keys",
     ),
     ProviderSpec(
         provider="tavily", env_var="TAVILY_API_KEY", display_name="Tavily",
-        description="Research/tutorial provider in the Routing v2 default pool.",
+        description="Research/tutorial provider in the default fallback chain.",
         config_section="tavily", supports_search=True, supports_extract=True,
         capability_labels=("search", "extract", "research"), auto_allowed_by_default=True,
         recommended=True, free_tier="1,000 free searches/month", signup_url="https://tavily.com",
@@ -100,7 +93,7 @@ _BUILTIN_PROVIDER_SPECS = (
         provider="exa", env_var="EXA_API_KEY", display_name="Exa",
         description="Semantic discovery, alternatives, docs, academic and long-form discovery.",
         config_section="exa", supports_search=True, supports_extract=True,
-        capability_labels=("search", "extract", "semantic"), auto_allowed_by_default=True,
+        capability_labels=("search", "extract", "semantic"), auto_allowed_by_default=True, recommended=True,
         free_tier="1,000 free searches/month", signup_url="https://dashboard.exa.ai/api-keys",
     ),
     ProviderSpec(
@@ -118,26 +111,11 @@ _BUILTIN_PROVIDER_SPECS = (
         signup_url="https://platform.parallel.ai",
     ),
     ProviderSpec(
-        provider="perplexity", env_var="PERPLEXITY_API_KEY", display_name="Perplexity",
-        description="Rejected legacy answer endpoint; no source-only mode is registered.",
-        config_section="perplexity", supports_search=False, supports_extract=False,
-        capability_labels=(), auto_allowed_by_default=False,
-        signup_url="https://www.perplexity.ai/settings/api",
-        rejected_reason="no_verified_source_only_endpoint",
-    ),
-    ProviderSpec(
-        provider="kilo-perplexity", env_var="KILOCODE_API_KEY", display_name="Kilo Code Perplexity bridge",
-        description="Rejected legacy answer bridge; no source-only mode is registered.",
-        config_section="kilo-perplexity", supports_search=False, supports_extract=False,
-        capability_labels=(), auto_allowed_by_default=False, free_tier="Depends on Kilo account",
-        signup_url="https://kilo.ai", rejected_reason="no_verified_source_only_endpoint",
-    ),
-    ProviderSpec(
         provider="you", env_var="YOU_API_KEY", display_name="You.com",
-        description="Fast Routing v2 core provider for current, multilingual, and LLM-ready search.",
+        description="Fast provider for current, multilingual, and LLM-ready search.",
         config_section="you", supports_search=True, supports_extract=True,
         capability_labels=("search", "extract"), auto_allowed_by_default=True,
-        recommended=True, free_tier="Limited/API key required", signup_url="https://api.you.com",
+        recommended=False, free_tier="Limited/API key required", signup_url="https://api.you.com",
     ),
     ProviderSpec(
         provider="searxng", env_var="SEARXNG_INSTANCE_URL", display_name="SearXNG",
@@ -159,7 +137,15 @@ _BUILTIN_PROVIDER_SPECS = (
 _BUILTIN_EXTRACT_PROVIDER_IDS = (
     "tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper",
 )
+# Fallback order. The first four are ordered by measured result quality
+#; the rest keep their pre-5.0 relative order.
 _BUILTIN_DEFAULT_PROVIDER_PRIORITY = (
+    "brave", "serper", "exa", "tavily", "you", "firecrawl", "linkup", "parallel",
+    "serpbase", "querit", "searxng", "keenable",
+)
+# The default every 4.x setup wrote into config.json. A config that still starts
+# with it never chose an order, so it gets the current default (config.py).
+PRE_5_DEFAULT_PROVIDER_PRIORITY = (
     "you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "parallel",
     "serpbase", "querit", "searxng", "keenable",
 )
@@ -259,7 +245,21 @@ def _statically_non_production(path: Path) -> bool:
     return False
 
 
+def _publish_sdk() -> None:
+    """Make ``import wsp_sdk`` (and its submodules) resolve to this engine's SDK.
+
+    providers.d modules import the public SDK by its top-level name. The engine
+    itself is imported as ``web_search_plus_mcp``,
+    so the name is bound to the SDK object of *this* engine: provider errors
+    and specs must be the very classes the engine checks against.
+    """
+    import wsp_sdk as sdk
+
+    sdk._bind_public_name("wsp_sdk")
+
+
 def _load_provider_file(path: Path) -> ProviderSpec:
+    _publish_sdk()
     module_name = "wsp_provider_" + re.sub(r"[^a-zA-Z0-9_]", "_", path.stem)
     module_spec = importlib.util.spec_from_file_location(module_name, path)
     if module_spec is None or module_spec.loader is None:
@@ -362,6 +362,26 @@ def doctor_catalog() -> Dict[str, Dict[str, object]]:
         }
         for provider, spec in PROVIDER_SPECS.items()
     }
+
+
+# Single source of truth for setup presets. Both the setup wizard and the
+# missing-key guidance read this, so the recommended command and the env vars
+# it lists cannot drift apart.
+SETUP_PRESETS: Dict[str, tuple[str, ...]] = {
+    # The starter is the automatic router's first choices (Brave, Exa, Serper;
+    # see web_search_plus_mcp/routing.py) plus Linkup for extraction. A test keeps them equal.
+    "starter": ("brave", "serper", "exa", "linkup"),
+    "lean": ("brave", "linkup"),
+    "search": ("brave", "serper", "exa", "tavily", "firecrawl", "linkup"),
+    "extract": ("linkup", "firecrawl", "tavily"),
+    "self-hosted": ("searxng", "keenable"),
+}
+
+
+def preset_env_vars(preset: str) -> list[str]:
+    """Return the env vars a named setup preset asks for, in registry order."""
+    names = set(SETUP_PRESETS[preset])
+    return [spec.env_var for spec in PROVIDER_SPECS.values() if spec.provider in names]
 
 
 def plugin_catalog() -> list[Dict[str, object]]:

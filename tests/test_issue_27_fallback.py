@@ -129,8 +129,8 @@ def test_search_falls_back_after_first_provider_quota_error(tmp_path, monkeypatc
         }
 
     monkeypatch.setattr(search, "auto_route_provider", lambda _query, _config: _routing())
-    monkeypatch.setattr(search, "search_brave", brave_quota)
-    monkeypatch.setattr(search, "search_tavily", tavily_success)
+    monkeypatch.setattr(search._providers, "search_brave", brave_quota)
+    monkeypatch.setattr(search._providers, "search_tavily", tavily_success)
     monkeypatch.setattr(search, "load_config", lambda: config)
     monkeypatch.setattr(
         sys,
@@ -198,8 +198,8 @@ def test_extract_falls_back_after_first_provider_quota_error(tmp_path, monkeypat
             ],
         }
 
-    monkeypatch.setattr(search, "extract_tavily", tavily_quota)
-    monkeypatch.setattr(search, "extract_linkup", linkup_success)
+    monkeypatch.setattr(search._providers, "extract_tavily", tavily_quota)
+    monkeypatch.setattr(search._providers, "extract_linkup", linkup_success)
     monkeypatch.setattr(
         extract,
         "_validate_extract_urls",

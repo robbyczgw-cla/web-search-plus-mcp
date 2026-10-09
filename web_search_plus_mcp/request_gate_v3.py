@@ -5,10 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-try:
-    from .provider_registry import PROVIDER_SPECS
-except ImportError:  # pragma: no cover - direct script execution
-    from provider_registry import PROVIDER_SPECS
+from .provider_registry import PROVIDER_SPECS
 
 SOURCE_ONLY_SEMANTICS = frozenset({"source_results", "source_text"})
 _BANNED_BODY_KEYS = frozenset(
@@ -82,5 +79,3 @@ def validate_outbound_body(provider: str, body: Mapping[str, Any]) -> None:
         raise ValueError("linkup source-only mode requires outputType=searchResults")
     if provider == "exa" and body.get("type") in {"deep", "deep-reasoning"}:
         raise ValueError("exa deep modes are not source-only")
-    if provider in {"perplexity", "kilo-perplexity"}:
-        raise ValueError(f"{provider} has no verified source-only endpoint")
