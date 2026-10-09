@@ -4,6 +4,9 @@ This API is additive-only throughout the 3.x series.  Provider modules should
 depend on this package rather than private registry or dispatch modules.
 """
 
+import importlib
+import sys
+
 from .api import (
     ExtractExecute,
     ProviderSpec,
@@ -48,3 +51,18 @@ __all__ = [
     "search_result",
     "source_result",
 ]
+
+# Submodules reachable under the public name: ``wsp_sdk.<name>``.
+_PUBLIC_SUBMODULES = ("api", "conformance", "errors")
+
+
+def _bind_public_name(name: str = "wsp_sdk") -> None:
+    """Make ``name`` and ``name.<submodule>`` resolve to this package's own modules.
+
+    Keeps exactly one object per name in the process, so a provider raises the
+    same ``ProviderConfigError`` class the engine's ``isinstance`` checks use.
+    Not part of the SDK surface.
+    """
+    sys.modules[name] = sys.modules[__name__]
+    for submodule in _PUBLIC_SUBMODULES:
+        sys.modules[f"{name}.{submodule}"] = importlib.import_module(f"{__name__}.{submodule}")

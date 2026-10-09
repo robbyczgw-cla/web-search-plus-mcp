@@ -3,7 +3,8 @@
 ``classify_intent(query)`` labels a query with one of eight intents
 (academic, community, docs, general, local, news, security, shopping). The 5.0
 router uses the label to pick the first provider: Exa first for ``academic``
-and ``docs``, Serper first for ``shopping``, Brave first for everything else.
+and ``docs``, Serper first for ``security`` and ``shopping``, Brave first for
+everything else.
 web_search_plus_mcp/routing.py holds that table; this module only classifies.
 
 Design

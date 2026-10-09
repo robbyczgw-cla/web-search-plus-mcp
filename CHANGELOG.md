@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-## [5.0.0] - Unreleased
+## [5.0.0] - 2026-10-09
 
 Synced with Hermes Web Search Plus 5.0.
 
@@ -19,7 +19,11 @@ Synced with Hermes Web Search Plus 5.0.
 - Research mode merges provider lists with reciprocal rank fusion and returns up to two query-ranked passages per source.
 - Automatic search starts the next provider when the current one fails, returns no results, or exceeds its p75 latency (at least 2.5 s).
 - Snippets in the tool text are cut at 1,200 characters; the JSON payload keeps the full snippet.
-- A 402, or a 429 whose body reports no funds, is reported as an empty account instead of a rate limit.
+- `include_domains` accepts a plain string, ports, IDN domains and suffixes such as `.gov`. A filter without a usable entry is an error instead of an unfiltered search, and search operators can no longer be injected through Firecrawl. Several domains reach Firecrawl joined with `OR`. Tavily cannot filter by suffix and says so; automatic search skips it for such filters.
+- A provider is blocked only after three failures in a row; a success resets the count. A blocked provider names the reason in words ("Out of credits or quota at its last call …") instead of a bare code.
+- A search every provider answered with no results is no longer cached, a hedged win counts as a normal answer, and `[published …]` survives cache hits.
+- `wsp_sdk.api`, `wsp_sdk.errors` and `wsp_sdk.conformance` resolve to the same modules the engine uses.
+- A 402, or a 400, 403 or 429 whose body reports no funds (also gzip-encoded), is reported as "Out of credits" instead of a rate limit. A 429 with `Retry-After` stays a rate limit.
 - The engine is synced module for module from Hermes Web Search Plus 5.0 (`intents.py`, `urls.py` and `dates.py` are new). The `bench`, `extract-bench` and operator-receipt tooling stays in the Hermes plugin.
 
 ## [4.3.5] - 2026-10-08

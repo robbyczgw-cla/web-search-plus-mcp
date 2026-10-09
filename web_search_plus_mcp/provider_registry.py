@@ -11,7 +11,6 @@ import ast
 import importlib.util
 import os
 import re
-import sys
 from pathlib import Path
 from typing import Dict, Iterable
 
@@ -247,7 +246,7 @@ def _statically_non_production(path: Path) -> bool:
 
 
 def _publish_sdk() -> None:
-    """Make ``import wsp_sdk`` in providers.d resolve to this engine's SDK.
+    """Make ``import wsp_sdk`` (and its submodules) resolve to this engine's SDK.
 
     providers.d modules import the public SDK by its top-level name. The engine
     itself is imported as ``web_search_plus_mcp``,
@@ -256,7 +255,7 @@ def _publish_sdk() -> None:
     """
     import wsp_sdk as sdk
 
-    sys.modules["wsp_sdk"] = sdk
+    sdk._bind_public_name("wsp_sdk")
 
 
 def _load_provider_file(path: Path) -> ProviderSpec:
