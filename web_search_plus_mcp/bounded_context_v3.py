@@ -14,18 +14,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Protocol
 
-try:
-    from .contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
-except ImportError:  # pragma: no cover - direct script execution
-    from contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
-try:
-    from .runtime_v3 import segment_canonical_text
-except ImportError:  # pragma: no cover - direct script execution
-    from runtime_v3 import segment_canonical_text
-try:
-    from .span_extraction_v3 import select_spans
-except ImportError:  # pragma: no cover - direct script execution
-    from span_extraction_v3 import select_spans
+from .contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
+from .runtime_v3 import segment_canonical_text
+from .span_extraction_v3 import select_spans
 
 DEFAULT_MAX_URLS = 10
 HARD_MAX_URLS = 50
@@ -167,7 +158,6 @@ def apply_bounded_context(
     plan: ExtractContextPlan,
     *,
     store: ContentStore,
-    config: Dict[str, Any] | None = None,
 ) -> ResponseV3:
     """Bound inline extracted text without destroying full source observations."""
     results = deepcopy(response.results)

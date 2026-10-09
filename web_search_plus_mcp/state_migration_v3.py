@@ -23,10 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-try:
-    from .state_store_v3 import SQLiteStateStore
-except ImportError:  # pragma: no cover - direct script execution
-    from state_store_v3 import SQLiteStateStore
+from .state_store_v3 import SQLiteStateStore
 
 
 BACKUP_OWNER = "web-search-plus-state-migration-v3"
@@ -733,7 +730,7 @@ def _default_cache_root() -> Path:
     configured = os.environ.get("WSP_CACHE_DIR")
     if configured:
         return Path(configured)
-    return Path(__file__).resolve().parent.parent / ".cache"
+    return Path(__file__).resolve().parent.parent.parent / ".cache"
 
 
 def build_parser() -> argparse.ArgumentParser:

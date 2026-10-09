@@ -1,13 +1,13 @@
 """WSP 3.1 extraction-cache identity and losslessness contract tests."""
 
 from __future__ import annotations
+from web_search_plus_mcp import extract
 
 from copy import deepcopy
 import json
 
 import pytest
 
-from web_search_plus_mcp import extract
 from web_search_plus_mcp.cache_v3 import ResponseCacheV3, response_payload_from_cache_material
 from web_search_plus_mcp.compat_v3 import legacy_request_to_v3
 from web_search_plus_mcp.contract_v3 import Capability
@@ -406,9 +406,9 @@ def test_transient_provider_health_changes_do_not_vary_cache_identity(
 
     first = extract.run_extract_request_v3(request, config=config)
     # Simulate the live incident: a candidate enters cooldown between calls.
-    monkeypatch.setattr(
-        extract, "provider_in_cooldown", lambda _p: (True, 120.0)
-    )
+    import web_search_plus_mcp.provider_health as health
+
+    monkeypatch.setattr(health, "provider_in_cooldown", lambda _p: (True, 120.0))
     second = extract.run_extract_request_v3(
         legacy_request_to_v3(
             Capability.EXTRACT,

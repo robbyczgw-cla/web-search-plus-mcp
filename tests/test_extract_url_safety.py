@@ -1,8 +1,8 @@
+from web_search_plus_mcp import extract
 from unittest import mock
 
 import pytest
 
-from web_search_plus_mcp import extract
 
 
 @pytest.mark.parametrize(
@@ -28,7 +28,7 @@ from web_search_plus_mcp import extract
         "http://[ff02::1]/multicast",
         "http://[::]/unspecified",
         "http://[2001:db8::1]/doc",
-        "https://PUBLIC...test@127.0.0.1/admin",
+        "https://PUBLIC.example.test@127.0.0.1/admin",
         "http://2130706433/admin",
     ],
 )
@@ -72,7 +72,7 @@ def test_extract_private_url_escape_hatch_is_explicit():
 
 
 def test_extract_plus_rejects_private_url_before_provider_dispatch():
-    with mock.patch("web_search_plus_mcp.extract.extract_firecrawl") as mock_extract:
+    with mock.patch("web_search_plus_mcp.providers.extract_firecrawl") as mock_extract:
         result = extract.extract_plus(
             ["http://169.254.169.254/latest/meta-data/"],
             provider="firecrawl",
@@ -87,9 +87,9 @@ def test_extract_plus_rejects_private_url_before_provider_dispatch():
 def test_local_provider_endpoint_remains_allowed_for_public_target():
     with mock.patch("web_search_plus_mcp.extract._validate_extract_urls", return_value=["https://example.com/page"]), \
          mock.patch("web_search_plus_mcp.extract.get_api_key", return_value="fc-test-key"), \
-         mock.patch("web_search_plus_mcp.extract.provider_in_cooldown", return_value=(False, 0)), \
-         mock.patch("web_search_plus_mcp.extract.reset_provider_health"), \
-         mock.patch("web_search_plus_mcp.extract.extract_firecrawl", return_value={"provider": "firecrawl", "results": []}) as mock_extract:
+         mock.patch("web_search_plus_mcp.provider_health.provider_in_cooldown", return_value=(False, 0)), \
+         mock.patch("web_search_plus_mcp.provider_health.reset_provider_health"), \
+         mock.patch("web_search_plus_mcp.providers.extract_firecrawl", return_value={"provider": "firecrawl", "results": []}) as mock_extract:
         result = extract.extract_plus(
             ["https://example.com/page"],
             provider="firecrawl",

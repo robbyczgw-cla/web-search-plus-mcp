@@ -1,595 +1,126 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Engine sync: Web Search Plus 3.1.1
+Version: 5.0.0
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
 Brave Search, SerpBase, Querit, Parallel, SearXNG, Keenable.
 Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com, Keenable, Serper.
 
-Smart Routing uses multi-signal analysis:
-  - Routing v2 language/script and query-class detection
-  - Query intent classification (shopping, research, discovery)
-  - Linguistic pattern detection (how much vs how does)
-  - Product/brand recognition
-  - URL detection
-  - Confidence scoring
+Automatic routing (provider "auto") labels the query with an intent and picks
+the first provider from a measured table: Exa for academic and documentation
+queries, Serper for shopping, Brave otherwise; the fallback chain follows
+auto_routing.provider_priority. See docs/ROUTING.md.
 
 Usage:
     python3 search.py --query "..."                    # Auto-route based on query
     python3 search.py --provider [you|serper|exa|firecrawl|tavily|linkup|brave|serpbase|querit|searxng|auto] --query "..." [options]
 
 Examples:
-    python3 search.py -q "東京 AI ニュース 今日"              # → You.com (multilingual current)
-    python3 search.py -q "arXiv 2024 LLM scaling laws"      # → Exa (academic discovery)
-    python3 search.py -q "latest OpenSSH CVE mitigation"    # → Serper (security/current)
+    python3 search.py -q "arXiv paper LLM scaling laws"            # → Exa (academic)
+    python3 search.py -q "iPhone 16 Pro Max price"                 # → Serper (shopping)
+    python3 search.py -q "latest OpenSSH CVE mitigation"           # → Brave (security)
 """
 
 from __future__ import annotations
 
 
-
 import argparse
 import json
 import os
+import queue
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import List, Dict, Any, Optional, Tuple
-try:
-    from .http_client import (  # noqa: F401 - re-exported for backward-compatible tests/imports
-        ProviderRequestError,
-        TRANSIENT_HTTP_CODES,
-        _read_json_response,
-        _read_response_body,
-        make_get_request,
-        make_request,
-        urlopen,  # pooled keep-alive opener; monkeypatch seam
-    )
-except ImportError:  # pragma: no cover - direct script execution
-    from http_client import (  # noqa: F401 - re-exported for backward-compatible tests/imports
-        ProviderRequestError,
-        TRANSIENT_HTTP_CODES,
-        _read_json_response,
-        _read_response_body,
-        make_get_request,
-        make_request,
-        urlopen,  # pooled keep-alive opener; monkeypatch seam
-    )
-try:
-    from . import http_client as _http_client
-except ImportError:  # pragma: no cover - direct script execution
-    import http_client as _http_client
-try:
-    from .cache import (
-        CACHE_DIR,
-        DEFAULT_CACHE_TTL,
-        cache_clear,
-        cache_get,
-        cache_put,
-        cache_stats,
-    )
-except ImportError:  # pragma: no cover - direct script execution
-    from cache import (
-        CACHE_DIR,
-        DEFAULT_CACHE_TTL,
-        cache_clear,
-        cache_get,
-        cache_put,
-        cache_stats,
-    )
-try:
-    from .budget_preflight_v3 import daily_preflight_budget as _daily_preflight_budget
-except ImportError:  # pragma: no cover - direct script execution
-    from budget_preflight_v3 import daily_preflight_budget as _daily_preflight_budget
+from .daemon_tasks import DaemonTask
+from .http_client import ProviderRequestError, request_timeout_cap
+from .cache import (
+    CACHE_DIR,
+    DEFAULT_CACHE_TTL,
+    cache_clear,
+    cache_get,
+    cache_put,
+    cache_stats,
+    effective_search_cache_ttl,
+    routing_class_of,
+)
+from .budget_preflight_v3 import daily_preflight_budget as _daily_preflight_budget
 
-try:
-    from .config import (  # noqa: F401 - re-exported for backward-compatible tests/imports
-        CONFIG_ENV_VAR,
-        DEFAULT_CONFIG,
-        ProviderConfigError,
-        SELF_HOSTED_SEARCH_PROVIDER_IDS,
-        _clean_env_value,
-        _deepcopy_default_config,
-        _validate_runtime_config,
-        _validate_searxng_url,
-        apply_profile_effects,
-        get_api_key,
-        is_self_hosted_profile,
-        keyless_public_allowed,
-        load_config,
-        provider_configured,
-        validate_api_key,
-    )
-except ImportError:  # pragma: no cover - direct script execution
-    from config import (  # noqa: F401 - re-exported for backward-compatible tests/imports
-        CONFIG_ENV_VAR,
-        DEFAULT_CONFIG,
-        ProviderConfigError,
-        SELF_HOSTED_SEARCH_PROVIDER_IDS,
-        _clean_env_value,
-        _deepcopy_default_config,
-        _validate_runtime_config,
-        _validate_searxng_url,
-        apply_profile_effects,
-        get_api_key,
-        is_self_hosted_profile,
-        keyless_public_allowed,
-        load_config,
-        provider_configured,
-        validate_api_key,
-    )
-try:
-    from .provider_health import (  # noqa: F401 - re-exported for backward-compatible tests/imports
-        RETRY_BACKOFF_SECONDS,
-        RETRY_JITTER_FRACTION,
-        COOLDOWN_STEPS_SECONDS,
-        execute_provider_with_retry,
-        mark_provider_failure,
-        provider_in_cooldown,
-        reset_provider_health,
-    )
-except ImportError:  # pragma: no cover - direct script execution
-    from provider_health import (  # noqa: F401 - re-exported for backward-compatible tests/imports
-        RETRY_BACKOFF_SECONDS,
-        RETRY_JITTER_FRACTION,
-        COOLDOWN_STEPS_SECONDS,
-        execute_provider_with_retry,
-        mark_provider_failure,
-        provider_in_cooldown,
-        reset_provider_health,
-    )
-try:
-    from .provider_stats import record_provider_outcome
-except ImportError:  # pragma: no cover - direct script execution
-    from provider_stats import record_provider_outcome
-try:
-    from .quality import (  # noqa: F401 - re-exported for backward-compatible tests/imports
-        _choose_tie_winner,
-        _domain_matches_rule,
-        build_authority_signals,
-        build_quality_report,
-        deduplicate_results_across_providers,
-        extract_domain_constraints,
-        filter_spam_results,
-        rerank_domain_diversity,
-        rerank_results_for_intent,
-        select_research_providers,
-    )
-except ImportError:  # pragma: no cover - direct script execution
-    from quality import (  # noqa: F401 - re-exported for backward-compatible tests/imports
-        _choose_tie_winner,
-        _domain_matches_rule,
-        build_authority_signals,
-        build_quality_report,
-        deduplicate_results_across_providers,
-        extract_domain_constraints,
-        filter_spam_results,
-        rerank_domain_diversity,
-        rerank_results_for_intent,
-        select_research_providers,
-    )
-try:
-    from .diversity_v3 import DEFAULT_NEAR_DUPLICATE_THRESHOLD
-except ImportError:  # pragma: no cover - direct script execution
-    from diversity_v3 import DEFAULT_NEAR_DUPLICATE_THRESHOLD
-try:
-    from .provider_adapter_protocol import validate_adapter_result
-except ImportError:  # pragma: no cover - direct script execution
-    from provider_adapter_protocol import validate_adapter_result
-try:
-    from .provider_dispatch import SEARCH_DISPATCH
-except ImportError:  # pragma: no cover - direct script execution
-    from provider_dispatch import SEARCH_DISPATCH
-try:
-    from .provider_registry import (
-        PROVIDER_STARTUP_DIAGNOSTICS,
-        PROVIDER_SPECS,
-        SEARCH_PROVIDER_IDS,
-        doctor_catalog,
-    )
-except ImportError:  # pragma: no cover - direct script execution
-    from provider_registry import (
-        PROVIDER_STARTUP_DIAGNOSTICS,
-        PROVIDER_SPECS,
-        SEARCH_PROVIDER_IDS,
-        doctor_catalog,
-    )
-try:
-    from .request_gate_v3 import validate_provider_mode
-except ImportError:  # pragma: no cover - direct script execution
-    from request_gate_v3 import validate_provider_mode
-try:
-    from .search_locale import provider_supports_locale, resolve_locale
-except ImportError:  # pragma: no cover - direct script execution
-    from search_locale import provider_supports_locale, resolve_locale
-try:
-    from .env_loader import load_env_files
-except ImportError:  # pragma: no cover - direct script execution
-    from env_loader import load_env_files
-try:
-    from .research import run_research_mode
-except ImportError:  # pragma: no cover - direct script execution
-    from research import run_research_mode
-try:
-    from .attempt_engine_v3 import AttemptContext, AttemptEngine
-except ImportError:  # pragma: no cover - direct script execution
-    from attempt_engine_v3 import AttemptContext, AttemptEngine
-try:
-    from .cache_v3 import peek_legacy_search
-except ImportError:  # pragma: no cover - direct script execution
-    from cache_v3 import peek_legacy_search
-try:
-    from .compat_v3 import legacy_request_to_v3, v3_response_to_legacy_search
-except ImportError:  # pragma: no cover - direct script execution
-    from compat_v3 import legacy_request_to_v3, v3_response_to_legacy_search
-try:
-    from .contract_v3 import Capability, RequestV3, ResponseV3, SkipReason
-except ImportError:  # pragma: no cover - direct script execution
-    from contract_v3 import Capability, RequestV3, ResponseV3, SkipReason
-try:
-    from .orchestrator_v3 import (
-        CapabilityAdapter,
-        CapabilityExecution,
-        ProviderPlan,
-        execute_v3_request,
-    )
-except ImportError:  # pragma: no cover - direct script execution
-    from orchestrator_v3 import (
-        CapabilityAdapter,
-        CapabilityExecution,
-        ProviderPlan,
-        execute_v3_request,
-    )
-try:
-    from .runtime_v3 import response_from_legacy
-except ImportError:  # pragma: no cover - direct script execution
-    from runtime_v3 import response_from_legacy
-try:
-    from .state_store_v3 import SQLiteStateStore
-except ImportError:  # pragma: no cover - direct script execution
-    from state_store_v3 import SQLiteStateStore
-try:
-    from . import providers as _providers
-except ImportError:  # pragma: no cover - direct script execution
-    import providers as _providers
-try:
-    from . import routing as _routing
-except ImportError:  # pragma: no cover - direct script execution
-    import routing as _routing
-try:
-    from . import extract as _extract
-except ImportError:  # pragma: no cover - direct script execution
-    import extract as _extract
-try:
-    from . import state_migration_v3 as _state_migration
-except ImportError:  # pragma: no cover - direct script execution
-    import state_migration_v3 as _state_migration
-
-
-_http_make_get_request = make_get_request
-_http_make_request = make_request
-
-
-def make_get_request(*args, **kwargs):
-    """Compatibility seam preserving URL opener monkeypatches."""
-    _http_client.urlopen = urlopen
-    return _http_make_get_request(*args, **kwargs)
-
-
-def make_request(*args, **kwargs):
-    """Compatibility seam preserving URL opener monkeypatches."""
-    _http_client.urlopen = urlopen
-    return _http_make_request(*args, **kwargs)
-
-
-# Backward-compatible cache helper aliases for older imports/tests.
-get_cached_result = cache_get
-cache_search_result = cache_put
-clear_cache = cache_clear
-get_cache_stats = cache_stats
+from .config import (
+    add_provider_setup_guidance,
+    ProviderConfigError,
+    SELF_HOSTED_SEARCH_PROVIDER_IDS,
+    apply_profile_effects,
+    get_api_key,
+    is_self_hosted_profile,
+    keyless_public_allowed,
+    load_config,
+    provider_configured,
+    validate_api_key,
+)
+from .provider_health import (
+    execute_provider_with_retry,
+    mark_provider_failure,
+    provider_in_cooldown,
+    reset_provider_health,
+)
+from .provider_stats import latency_quantile, record_provider_outcome
+from .quality import (
+    build_quality_report,
+    deduplicate_results_across_providers,
+    extract_domain_constraints,
+    filter_spam_results,
+    rerank_domain_diversity,
+    rerank_results_for_intent,
+    select_research_providers,
+)
+from .diversity_v3 import DEFAULT_NEAR_DUPLICATE_THRESHOLD
+from .provider_adapter_protocol import validate_adapter_result
+from .provider_dispatch import SEARCH_DISPATCH
+from .provider_registry import (
+    PROVIDER_STARTUP_DIAGNOSTICS,
+    PROVIDER_SPECS,
+    SEARCH_PROVIDER_IDS,
+    doctor_catalog,
+)
+from .request_gate_v3 import validate_provider_mode
+from .search_locale import (
+    AUTO_LANGUAGE,
+    apply_auto_language,
+    is_auto_language,
+    provider_supports_locale,
+    resolve_locale,
+)
+from .env_loader import load_env_files
+from .research import run_research_mode
+from .attempt_engine_v3 import AttemptEngine, provider_attempt_context, request_deadline
+from .cache_v3 import ResponseCacheV3
+from .compat_v3 import legacy_request_to_v3, v3_response_to_legacy_search
+from .contract_v3 import Capability, ErrorClass, RequestV3, ResponseV3, SkipReason
+from .orchestrator_v3 import (
+    CapabilityAdapter,
+    CapabilityExecution,
+    ProviderPlan,
+    execute_v3_request,
+)
+from .runtime_v3 import response_from_legacy
+from .state_store_v3 import SQLiteStateStore
+from . import providers as _providers
+from . import extract as _extract
+from .routing import (
+    ROUTING_POLICY,
+    _provider_auto_allowed,
+    auto_route_provider,
+    explain_routing,
+)
+from .extract import extract_plus
 
 
 def _load_env_file():
-    """Compatibility hook using the shared profile-aware environment loader."""
-    return load_env_files(__file__)
-
-
-ROUTING_POLICY = "routing-v2"
-
-COMPATIBILITY_SHIM_DEPRECATION = {
-    "public_surface": [
-        "QueryAnalyzer",
-        "auto_route_provider",
-        "extract_plus",
-        "get_cached_result",
-        "cache_search_result",
-        "clear_cache",
-        "get_cache_stats",
-    ],
-    "internal_shims": [
-        "_sync_routing_dependencies",
-        "_sync_provider_dependencies",
-        "_sync_extract_dependencies",
-        "provider function wrappers",
-    ],
-    "removal_target": "after ProviderSpec registry stabilization and one documented minor release window",
-    "tracking_issue": "#34",
-    "policy": "Keep search.py imports working while tests/users migrate to module-level seams; do not remove wrappers in feature PRs.",
-}
-
-
-def get_compatibility_shim_policy() -> Dict[str, Any]:
-    """Return the documented compatibility-shim policy for tests and release notes."""
-    return {
-        key: value.copy() if isinstance(value, list) else value
-        for key, value in COMPATIBILITY_SHIM_DEPRECATION.items()
-    }
-
-
-def _sync_routing_dependencies() -> None:
-    """Keep moved routing implementation compatible with search.py monkeypatches.
-
-    Removal target: after ProviderSpec registry stabilization and one documented minor release window.
-    """
-    _routing.get_api_key = get_api_key
-
-
-class QueryAnalyzer(_routing.QueryAnalyzer):
-    def __init__(self, *args, **kwargs):
-        _sync_routing_dependencies()
-        super().__init__(*args, **kwargs)
-
-
-def auto_route_provider(*args, **kwargs):
-    _sync_routing_dependencies()
-    return _routing.auto_route_provider(*args, **kwargs)
-
-
-def explain_routing(*args, **kwargs):
-    _sync_routing_dependencies()
-    return _routing.explain_routing(*args, **kwargs)
-
-
-def _provider_auto_allowed(*args, **kwargs):
-    return _routing._provider_auto_allowed(*args, **kwargs)
-
-
-
-
-def _sync_provider_dependencies() -> None:
-    """Keep moved provider implementations compatible with search.py monkeypatches.
-
-    Removal target: after ProviderSpec registry stabilization and one documented minor release window.
-    """
-    _providers.make_request = make_request
-    _providers.make_get_request = make_get_request
-    _providers.get_api_key = get_api_key
-    _providers.load_config = load_config
-    _providers.provider_in_cooldown = provider_in_cooldown
-    _providers.mark_provider_failure = mark_provider_failure
-    _providers.reset_provider_health = reset_provider_health
-    _providers.execute_provider_with_retry = execute_provider_with_retry
-
-
-# Unified freshness helpers (re-exported for tests and callers).
-FRESHNESS_VALUES = _providers.FRESHNESS_VALUES
-PROVIDER_FRESHNESS_FORMATS = _providers.PROVIDER_FRESHNESS_FORMATS
-
-
-def normalize_freshness(*args, **kwargs):
-    return _providers.normalize_freshness(*args, **kwargs)
-
-
-def provider_supports_freshness(*args, **kwargs):
-    return _providers.provider_supports_freshness(*args, **kwargs)
-
-
-def map_freshness_for_provider(*args, **kwargs):
-    return _providers.map_freshness_for_provider(*args, **kwargs)
-
-
-def freshness_metadata(*args, **kwargs):
-    return _providers.freshness_metadata(*args, **kwargs)
-
-
-# Unified search_type helpers (re-exported for tests and callers).
-SEARCH_TYPE_VALUES = _providers.SEARCH_TYPE_VALUES
-PROVIDER_SEARCH_TYPES = _providers.PROVIDER_SEARCH_TYPES
-
-
-def normalize_search_type(*args, **kwargs):
-    return _providers.normalize_search_type(*args, **kwargs)
-
-
-def provider_supports_search_type(*args, **kwargs):
-    return _providers.provider_supports_search_type(*args, **kwargs)
-
-
-def search_type_metadata(*args, **kwargs):
-    return _providers.search_type_metadata(*args, **kwargs)
-
-
-def search_serper(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.search_serper(*args, **kwargs)
-
-
-def _strip_tracking_params(*args, **kwargs):
-    return _providers._strip_tracking_params(*args, **kwargs)
-
-
-def _serpbase_related_search_query(*args, **kwargs):
-    return _providers._serpbase_related_search_query(*args, **kwargs)
-
-
-def search_serpbase(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.search_serpbase(*args, **kwargs)
-
-
-def search_brave(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.search_brave(*args, **kwargs)
-
-
-def search_tavily(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.search_tavily(*args, **kwargs)
-
-
-def _map_querit_time_range(*args, **kwargs):
-    return _providers._map_querit_time_range(*args, **kwargs)
-
-
-def search_querit(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.search_querit(*args, **kwargs)
-
-
-def search_linkup(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.search_linkup(*args, **kwargs)
-
-
-def _map_firecrawl_time_range(*args, **kwargs):
-    return _providers._map_firecrawl_time_range(*args, **kwargs)
-
-
-def search_firecrawl(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.search_firecrawl(*args, **kwargs)
-
-
-def _normalize_extract_result(*args, **kwargs):
-    return _providers._normalize_extract_result(*args, **kwargs)
-
-
-def extract_firecrawl(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.extract_firecrawl(*args, **kwargs)
-
-
-def extract_linkup(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.extract_linkup(*args, **kwargs)
-
-
-def extract_tavily(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.extract_tavily(*args, **kwargs)
-
-
-def extract_exa(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.extract_exa(*args, **kwargs)
-
-
-def extract_you(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.extract_you(*args, **kwargs)
-
-
-def extract_parallel(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.extract_parallel(*args, **kwargs)
-
-
-def search_exa(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.search_exa(*args, **kwargs)
-
-
-def search_parallel(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.search_parallel(*args, **kwargs)
-
-
-def search_perplexity(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.search_perplexity(*args, **kwargs)
-
-
-def search_you(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.search_you(*args, **kwargs)
-
-
-def search_searxng(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.search_searxng(*args, **kwargs)
-
-
-def search_keenable(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.search_keenable(*args, **kwargs)
-
-
-def extract_keenable(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.extract_keenable(*args, **kwargs)
-
-
-def extract_serper(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.extract_serper(*args, **kwargs)
-
-
-
-# =============================================================================
-# Exa (Neural/Semantic/Deep Search)
-# =============================================================================
-
-
-
-# =============================================================================
-# Parallel (LLM-ready web search)
-# =============================================================================
-
-
-
-# =============================================================================
-# Perplexity-compatible Direct Answers
-# =============================================================================
-
-
-
-
-# =============================================================================
-# You.com (LLM-Ready Web & News Search)
-# =============================================================================
-
-
-
-# =============================================================================
-# SearXNG (Privacy-First Meta-Search)
-# =============================================================================
-
-
-
-# =============================================================================
-# CLI
-# =============================================================================
-
-
-def _sync_extract_dependencies() -> None:
-    """Keep moved extract orchestrator compatible with search.py monkeypatches.
-
-    Removal target: after ProviderSpec registry stabilization and one documented minor release window.
-    """
-    _extract.get_api_key = get_api_key
-    _extract.load_config = load_config
-    _extract.provider_in_cooldown = provider_in_cooldown
-    _extract.mark_provider_failure = mark_provider_failure
-    _extract.reset_provider_health = reset_provider_health
-    _extract.execute_provider_with_retry = execute_provider_with_retry
-    _extract.extract_firecrawl = extract_firecrawl
-    _extract.extract_linkup = extract_linkup
-    _extract.extract_tavily = extract_tavily
-    _extract.extract_exa = extract_exa
-    _extract.extract_you = extract_you
-    _extract.extract_parallel = extract_parallel
-    _extract.extract_keenable = extract_keenable
-    _extract.extract_serper = extract_serper
+    """Load plugin-local, legacy parent, and Hermes profile .env files."""
+    load_env_files(__file__)
 
 
 EXTRACT_PROVIDER_PRIORITY = _extract.EXTRACT_PROVIDER_PRIORITY
@@ -597,11 +128,6 @@ resolve_extract_provider_priority = _extract.resolve_extract_provider_priority
 
 
 PROVIDER_DOCTOR_CATALOG = doctor_catalog()
-
-
-def extract_plus(*args, **kwargs):
-    _sync_extract_dependencies()
-    return _extract.extract_plus(*args, **kwargs)
 
 
 def _doctor_error(error_type: str, message: str) -> Dict[str, str]:
@@ -741,33 +267,29 @@ def build_parser(config: Dict[str, Any]) -> argparse.ArgumentParser:
     """Build the search.py CLI argument parser.
 
     Shared by the CLI ``main()`` entry and the in-process ``run_search_request``
-    helper so the Hermes plugin can route argv through the exact same parsing and
+    helper so the MCP server can route argv through the exact same parsing and
     defaults without spawning a subprocess.
     """
     parser = argparse.ArgumentParser(
         description="Web Search Plus — Intelligent multi-provider search with smart auto-routing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Intelligent Auto-Routing:
-  The query is analyzed using multi-signal detection to find the optimal provider:
-  
-  Shopping Intent → Serper (Google)
-    "how much", "price of", "buy", product+brand combos, deals, specs
-  
-  Research Intent → Tavily  
-    "how does", "explain", "what is", analysis, pros/cons, tutorials
+Automatic routing (provider "auto"):
+  The query gets one of eight intents; the intent picks the first provider.
 
-  Multilingual + Real-Time AI Search → Querit
-    multilingual search, metadata-rich results, current information for AI workflows
-  
-  Discovery Intent → Exa (Neural)
-    "similar to", "companies like", "alternatives", URLs, startups, papers
+  academic, docs   → Exa      papers, studies, DOIs; API docs, error messages, code
+  shopping         → Serper   buy, price, deals, "best ... under 300 euros"
+  everything else  → Brave    community, general, local, news, security
+
+  A missing provider is skipped (Brave, Serper, Exa, Tavily, then
+  auto_routing.provider_priority). Fallback follows provider_priority.
 
 Examples:
-  python3 search.py -q "iPhone 16 Pro Max price"          # → Serper (shopping)
-  python3 search.py -q "how does HTTPS encryption work"   # → Tavily (research)
-  python3 search.py -q "startups similar to Notion"       # → Exa (discovery)
-  python3 search.py --explain-routing -q "your query"     # Debug routing
+  python3 search.py -q "arXiv paper LLM scaling laws"            # → Exa (academic)
+  python3 search.py -q "python asyncio TaskGroup documentation"  # → Exa (docs)
+  python3 search.py -q "iPhone 16 Pro Max price"                 # → Serper (shopping)
+  python3 search.py -q "reddit best budget mechanical keyboard"  # → Brave (community)
+  python3 search.py --explain-routing -q "your query"            # Show the decision
 
 Full docs: See README.md and SKILL.md
         """,
@@ -778,11 +300,10 @@ Full docs: See README.md and SKILL.md
         "command",
         nargs="?",
         choices=["doctor", "state-migrate"],
-        help="Run diagnostics or reversible state-migration maintenance",
+        help="Run doctor or reversible state-migration maintenance",
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON for maintenance commands")
     parser.add_argument("--live", action="store_true", help="Allow doctor to run live provider smokes (reserved; offline by default)")
-
     migration_action = parser.add_mutually_exclusive_group()
     migration_action.add_argument(
         "--apply",
@@ -868,7 +389,7 @@ Full docs: See README.md and SKILL.md
     parser.add_argument(
         "--language",
         default=None,
-        help="ISO 639-1 language override (e.g. de); beats config defaults and query language inference"
+        help="ISO 639-1 language override (e.g. de), or 'auto' to detect it from the query; beats config defaults"
     )
     parser.add_argument(
         "--type", 
@@ -1105,6 +626,73 @@ Full docs: See README.md and SKILL.md
     return parser
 
 
+def default_search_args(config: Dict[str, Any]) -> SimpleNamespace:
+    """Search options with the CLI defaults, built without argparse.
+
+    The plugin calls the pipeline directly and never parses argv. These are
+    exactly the defaults of ``build_parser(config).parse_args([])`` minus the
+    maintenance-only CLI options (pinned by tests/test_direct_call_path.py).
+    """
+    defaults = config.get("defaults", {})
+    tavily = config.get("tavily", {})
+    querit = config.get("querit", {})
+    linkup = config.get("linkup", {})
+    exa = config.get("exa", {})
+    firecrawl = config.get("firecrawl", {})
+    you = config.get("you", {})
+    searxng = config.get("searxng", {})
+    return SimpleNamespace(
+        provider=None,
+        query=None,
+        output_format="markdown",
+        extract_images=False,
+        include_raw_html=False,
+        render_js=False,
+        spans=False,
+        spans_query=None,
+        max_results=defaults.get("max_results", 5),
+        images=False,
+        allow_fallback=False,
+        country=None,
+        language=None,
+        search_type=config.get("serper", {}).get("type", "search"),
+        time_range=None,
+        freshness=None,
+        depth=tavily.get("depth", "basic"),
+        topic=tavily.get("topic", "general"),
+        raw_content=False,
+        querit_base_url=querit.get("base_url", "https://api.querit.ai"),
+        querit_base_path=querit.get("base_path", "/v1/search"),
+        linkup_depth=linkup.get("depth", "standard"),
+        linkup_output_type=linkup.get("output_type", "searchResults"),
+        exa_type=exa.get("type", "neural"),
+        exa_depth=exa.get("depth", "normal"),
+        exa_verbosity=exa.get("verbosity", "standard"),
+        category=None,
+        start_date=None,
+        end_date=None,
+        similar_url=None,
+        firecrawl_scrape=False,
+        firecrawl_sources=list(firecrawl.get("sources", ["web"])),
+        you_safesearch=you.get("safesearch", "moderate"),
+        livecrawl=None,
+        no_news=False,
+        searxng_url=searxng.get("base_url") or searxng.get("instance_url"),
+        searxng_safesearch=searxng.get("safesearch", 0),
+        engines=searxng.get("engines"),
+        categories=None,
+        include_domains=None,
+        exclude_domains=None,
+        quality_report=False,
+        mode="normal",
+        research_providers=None,
+        research_extract_count=3,
+        research_time_budget=55.0,
+        cache_ttl=DEFAULT_CACHE_TTL,
+        no_cache=False,
+    )
+
+
 def _v3_extract_request_from_args(args) -> RequestV3:
     """Build the canonical extract RequestV3 from parsed ``--contract-v3`` CLI args."""
     return legacy_request_to_v3(
@@ -1185,9 +773,13 @@ def run_cli_contract_v3(argv: List[str], *, config: Optional[Dict[str, Any]] = N
 
 
 def main():
+    # Maintenance commands live in modules a search never needs; load them here.
+    from . import state_migration_v3 as _state_migration
+
     config = load_config()
     parser = build_parser(config)
     args = parser.parse_args()
+    args.language, config = apply_auto_language(args.language, config)
 
     migration_options_used = bool(
         args.apply or args.rollback or args.migration_backup_root is not None
@@ -1225,40 +817,54 @@ def main():
             print(_format_doctor_text(report))
         return
 
-
-    # Handle cache management commands first (before query validation)
+    # Handle cache management commands first (before query validation). The
+    # tools answer repeats from the v3 response cache, so both commands cover it.
+    response_cache = ResponseCacheV3((config.get("v3") or {}).get("cache_dir") or CACHE_DIR)
     if args.clear_cache:
         result = cache_clear()
-        indent = None if args.compact else 2
-        print(json.dumps(result, indent=indent, ensure_ascii=False))
-        return
-    
-    if args.cache_stats:
-        result = cache_stats()
+        result["v3_response_cleared"] = response_cache.clear()
         indent = None if args.compact else 2
         print(json.dumps(result, indent=indent, ensure_ascii=False))
         return
 
-    if args.extract_urls is not None:
-        if args.contract_v3:
-            result = run_extract_request_v3(_v3_extract_request_from_args(args), config=config).to_dict()
-        else:
-            result = extract_plus(
-                urls=args.extract_urls,
-                provider=args.provider or "auto",
-                output_format=args.output_format,
-                include_images=args.extract_images,
-                include_raw_html=args.include_raw_html,
-                render_js=args.render_js,
-                spans=args.spans,
-                spans_query=args.spans_query,
-                config=config,
-            )
+    if args.cache_stats:
+        result = cache_stats()
+        result["v3_response"] = response_cache.stats()
+        indent = None if args.compact else 2
+        print(json.dumps(result, indent=indent, ensure_ascii=False))
+        return
+
+    if args.extract_urls is not None and args.contract_v3:
+        result = run_extract_request_v3(_v3_extract_request_from_args(args), config=config).to_dict()
         indent = None if args.compact else 2
         stream = sys.stderr if result.get("status") == "failed" else sys.stdout
         print(json.dumps(result, indent=indent, ensure_ascii=False), file=stream)
         if result.get("status") == "failed":
             raise SystemExit(1)
+        return
+
+    if args.extract_urls is not None:
+        result = extract_plus(
+            urls=args.extract_urls,
+            provider=args.provider or "auto",
+            output_format=args.output_format,
+            include_images=args.extract_images,
+            include_raw_html=args.include_raw_html,
+            render_js=args.render_js,
+            spans=args.spans,
+            spans_query=args.spans_query,
+            config=config,
+        )
+        indent = None if args.compact else 2
+        succeeded = not result.get("error") and any(
+            isinstance(item, dict) and not item.get("error")
+            and any(item.get(field) for field in ("content", "text", "raw_content", "markdown", "html"))
+            for item in result.get("results", [])
+        )
+        print(json.dumps(result, indent=indent, ensure_ascii=False),
+              file=sys.stdout if succeeded else sys.stderr)
+        if not succeeded:
+            sys.exit(1)
         return
     
     if not args.query and not args.similar_url:
@@ -1328,7 +934,7 @@ def _apply_result_quality_pipeline(
     except (TypeError, ValueError):
         max_per_domain = 2
     if max_per_domain > 0:
-        reranked, demoted = rerank_domain_diversity(results, max_per_domain=max_per_domain)
+        reranked, demoted = rerank_domain_diversity(results, max_per_domain=max_per_domain, query=query)
         if demoted:
             result["results"] = reranked
             result.setdefault("metadata", {})["domain_diversity_demoted"] = demoted
@@ -1345,7 +951,7 @@ def _legacy_search_cache_context(
         cli_language=args.language,
     )
     return {
-        "locale": f"{locale_country}:{locale_language}",
+        "locale": f"{locale_country}:{locale_language or ''}",
         "freshness": args.freshness,
         "time_range": getattr(args, "time_range", None),
         "include_domains": sorted(args.include_domains)
@@ -1519,10 +1125,7 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
     """
     config = apply_profile_effects(config)
     if getattr(args, "query", None):
-        try:
-            from .jev_optional import maybe_search_type
-        except ImportError:  # pragma: no cover
-            from jev_optional import maybe_search_type
+        from .jev_optional import maybe_search_type
 
         resolved, _jev_meta = maybe_search_type(
             args.query, getattr(args, "search_type", None), config=config
@@ -1619,8 +1222,7 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
 
     # Helper function to execute search for a provider. Provider-specific
     # kwargs-building lives in provider_dispatch.SEARCH_DISPATCH; the caller
-    # namespace (globals()) is passed so adapters resolve search_<provider>
-    # late and honour monkeypatches on this module (search.search_you etc.).
+    # providers module is passed so adapters resolve implementations late.
     provider_payloads = {}
 
     def execute_search(prov: str) -> Dict[str, Any]:
@@ -1632,7 +1234,7 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         provider_result = validate_adapter_result(
             prov,
             "search",
-            adapter(globals(), prov, args, key, config, routing_info),
+            adapter(_providers, prov, args, key, config, routing_info),
         )
         if engine_owned_attempt:
             provider_result["_v3_raw_results"] = [
@@ -1756,17 +1358,28 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
     # Check cache first (unless --no-cache is set)
     cached_result = None
     cache_hit = False
+    search_cache_ttl = effective_search_cache_ttl(
+        args.query or "",
+        freshness=getattr(args, "time_range", None) or getattr(args, "freshness", None),
+        requested_ttl=args.cache_ttl,
+        routing_class=routing_class_of(
+            getattr(args, "_v3_planned_routing", None) or routing_info
+        ),
+    )
     if not args.no_cache and args.query:
         cached_result = cache_get(
             query=args.query,
             provider=provider,
             max_results=args.max_results,
-            ttl=args.cache_ttl,
+            ttl=search_cache_ttl,
             params=cache_context,
         )
         if cached_result:
             cache_hit = True
             result = {k: v for k, v in cached_result.items() if not k.startswith("_cache_")}
+            if "query" in result:
+                # The key ignores case and spacing; show this caller's own query.
+                result["query"] = args.query
             result["cached"] = True
             result["cache_age_seconds"] = int(time.time() - cached_result.get("_cache_timestamp", 0))
 
@@ -1799,9 +1412,16 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             # Missing/invalid local credentials are configuration errors, not
             # provider health failures. Do not poison shared cooldown state for
             # a provider the runtime never actually contacted.
+            try:
+                detail = json.loads(str(e))
+            except (ValueError, TypeError):
+                detail = {}
+            if not isinstance(detail, dict):
+                detail = {}
             errors.append({
                 "provider": current_provider,
-                "error": str(e),
+                "error": detail.get("error") or str(e),
+                **{key: detail[key] for key in ("env_var", "how_to_fix") if key in detail},
             })
             continue
         except Exception as e:
@@ -1850,13 +1470,27 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         if cooldown_skips:
             routing_info["cooldown_skips"] = cooldown_skips
 
-        routing_class = routing_info.get("analysis_summary", {}).get("routing_class", "general")
+        # A v3 attempt is a fixed-provider search; rank and report with the
+        # routing the engine planned for the request.
+        planned_routing = getattr(args, "_v3_planned_routing", None)
+        ranking_routing = (
+            {**planned_routing, "provider": routing_info.get("provider")}
+            if planned_routing
+            else routing_info
+        )
+        routing_class = ranking_routing.get("analysis_summary", {}).get("routing_class", "general")
         if not cache_hit and isinstance(result.get("results"), list):
-            reranked, rerank_metadata = rerank_results_for_intent(args.query or "", routing_class, result.get("results", []))
+            reranked, rerank_metadata = rerank_results_for_intent(
+                args.query or "", routing_class, result.get("results", []),
+                window=getattr(args, "_v3_requested_results", None),
+            )
             result["results"] = reranked
             if rerank_metadata.get("reranked"):
                 result.setdefault("metadata", {})["intent_rerank"] = rerank_metadata
             _apply_result_quality_pipeline(result, config, query=args.query or "", include_domains=args.include_domains)
+        requested_results = getattr(args, "_v3_requested_results", None)
+        if requested_results and isinstance(result.get("results"), list):
+            result["results"] = result["results"][:requested_results]
 
         result["routing"] = routing_info
 
@@ -1892,7 +1526,6 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             not cache_hit
             and not args.no_cache
             and args.query
-            and not getattr(args, "_v3_no_legacy_cache_write", False)
         ):
             cache_put(
                 query=args.query,
@@ -1913,7 +1546,7 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             result["quality_report"] = build_quality_report(
                 query=args.query,
                 result=result,
-                routing_info=routing_info,
+                routing_info=ranking_routing,
                 providers_considered=providers_considered,
                 eligible_providers=eligible_providers,
                 cooldown_skips=cooldown_skips,
@@ -1931,6 +1564,8 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             "provider_errors": errors,
             "cooldown_skips": cooldown_skips,
         }
+        add_provider_setup_guidance(error_result, "search", eligible_providers, config,
+                                    requested_provider=getattr(args, "provider", None) or "auto")
         return error_result, 1
 
 
@@ -1988,9 +1623,14 @@ def _plan_search_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
     return ProviderPlan(tuple(candidates), selected, routing_metadata=dict(routed))
 
 
+# Spare results requested per search attempt so filtering can refill the top N.
+SEARCH_OVERFETCH_EXTRA = 5
+SEARCH_OVERFETCH_CAP = 20
+
+
 def _search_args_from_v3(request: RequestV3, config: Dict[str, Any]):
-    # Keep CLI defaults, but never parse request data as command-line syntax.
-    args = build_parser(config).parse_args([])
+    # CLI defaults without argparse; request data is never parsed as argv.
+    args = default_search_args(config)
     options = request.options
     routing_request = request.routing
     args.query = request.input["query"]
@@ -2016,35 +1656,7 @@ def _search_args_from_v3(request: RequestV3, config: Dict[str, Any]):
         args.no_cache = True
     if "ttl_seconds" in request.cache:
         args.cache_ttl = request.cache["ttl_seconds"]
-    args._v3_no_legacy_cache_write = True
     return args
-
-
-def _lookup_legacy_search_v3(
-    request: RequestV3, plan: ProviderPlan, config: Dict[str, Any]
-) -> CapabilityExecution | None:
-    legacy_args = _search_args_from_v3(request, config)
-    legacy_args.provider = plan.selected_provider
-    if legacy_args.mode == "research":
-        return None
-    legacy_lookup = peek_legacy_search(
-        CACHE_DIR,
-        query=legacy_args.query,
-        provider=plan.selected_provider,
-        max_results=legacy_args.max_results,
-        params=_legacy_search_cache_context(
-            legacy_args, plan.selected_provider, config
-        ),
-        ttl_seconds=int(request.cache.get("ttl_seconds", 3600)),
-        now=int(time.time()),
-    )
-    if legacy_lookup.legacy_payload is None:
-        return None
-    return CapabilityExecution(
-        payload=legacy_lookup.legacy_payload,
-        provider_attempts=(),
-        stages=("dedup_fingerprint",),
-    )
 
 
 def _execute_research_v3(
@@ -2076,23 +1688,9 @@ def _execute_research_v3(
     daily_budget = _daily_preflight_budget(config)
 
     for provider in providers:
-        provider_config = config.get(provider) or {}
-        endpoint = str(
-            provider_config.get("endpoint")
-            or provider_config.get("base_url")
-            or provider_config.get("url")
-            or f"provider://{provider}/search"
-        )
-        credential = get_api_key(provider, config) or f"keyless:{provider}"
-        contexts[provider] = AttemptContext(
-            provider=provider,
-            capability=Capability.SEARCH,
-            endpoint=endpoint,
-            credential_fingerprint=store.fingerprint_credential(credential),
-            budget_scope=scope,
-            budget_window="request",
-            budget_limit_units=budget_limit,
-            **daily_budget,
+        contexts[provider] = provider_attempt_context(
+            store, provider, Capability.SEARCH, config.get(provider) or {}, get_api_key(provider, config),
+            budget_scope=scope, budget_limit_units=budget_limit, **daily_budget,
         )
 
     def execute_provider(provider: str) -> Dict[str, Any]:
@@ -2270,75 +1868,69 @@ def _execute_search_v3(
             v3_config.get("default_max_provider_attempts", 3),
         )
     )
+    candidates = list(plan.candidate_order)
+    has_fallback = len(candidates) > 1
+    # With a fallback waiting, one quick try beats two slow ones: a provider
+    # gets a single attempt and a shorter socket timeout. Without one (an
+    # explicit provider), the retry and the provider's own timeout stay.
     engine = AttemptEngine(
         store,
-        max_attempts=int(v3_config.get("max_attempts_per_provider", 2)),
+        max_attempts=1 if has_fallback else int(v3_config.get("max_attempts_per_provider", 2)),
     )
-    receipts = []
-    payload = None
-    successful_provider = None
+    attempt_timeout = (
+        _positive_float(v3_config.get("attempt_timeout_seconds"), 10.0) if has_fallback else None
+    )
+    hedge_floor = _positive_float(v3_config.get("hedge_min_delay_seconds"), 2.5)
     scope = request.request_id or plan.execution_id
     daily_budget = _daily_preflight_budget(config)
-    max_wall_time_ms = request.budget.get("max_wall_time_ms")
-    deadline = (
-        time.monotonic() + (max_wall_time_ms / 1000)
-        if isinstance(max_wall_time_ms, int)
-        and not isinstance(max_wall_time_ms, bool)
-        and max_wall_time_ms > 0
-        else None
-    )
-
-    for provider in plan.candidate_order:
-        provider_config = config.get(provider) or {}
-        endpoint = str(
-            provider_config.get("endpoint")
-            or provider_config.get("base_url")
-            or provider_config.get("url")
-            or f"provider://{provider}/search"
+    deadline = request_deadline(request.budget)
+    contexts = {
+        provider: provider_attempt_context(
+            store, provider, Capability.SEARCH, config.get(provider) or {}, get_api_key(provider, config),
+            budget_scope=scope, budget_limit_units=budget_limit, deadline_monotonic=deadline, **daily_budget,
         )
-        credential = get_api_key(provider, config) or f"keyless:{provider}"
-        context = AttemptContext(
-            provider=provider,
-            capability=Capability.SEARCH,
-            endpoint=endpoint,
-            credential_fingerprint=store.fingerprint_credential(credential),
-            budget_scope=scope,
-            budget_window="request",
-            budget_limit_units=budget_limit,
-            deadline_monotonic=deadline,
-            **daily_budget,
-        )
-        if payload is not None:
-            receipts.append(
-                engine.skip(context, SkipReason.POLICY_EXCLUDED).receipt
-            )
-            continue
-        if deadline is not None and time.monotonic() >= deadline:
-            receipts.append(
-                engine.skip(context, SkipReason.DEADLINE_EXCEEDED).receipt
-            )
-            continue
+        for provider in candidates
+    }
 
-        def operation(current_provider=provider):
+    def operation_for(current_provider: str):
+        def operation():
             args = _search_args_from_v3(request, config)
             args.provider = current_provider
             args.allow_fallback = False
             args.no_cache = True
             args._v3_engine_owned_attempt = True
-            provider_payload, exit_code = _execute_search_request_core(args, config)
+            # Ask for a few spare results: spam removal and the per-domain cap
+            # then refill the list instead of leaving duplicates in the top N.
+            requested = int(args.max_results or 5)
+            args._v3_requested_results = requested
+            args.max_results = min(SEARCH_OVERFETCH_CAP, requested + SEARCH_OVERFETCH_EXTRA)
+            if str(request.routing.get("provider") or "auto") == "auto":
+                # Rank and report with the auto-routing decision, not the
+                # fixed-provider routing of this attempt.
+                args._v3_planned_routing = plan.routing_metadata
+            with request_timeout_cap(attempt_timeout):
+                provider_payload, exit_code = _execute_search_request_core(args, config)
             if exit_code:
                 raise ProviderRequestError(
                     str(provider_payload.get("error") or "provider failed"),
                     transient=False,
                 )
             return provider_payload
+        return operation
 
-        attempted = engine.execute(context, operation)
-        receipts.append(attempted.receipt)
-        if attempted.payload is not None:
-            payload = attempted.payload
-            successful_provider = provider
-            continue
+    def hedge_delay(provider: str) -> float:
+        usual = latency_quantile(provider, 0.75) or 0.0
+        delay = max(hedge_floor, usual)
+        return min(delay, attempt_timeout) if attempt_timeout else delay
+
+    race = _race_providers(engine, candidates, contexts, operation_for, hedge_delay, deadline)
+    if race.provider is None and candidates and all(
+        receipt.skip_reason in _OUTAGE_SKIPS for receipt in race.receipts
+    ):
+        race = _last_resort_probe(engine, store, candidates[0], contexts, operation_for, race)
+    receipts = race.receipts
+    payload = race.payload
+    successful_provider = race.provider
 
     if payload is None:
         payload = {
@@ -2364,6 +1956,8 @@ def _execute_search_v3(
                 for receipt in receipts
             ],
         }
+        add_provider_setup_guidance(payload, "search", list(plan.candidate_order), config,
+                                    requested_provider=str(request.routing.get("provider") or "auto"))
     else:
         routing = payload.setdefault("routing", {})
         requested = str(request.routing.get("provider") or "auto")
@@ -2376,6 +1970,11 @@ def _execute_search_v3(
             routing["fallback_used"] = True
             routing["original_provider"] = plan.selected_provider
             routing["provider"] = successful_provider
+            routing["fallback_reason"] = (
+                "insufficient_results"
+                if plan.selected_provider in race.empty_providers
+                else "selected_failed"
+            )
 
     stages = ["admission", "provider_attempt"]
     if any(receipt.error is not None for receipt in receipts):
@@ -2391,13 +1990,154 @@ def _execute_search_v3(
     )
 
 
+_MAX_IN_FLIGHT = 2
+
+# Skips that mean "recently down", not "not allowed". When they exclude every
+# candidate, the top one still gets a probe, as 4.3.5 did: an answer from a
+# provider that may have recovered beats a guaranteed "All providers failed".
+_OUTAGE_SKIPS = frozenset({SkipReason.CIRCUIT_OPEN})
+
+
+def _last_resort_probe(engine, store, provider, contexts, operation_for, race):
+    context = contexts[provider]
+    now = int(time.time())
+    for error_class in (ErrorClass.TRANSIENT, ErrorClass.TIMEOUT):
+        store.record_success(context.circuit_key, error_class, now=now)
+    execution = engine.execute(context, operation_for(provider))
+    receipts = [execution.receipt if r.provider == provider else r for r in race.receipts]
+    payload = execution.payload
+    if payload is None:
+        return _Race(None, None, receipts, race.empty_providers)
+    empty = [] if payload.get("results") else [provider]
+    return _Race(provider, payload, receipts, empty)
+
+
+@dataclass
+class _Race:
+    provider: Optional[str]
+    payload: Optional[Dict[str, Any]]
+    receipts: List[Any]
+    empty_providers: List[str]
+
+
+def _positive_float(value: Any, default: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return number if number > 0 else default
+
+
+def _race_providers(engine, candidates, contexts, operation_for, hedge_delay, deadline) -> _Race:
+    """Run candidates in order, hedged: the first non-empty answer wins.
+
+    The next candidate starts as soon as the running one fails or answers
+    empty, or when it is slower than its hedge delay (its usual p75 latency,
+    at least the configured floor). At most two run at once. A provider that
+    is still running when another wins is reported as cancelled; it finishes
+    in the background without affecting the answer.
+    """
+    done: "queue.Queue[str]" = queue.Queue()
+    tasks: Dict[str, Tuple[DaemonTask, float, float]] = {}
+    finished: Dict[str, Any] = {}
+    pending = list(candidates)
+    winner = None
+    hedge_at = None
+    deadline_hit = False
+
+    def launch() -> None:
+        nonlocal hedge_at
+        provider = pending.pop(0)
+        if deadline is not None and time.monotonic() >= deadline:
+            finished[provider] = engine.skip(contexts[provider], SkipReason.DEADLINE_EXCEEDED)
+            return
+        task = DaemonTask(engine.execute, contexts[provider], operation_for(provider))
+        tasks[provider] = (task, time.time(), time.monotonic())
+        task.add_done_callback(lambda _task, name=provider: done.put(name))
+        hedge_at = time.monotonic() + hedge_delay(provider)
+
+    def in_flight() -> List[str]:
+        return [provider for provider in tasks if provider not in finished]
+
+    launch()
+    while True:
+        running = in_flight()
+        if not running:
+            if winner is not None or not pending:
+                break
+            launch()
+            continue
+        can_hedge = bool(pending) and len(running) < _MAX_IN_FLIGHT
+        wait = max(0.0, hedge_at - time.monotonic()) if can_hedge and hedge_at is not None else None
+        if deadline is not None:
+            remaining = max(0.0, deadline - time.monotonic())
+            wait = remaining if wait is None else min(wait, remaining)
+        try:
+            provider = done.get(timeout=wait)
+        except queue.Empty:
+            if deadline is not None and time.monotonic() >= deadline:
+                deadline_hit = True
+                break
+            launch()  # hedge: the running provider is slower than usual
+            continue
+        try:
+            execution = tasks[provider][0].result(timeout=0)
+        except Exception:  # pragma: no cover - engine.execute converts provider errors
+            execution = None
+        finished[provider] = execution
+        payload = execution.payload if execution is not None else None
+        if payload is not None and (payload.get("results") or []):
+            winner = provider
+            break
+        if pending and len(in_flight()) < _MAX_IN_FLIGHT:
+            launch()
+
+    empty_providers = [
+        provider for provider in candidates
+        if finished.get(provider) is not None and finished[provider].payload is not None
+        and not (finished[provider].payload.get("results") or [])
+    ]
+    if winner is None and empty_providers:
+        winner = empty_providers[0]  # every answer was empty: report the truthful empty result
+    receipts = []
+    for provider in candidates:
+        execution = finished.get(provider)
+        if execution is not None:
+            receipts.append(execution.receipt)
+        elif provider in tasks:
+            _task, started_wall, started_monotonic = tasks[provider]
+            receipts.append(engine.cancel_started(
+                contexts[provider],
+                started_at=started_wall,
+                duration_ms=int(max(0.0, time.monotonic() - started_monotonic) * 1000),
+            ).receipt)
+        else:
+            reason = SkipReason.DEADLINE_EXCEEDED if deadline_hit else SkipReason.POLICY_EXCLUDED
+            receipts.append(engine.skip(contexts[provider], reason).receipt)
+    payload = finished[winner].payload if winner is not None else None
+    return _Race(winner, payload, receipts, empty_providers)
+
+
+def _search_cache_vary(
+    request: RequestV3, plan: ProviderPlan, config: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Keep language "auto" apart from fixed-language entries in the v3 cache.
+
+    A per-call "auto" never appears in the request (the contract has no value
+    for it), so the cache key would equal that of a plain request while the
+    provider call differs.
+    """
+    locale = (config.get("defaults") or {}).get("locale") or {}
+    return {"language": AUTO_LANGUAGE} if is_auto_language(locale.get("language")) else {}
+
+
 def _search_adapter() -> CapabilityAdapter:
     return CapabilityAdapter(
         capability=Capability.SEARCH,
         plan=_plan_search_v3,
         execute=_execute_search_v3,
         normalize=response_from_legacy,
-        legacy_cache_lookup=_lookup_legacy_search_v3,
+        cache_vary=_search_cache_vary,
     )
 
 
@@ -2427,6 +2167,8 @@ def run_search_request(
     research_time_budget: float = 55.0,
     language: Optional[str] = None,
     country: Optional[str] = None,
+    no_cache: bool = False,
+    cache_ttl: Optional[int] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Run a search in-process and return the result dict the CLI would emit.
@@ -2443,6 +2185,7 @@ def run_search_request(
     except ValueError as exc:
         return {"error": str(exc), "provider": provider, "query": query, "results": []}
     config = apply_profile_effects(config) if config is not None else load_config()
+    language, config = apply_auto_language(language, config)
     policy_mode = str((config.get("routing") or {}).get("policy_mode", "classic"))
     request = legacy_request_to_v3(
         Capability.SEARCH,
@@ -2462,6 +2205,8 @@ def run_search_request(
             "research_time_budget": research_time_budget,
             "language": language,
             "country": country,
+            "no_cache": bool(no_cache),
+            "cache_ttl": int(cache_ttl) if cache_ttl is not None else 3600,
         },
     )
     execution = execute_v3_request(request, _search_adapter(), config)
@@ -2474,7 +2219,6 @@ def run_extract_request_v3(
     config: Optional[Dict[str, Any]] = None,
 ) -> ResponseV3:
     """Execute a native extract RequestV3 through the canonical orchestrator."""
-    _sync_extract_dependencies()
     return _extract.run_extract_request_v3(request, config=config or load_config())
 
 

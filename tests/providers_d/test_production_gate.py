@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from provider_registry import PROVIDER_SPECS, discover_providers
+from web_search_plus_mcp.provider_registry import PROVIDER_SPECS, discover_providers
 
 
 _NON_PRODUCTION_MODULE = """\

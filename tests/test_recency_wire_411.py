@@ -1,14 +1,14 @@
 """Wire-to-v3 regressions: never derive receipt evidence from a second clock."""
+from web_search_plus_mcp import providers
 
-import asyncio
 import json
-from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 import pytest
 
-from web_search_plus_mcp import provider_dispatch, providers, search, server
+from web_search_plus_mcp import provider_dispatch
+from web_search_plus_mcp import search
 
 
 @pytest.mark.parametrize(
@@ -69,7 +69,7 @@ def test_exa_wire_survives_run_search_request_and_v3_serialization(
         }
 
     monkeypatch.setattr(providers, "make_request", http)
-    monkeypatch.setattr(search, "make_request", http)
+    monkeypatch.setattr(providers, "make_request", http)
     executions = []
     execute = search.execute_v3_request
 
@@ -105,14 +105,6 @@ def test_exa_wire_survives_run_search_request_and_v3_serialization(
     meta = warning["details"]["freshness"]
     assert meta == result["metadata"]["freshness"]
     assert meta["requested"] == recency
-    projected = server._project_v3_payload(
-        serialized,
-        capability="search",
-        recency_time_range="month",
-        recency_freshness="year",
-    )
-    assert projected["metadata"]["freshness"] == meta
-    assert projected["metadata"]["freshness"] is meta
     assert meta["applied"] is bool(sent)
     assert meta.get("native_value", {}) == sent
     assert result["results"][0]["snippet"] == "Relevant evidence"
@@ -143,7 +135,7 @@ def test_tavily_metadata_matches_http(monkeypatch, time_range, freshness, expect
         }
 
     monkeypatch.setattr(providers, "make_request", http)
-    monkeypatch.setattr(search, "make_request", http)
+    monkeypatch.setattr(providers, "make_request", http)
     result = search.run_search_request(
         query="tavily wire recency",
         provider="tavily",
@@ -183,7 +175,7 @@ def test_pipeline_accepts_legacy_namespace_without_time_range(monkeypatch):
         }
     )
     monkeypatch.setattr(providers, "make_request", http)
-    monkeypatch.setattr(search, "make_request", http)
+    monkeypatch.setattr(providers, "make_request", http)
     result, code = search._execute_search_request_core(args, config)
     assert code == 0, result
     assert http.call_args.args[2]["time_range"] == "week"
@@ -213,7 +205,7 @@ def test_research_exa_receipt_uses_wire_dates(monkeypatch):
         }
 
     monkeypatch.setattr(providers, "make_request", http)
-    monkeypatch.setattr(search, "make_request", http)
+    monkeypatch.setattr(providers, "make_request", http)
     monkeypatch.setattr(search, "extract_plus", lambda **kwargs: {"results": []})
     with mock.patch.object(
         providers,
@@ -261,55 +253,3 @@ def test_exa_metadata_uses_only_returned_dates(sent):
         meta = providers.freshness_metadata("exa", "week", applied_published_dates=sent)
     assert meta["applied"] is bool(sent)
     assert meta.get("native_value", {}) == sent
-
-
-@pytest.mark.parametrize("with_warning", [True, False])
-def test_call_tool_v3_stdout_without_metadata(monkeypatch, with_warning):
-    sent = {
-        "requested": "hour",
-        "applied": True,
-        "provider": "exa",
-        "native_value": {
-            "startPublishedDate": "2026-09-09T11:00:00Z",
-            "endPublishedDate": "2026-09-09T12:00:00Z",
-        },
-    }
-    stdout = {
-        "contract_version": "3.0",
-        "results": [],
-        "routing_receipt": {"selected_provider": "exa"},
-        "warnings": [{"code": "wsp.freshness.applied", "details": {"freshness": sent}}]
-        if with_warning
-        else [],
-    }
-    assert "metadata" not in stdout
-    commands = []
-
-    def run(cmd, **kwargs):
-        commands.append(cmd)
-        return SimpleNamespace(returncode=0, stdout=json.dumps(stdout), stderr="")
-
-    monkeypatch.setattr(server.subprocess, "run", run)
-    with mock.patch.object(
-        providers,
-        "exa_date_bounds",
-        side_effect=AssertionError("MCP must not derive dates"),
-    ):
-        response = asyncio.run(
-            server.call_tool(
-                "web_search",
-                {
-                    "query": "q",
-                    "provider": "exa",
-                    "time_range": "hour",
-                    "freshness": "week",
-                },
-            )
-        )
-    assert len(commands) == 1
-    assert "--contract-v3" in commands[0]
-    result = json.loads(response[0].text)
-    if with_warning:
-        assert result["metadata"]["freshness"] == sent
-    else:
-        assert not result.get("metadata", {}).get("freshness", {}).get("applied")

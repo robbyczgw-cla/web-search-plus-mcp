@@ -10,10 +10,7 @@ from __future__ import annotations
 import inspect
 from typing import Any, Mapping, Protocol, runtime_checkable
 
-try:
-    from .errors_v3 import ProviderContractFailure
-except ImportError:  # pragma: no cover - direct script execution
-    from errors_v3 import ProviderContractFailure
+from .errors_v3 import ProviderContractFailure
 
 
 SEARCH_ADAPTER_PARAMETERS = (

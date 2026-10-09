@@ -14,8 +14,8 @@ def test_extract_plus_auto_skips_disabled_providers():
         }
     }
     with mock.patch.dict(os.environ, {"TAVILY_API_KEY": "tvly-test", "FIRECRAWL_API_KEY": "fc-test"}, clear=True):
-        with mock.patch.object(extract, "extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
-            with mock.patch.object(extract, "extract_firecrawl") as mock_firecrawl:
+        with mock.patch.object(extract._providers, "extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
+            with mock.patch.object(extract._providers, "extract_firecrawl") as mock_firecrawl:
                 result = extract.extract_plus(["https://example.com"], provider="auto", config=config)
 
     assert result["provider"] == "tavily"
@@ -31,8 +31,8 @@ def test_extract_plus_explicit_disabled_provider_is_still_tried():
         }
     }
     with mock.patch.dict(os.environ, {"FIRECRAWL_API_KEY": "fc-test", "LINKUP_API_KEY": "linkup-test"}, clear=True):
-        with mock.patch.object(extract, "extract_firecrawl", return_value={"provider": "firecrawl", "results": [{"url": "https://example.com", "error": "fetch failed"}]}) as mock_firecrawl:
-            with mock.patch.object(extract, "extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback"}]}) as mock_linkup:
+        with mock.patch.object(extract._providers, "extract_firecrawl", return_value={"provider": "firecrawl", "results": [{"url": "https://example.com", "error": "fetch failed"}]}) as mock_firecrawl:
+            with mock.patch.object(extract._providers, "extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback"}]}) as mock_linkup:
                 result = extract.extract_plus(["https://example.com"], provider="firecrawl", config=config)
 
     assert result["provider"] == "linkup"

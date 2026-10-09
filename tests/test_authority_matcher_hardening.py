@@ -15,7 +15,7 @@ def test_reranker_does_not_boost_lookalike_authority_domain():
         {"title": "official", "url": "https://nist.gov/report.pdf", "snippet": "real"},
     ]
 
-    reranked, meta = quality.rerank_results_for_intent("official policy pdf", "policy_pdf", results)
+    reranked, meta = quality.rerank_results_for_intent("nist advisory", "security", results)
 
     assert meta["reranked"] is True
     assert reranked[0]["url"] == "https://nist.gov/report.pdf"

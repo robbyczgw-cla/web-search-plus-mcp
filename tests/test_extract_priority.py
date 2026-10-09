@@ -60,16 +60,13 @@ def test_auto_extract_honors_configured_extract_priority(monkeypatch):
     monkeypatch.setattr(extract, "_validate_extract_urls", lambda urls, config: urls)
     monkeypatch.setattr(extract, "get_api_key", lambda provider, config: f"{provider}-key")
     monkeypatch.setattr(extract, "keyless_public_allowed", lambda provider, config: False)
-    monkeypatch.setattr(extract, "provider_in_cooldown", lambda provider: (False, 0))
-    monkeypatch.setattr(extract, "execute_provider_with_retry", lambda provider, fn: fn())
-    monkeypatch.setattr(extract, "reset_provider_health", lambda provider: None)
 
     def fake_serper(*args, **kwargs):
         calls.append("serper")
         return {"provider": "serper", "results": [{"url": "https://example.com", "content": "ok"}]}
 
-    monkeypatch.setattr(extract, "extract_serper", fake_serper)
-    monkeypatch.setattr(extract, "extract_parallel", lambda *args, **kwargs: pytest.fail("parallel should not run"))
+    monkeypatch.setattr(extract._providers, "extract_serper", fake_serper)
+    monkeypatch.setattr(extract._providers, "extract_parallel", lambda *args, **kwargs: pytest.fail("parallel should not run"))
 
     result = extract.extract_plus(["https://example.com"], provider="auto", config=config)
 
@@ -91,16 +88,13 @@ def test_explicit_extract_provider_stays_first(monkeypatch):
     monkeypatch.setattr(extract, "_validate_extract_urls", lambda urls, config: urls)
     monkeypatch.setattr(extract, "get_api_key", lambda provider, config: f"{provider}-key")
     monkeypatch.setattr(extract, "keyless_public_allowed", lambda provider, config: False)
-    monkeypatch.setattr(extract, "provider_in_cooldown", lambda provider: (False, 0))
-    monkeypatch.setattr(extract, "execute_provider_with_retry", lambda provider, fn: fn())
-    monkeypatch.setattr(extract, "reset_provider_health", lambda provider: None)
 
     def fake_serper(*args, **kwargs):
         calls.append("serper")
         return {"provider": "serper", "results": [{"url": "https://example.com", "content": "ok"}]}
 
-    monkeypatch.setattr(extract, "extract_serper", fake_serper)
-    monkeypatch.setattr(extract, "extract_tavily", lambda *args, **kwargs: pytest.fail("tavily should not run"))
+    monkeypatch.setattr(extract._providers, "extract_serper", fake_serper)
+    monkeypatch.setattr(extract._providers, "extract_tavily", lambda *args, **kwargs: pytest.fail("tavily should not run"))
 
     result = extract.extract_plus(["https://example.com"], provider="serper", config=config)
 

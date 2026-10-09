@@ -1,14 +1,10 @@
 """4.1.1 adapter fidelity: keep provider evidence and requested filters."""
+from web_search_plus_mcp import providers
 
-import asyncio
-import json
 from datetime import datetime
-from types import SimpleNamespace
 from unittest import mock
 
-import web_search_plus_mcp.providers as providers
-import web_search_plus_mcp.search as search
-import web_search_plus_mcp.server as server
+from web_search_plus_mcp import search
 
 
 def test_exa_snippet_prefers_highlights_over_leading_text():
@@ -124,7 +120,7 @@ def test_tavily_dispatch_applies_freshness():
             with mock.patch.object(search, "cache_put", lambda **kw: None):
                 with mock.patch.object(search, "reset_provider_health", lambda p: None):
                     with mock.patch.dict("os.environ", {"TAVILY_API_KEY": "tavily-test-key"}):
-                        with mock.patch.object(search, "search_tavily", fake_tavily):
+                        with mock.patch.object(providers, "search_tavily", fake_tavily):
                             result = search.run_search_request(
                                 query="latest tavily changelog",
                                 provider="tavily",
@@ -159,7 +155,7 @@ def _run_tavily_search(**kwargs):
             with mock.patch.object(search, "cache_put", lambda **kw: None):
                 with mock.patch.object(search, "reset_provider_health", lambda p: None):
                     with mock.patch.dict("os.environ", {"TAVILY_API_KEY": "tavily-test-key"}):
-                        with mock.patch.object(search, "search_tavily", fake_tavily):
+                        with mock.patch.object(providers, "search_tavily", fake_tavily):
                             result = search.run_search_request(
                                 query="latest tavily changelog",
                                 provider="tavily",
@@ -191,33 +187,31 @@ def test_tavily_time_range_only_reports_applied_metadata():
 
 
 def _run_exa_search(**kwargs):
+    wire_response = {"results": [{"url": "https://example.test/a", "title": "A", "text": "s"}]}
+    provider_search_exa = providers.search_exa
     seen = {}
-    real_exa = providers.search_exa
 
     def fake_exa(**call):
         seen.update(call)
-        wire_response = {"results": [{"url": "https://example.test/a", "title": "A", "text": "s"}]}
         with mock.patch.object(providers, "make_request", return_value=wire_response) as http:
-            result = real_exa(**call)
+            provider_result = provider_search_exa(**call)
         body = http.call_args.args[2]
-        assert result["metadata"]["applied_published_dates"] == {
+        assert provider_result["metadata"]["applied_published_dates"] == {
             key: body[key] for key in ("startPublishedDate", "endPublishedDate") if key in body
         }
-        return result
+        return provider_result
 
     with mock.patch.object(search, "provider_in_cooldown", lambda p: (False, 0)):
         with mock.patch.object(search, "cache_get", lambda **kw: None):
             with mock.patch.object(search, "cache_put", lambda **kw: None):
                 with mock.patch.object(search, "reset_provider_health", lambda p: None):
-                    with mock.patch.object(search, "validate_api_key", lambda prov, config=None: "exa-test-key"):
-                        with mock.patch.dict("os.environ", {"EXA_API_KEY": "exa-test-key"}):
-                            with mock.patch.object(search, "search_exa", fake_exa):
-                                with mock.patch.object(providers, "search_exa", fake_exa):
-                                    result = search.run_search_request(
-                                        query="latest exa changelog",
-                                        provider="exa",
-                                        **kwargs,
-                                    )
+                    with mock.patch.dict("os.environ", {"EXA_API_KEY": "exa-test-key"}):
+                        with mock.patch.object(providers, "search_exa", fake_exa):
+                            result = search.run_search_request(
+                                query="latest exa changelog",
+                                provider="exa",
+                                **kwargs,
+                            )
     return seen, result
 
 
@@ -292,198 +286,18 @@ def test_exa_metadata_keeps_sent_bounds_when_clock_would_move():
         with mock.patch.object(search, "cache_get", lambda **kw: None):
             with mock.patch.object(search, "cache_put", lambda **kw: None):
                 with mock.patch.object(search, "reset_provider_health", lambda p: None):
-                    with mock.patch.object(search, "validate_api_key", lambda prov, config=None: "exa-test-key"):
-                        with mock.patch.dict("os.environ", {"EXA_API_KEY": "exa-test-key"}):
-                            with mock.patch.object(
-                                providers,
-                                "exa_date_bounds",
-                                return_value=("2099-01-01T00:00:00Z", "2099-01-08T00:00:00Z"),
-                            ):
-                                with mock.patch.object(search, "search_exa", fake_exa):
-                                    result = search.run_search_request(
-                                        query="latest exa changelog",
-                                        provider="exa",
-                                        time_range="day",
-                                    )
+                    with mock.patch.dict("os.environ", {"EXA_API_KEY": "exa-test-key"}):
+                        with mock.patch.object(
+                            providers,
+                            "exa_date_bounds",
+                            return_value=("2099-01-01T00:00:00Z", "2099-01-08T00:00:00Z"),
+                        ):
+                            with mock.patch.object(providers, "search_exa", fake_exa):
+                                result = search.run_search_request(
+                                    query="latest exa changelog",
+                                    provider="exa",
+                                    time_range="day",
+                                )
 
     assert result["metadata"]["freshness"]["native_value"] == sent
     assert "applied_published_dates" not in result["metadata"]
-
-
-def _tavily_v3_payload():
-    return {
-        "contract_version": "3.0",
-        "request_id": "req_test",
-        "execution_id": "exec_test",
-        "capability": "search",
-        "status": "ok",
-        "results": [
-            {
-                "representative_observation_id": "obs_1",
-                "observation_ids": ["obs_1"],
-                "url": {
-                    "observed": "https://example.com/a",
-                    "canonical": "https://example.com/a",
-                },
-                "title": {"text": "Example title"},
-                "snippet": {"text": "Provider-grounded snippet"},
-                "text": None,
-            }
-        ],
-        "observations": [],
-        "policy_actions": [],
-        "source_diversity": {
-            "method": "provider_host_family_clusters",
-            "method_version": "1",
-            "method_degraded": False,
-            "provider_count": 1,
-            "host_count": 1,
-            "source_family_count": 1,
-            "unique_cluster_count": 1,
-        },
-        "provider_attempts": [
-            {
-                "attempt_id": "attempt-1",
-                "provider": "tavily",
-                "capability": "search",
-                "outcome": "success",
-                "retry_count": 0,
-                "result_count": 1,
-            }
-        ],
-        "routing_receipt": {
-            "selected_provider": "tavily",
-            "candidate_order": ["tavily"],
-        },
-        "cache_status": {"disposition": "miss"},
-        "limits_applied": {},
-        "stored_content": [],
-        "dedup_clusters": [],
-        "warnings": [],
-        "error": None,
-    }
-
-
-def _call_web_search(monkeypatch, arguments):
-    seen = {}
-
-    def fake_run(cmd, capture_output, text, env, timeout):
-        seen["cmd"] = cmd
-        return SimpleNamespace(returncode=0, stdout=json.dumps(_tavily_v3_payload()), stderr="")
-
-    monkeypatch.setattr(server.subprocess, "run", fake_run)
-    payload = json.loads(asyncio.run(server.call_tool("web_search", arguments))[0].text)
-    return seen, payload
-
-
-def test_mcp_search_projects_tavily_freshness_metadata(monkeypatch):
-    seen, payload = _call_web_search(
-        monkeypatch,
-        {"query": "latest tavily changelog", "provider": "tavily", "freshness": "week"},
-    )
-    assert "--freshness" in seen["cmd"]
-    assert payload["metadata"]["freshness"] == {
-        "requested": "week",
-        "applied": True,
-        "provider": "tavily",
-        "native_value": "week",
-    }
-
-
-def test_mcp_search_time_range_only_projects_freshness_metadata(monkeypatch):
-    seen, payload = _call_web_search(
-        monkeypatch,
-        {"query": "latest tavily changelog", "provider": "tavily", "time_range": "week"},
-    )
-    assert "--time-range" in seen["cmd"]
-    assert payload["metadata"]["freshness"] == {
-        "requested": "week",
-        "applied": True,
-        "provider": "tavily",
-        "native_value": "week",
-    }
-
-
-def test_mcp_search_time_range_wins_projected_freshness_metadata(monkeypatch):
-    seen, payload = _call_web_search(
-        monkeypatch,
-        {
-            "query": "latest tavily changelog",
-            "provider": "tavily",
-            "freshness": "week",
-            "time_range": "day",
-        },
-    )
-    assert seen["cmd"][seen["cmd"].index("--time-range") + 1] == "day"
-    assert payload["metadata"]["freshness"] == {
-        "requested": "day",
-        "applied": True,
-        "provider": "tavily",
-        "native_value": "day",
-    }
-
-
-def test_mcp_search_keeps_exa_freshness_already_on_payload(monkeypatch):
-    sent = {
-        "requested": "week",
-        "applied": True,
-        "provider": "exa",
-        "native_value": {
-            "startPublishedDate": "2026-01-01T00:00:00Z",
-            "endPublishedDate": "2026-01-08T00:00:00Z",
-        },
-    }
-    v3 = _tavily_v3_payload()
-    v3["routing_receipt"]["selected_provider"] = "exa"
-    v3["provider_attempts"][0]["provider"] = "exa"
-    v3["metadata"] = {"freshness": sent}
-
-    def fake_run(cmd, capture_output, text, env, timeout):
-        return SimpleNamespace(returncode=0, stdout=json.dumps(v3), stderr="")
-
-    monkeypatch.setattr(server.subprocess, "run", fake_run)
-    payload = json.loads(
-        asyncio.run(
-            server.call_tool(
-                "web_search",
-                {"query": "latest exa changelog", "provider": "exa", "time_range": "week"},
-            )
-        )[0].text
-    )
-    assert payload["metadata"]["freshness"] == sent
-
-
-def test_mcp_search_uses_v3_warning_freshness_when_metadata_dropped(monkeypatch):
-    sent = {
-        "requested": "week",
-        "applied": True,
-        "provider": "exa",
-        "native_value": {
-            "startPublishedDate": "2026-01-01T00:00:00Z",
-            "endPublishedDate": "2026-01-08T00:00:00Z",
-        },
-    }
-    v3 = _tavily_v3_payload()
-    v3["routing_receipt"]["selected_provider"] = "exa"
-    v3["provider_attempts"][0]["provider"] = "exa"
-    v3["warnings"] = [
-        {
-            "code": "wsp.freshness.applied",
-            "message": "Native recency filter applied to the provider request.",
-            "details": {"freshness": sent},
-        }
-    ]
-
-    def fake_run(cmd, capture_output, text, env, timeout):
-        return SimpleNamespace(returncode=0, stdout=json.dumps(v3), stderr="")
-
-    monkeypatch.setattr(server.subprocess, "run", fake_run)
-    payload = json.loads(
-        asyncio.run(
-            server.call_tool(
-                "web_search",
-                {"query": "latest exa changelog", "provider": "exa", "time_range": "week"},
-            )
-        )[0].text
-    )
-    assert payload["metadata"]["freshness"] == sent

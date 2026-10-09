@@ -6,13 +6,17 @@ import os
 import sys
 import tempfile
 import time
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 
-CACHE_DIR = Path(os.environ.get("WSP_CACHE_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".cache")))
+# Default: ".cache" next to the host directory (the plugin dir), as before the
+# move into the package. abspath on purpose: a symlinked install keeps its path.
+CACHE_DIR = Path(os.environ.get("WSP_CACHE_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".cache")))
 DEFAULT_CACHE_TTL = 3600  # 1 hour in seconds
 PROVIDER_HEALTH_FILENAME = "provider_health.json"
+
 
 WEB_TEXT_CACHE_DIRNAME = "web"
 MAX_STORED_TEXT_CHARS = 2_000_000
@@ -57,7 +61,7 @@ def _iter_web_text_temp_files():
 
 
 def _web_text_cache_stats() -> Dict[str, Any]:
-    """Return count and size stats for stored extracted web text."""
+    """Return count and size stats for page-on-demand full-text files."""
     entries = []
     total_size = 0
     for web_file in _iter_web_text_cache_files():
@@ -75,7 +79,11 @@ def _web_text_cache_stats() -> Dict[str, Any]:
 
 
 def store_web_text(url: str, text: str, max_chars: int = MAX_STORED_TEXT_CHARS) -> Dict[str, Any]:
-    """Store cleaned extracted text under cache/web and return storage metadata."""
+    """Store cleaned extracted text under cache/web and return storage metadata.
+
+    The write is intentionally separate from the search-result JSON cache so
+    cache_clear() does not collide with page-on-demand full-text files.
+    """
     path = _get_web_text_cache_path(url)
     original_chars = len(text)
     capped = original_chars > max_chars
@@ -103,10 +111,20 @@ def store_web_text(url: str, text: str, max_chars: int = MAX_STORED_TEXT_CHARS) 
     }
 
 
+def normalize_query_for_cache(query: str) -> str:
+    """Query as it counts for cache identity: NFC, casefolded, one space per whitespace run.
+
+    Only cache keys use this. Providers and users keep seeing the raw query.
+    """
+    if not isinstance(query, str):
+        return query
+    return " ".join(unicodedata.normalize("NFC", query).casefold().split())
+
+
 def _build_cache_payload(query: str, provider: str, max_results: int, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Build normalized payload used for cache key hashing."""
     payload = {
-        "query": query,
+        "query": normalize_query_for_cache(query),
         "provider": provider,
         "max_results": max_results,
     }
@@ -129,6 +147,8 @@ def _get_cache_path(cache_key: str) -> Path:
 
 def _ensure_cache_dir() -> None:
     """Create cache directory if it doesn't exist."""
+    # 0700: cached files carry search queries/results that other local users
+    # have no business listing or reading.
     CACHE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
 
 
@@ -158,7 +178,7 @@ _SEARCH_CACHE_MARKER_FIELDS = frozenset({
 
 
 def _read_search_cache_envelope(path: Path) -> Optional[Dict[str, Any]]:
-    """Return a WSP search-cache envelope, or ``None`` for foreign state."""
+    """Return a WSP search-cache envelope, or ``None`` for shared foreign state."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             payload = json.load(f)
@@ -240,19 +260,38 @@ def cache_put(query: str, provider: str, max_results: int, result: Dict[str, Any
 
 def cache_clear() -> Dict[str, Any]:
     """
-    Clear all cached results.
+    Clear cached search results and page-on-demand full-text files.
+
+    Provider health is intentionally preserved.
 
     Returns:
         Stats about what was cleared
     """
     if not CACHE_DIR.exists():
-        return {"cleared": 0, "message": "Cache directory does not exist"}
+        return {
+            "cleared": 0,
+            "web_text_cleared": 0,
+            "web_text_tmp_cleared": 0,
+            "web_text_errors": 0,
+            "size_freed_bytes": 0,
+            "size_freed_kb": 0,
+            "json_size_freed_bytes": 0,
+            "web_text_size_freed_bytes": 0,
+            "web_text_tmp_size_freed_bytes": 0,
+            "message": "Cache directory does not exist",
+        }
 
     count = 0
     size_freed = 0
+    web_text_count = 0
+    web_text_errors = 0
+    web_text_size_freed = 0
+    web_text_tmp_count = 0
+    web_text_tmp_size_freed = 0
 
     for cache_file in CACHE_DIR.glob("*.json"):
-        if _read_search_cache_envelope(cache_file) is None:
+        cached = _read_search_cache_envelope(cache_file)
+        if cached is None:
             continue
         try:
             size_freed += cache_file.stat().st_size
@@ -261,19 +300,36 @@ def cache_clear() -> Dict[str, Any]:
         except IOError:
             pass
 
-    for web_file in list(_iter_web_text_cache_files()) + list(_iter_web_text_temp_files()):
+    for web_file in _iter_web_text_cache_files():
         try:
-            size_freed += web_file.stat().st_size
+            file_size = web_file.stat().st_size
             web_file.unlink()
-            count += 1
+            web_text_size_freed += file_size
+            web_text_count += 1
         except IOError:
-            pass
+            web_text_errors += 1
 
+    for tmp_file in _iter_web_text_temp_files():
+        try:
+            file_size = tmp_file.stat().st_size
+            tmp_file.unlink()
+            web_text_tmp_size_freed += file_size
+            web_text_tmp_count += 1
+        except IOError:
+            web_text_errors += 1
+
+    total_size_freed = size_freed + web_text_size_freed + web_text_tmp_size_freed
     return {
         "cleared": count,
-        "size_freed_bytes": size_freed,
-        "size_freed_kb": round(size_freed / 1024, 2),
-        "message": f"Cleared {count} cached entries"
+        "web_text_cleared": web_text_count,
+        "web_text_tmp_cleared": web_text_tmp_count,
+        "web_text_errors": web_text_errors,
+        "size_freed_bytes": total_size_freed,
+        "size_freed_kb": round(total_size_freed / 1024, 2),
+        "json_size_freed_bytes": size_freed,
+        "web_text_size_freed_bytes": web_text_size_freed,
+        "web_text_tmp_size_freed_bytes": web_text_tmp_size_freed,
+        "message": f"Cleared {count} cached entries and {web_text_count} web text files",
     }
 
 
@@ -289,10 +345,16 @@ def cache_stats() -> Dict[str, Any]:
             "total_entries": 0,
             "total_size_bytes": 0,
             "total_size_kb": 0,
+            "total_size_bytes_including_web": 0,
+            "total_size_kb_including_web": 0,
+            "web_text_entries": 0,
+            "web_text_size_bytes": 0,
+            "web_text_size_kb": 0,
+            "web_text_cache_dir": str(CACHE_DIR / WEB_TEXT_CACHE_DIRNAME),
             "oldest": None,
             "newest": None,
             "cache_dir": str(CACHE_DIR),
-            "exists": False
+            "exists": False,
         }
 
     total_size = 0
@@ -327,12 +389,15 @@ def cache_stats() -> Dict[str, Any]:
         except IOError:
             pass
 
-    web_text_stats = _web_text_cache_stats()
-
+    web_stats = _web_text_cache_stats()
+    total_with_web = total_size + web_stats["web_text_size_bytes"]
     return {
         "total_entries": entry_count,
         "total_size_bytes": total_size,
         "total_size_kb": round(total_size / 1024, 2),
+        "total_size_bytes_including_web": total_with_web,
+        "total_size_kb_including_web": round(total_with_web / 1024, 2),
+        **web_stats,
         "providers": provider_counts,
         "oldest": {
             "timestamp": oldest_time,
@@ -346,5 +411,79 @@ def cache_stats() -> Dict[str, Any]:
         } if newest_time else None,
         "cache_dir": str(CACHE_DIR),
         "exists": True,
-        **web_text_stats,
     }
+
+
+FRESHNESS_CACHE_TTL = {
+    "hour": 60,
+    "day": 300,
+    "week": 1800,
+    "month": 3600,
+    "year": 3600,
+}
+
+
+# Query intents (web_search_plus_mcp/intents.py) whose answers go stale within minutes. An
+# intent only ever lowers the TTL; the others keep the recency and freshness
+# caps alone.
+CLASS_CACHE_TTL = {
+    "news": 300,
+    "security": 300,
+}
+
+
+def routing_class_of(routing: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Routing class carried by a routing/plan dict, or None when it has no analysis."""
+    summary = (routing or {}).get("analysis_summary")
+    routing_class = summary.get("routing_class") if isinstance(summary, dict) else None
+    return routing_class if isinstance(routing_class, str) else None
+
+
+def _query_routing_class(query: str) -> Optional[str]:
+    """Query intent computed from the query alone (no plan, e.g. an explicit provider)."""
+    try:
+        from .intents import classify_intent
+
+        return classify_intent(query).intent
+    except Exception:
+        return None
+
+
+def recency_cache_ttl_cap(
+    query: str,
+    freshness: Optional[str] = None,
+    routing_class: Optional[str] = None,
+) -> int:
+    """Shortest TTL allowed for this query's recency, freshness and class signals."""
+    caps = [DEFAULT_CACHE_TTL]
+    if freshness:
+        caps.append(
+            FRESHNESS_CACHE_TTL.get(str(freshness).strip().lower(), DEFAULT_CACHE_TTL)
+        )
+    try:
+        from .routing import detect_recency
+
+        is_recency, score = detect_recency(query or "")
+    except Exception:
+        is_recency, score = False, 0.0
+    if is_recency:
+        caps.append(60 if score >= 3.0 else 300)
+    # The planned class wins; without a plan the same classifier runs on the query.
+    if routing_class is None:
+        routing_class = _query_routing_class(query or "")
+    caps.append(CLASS_CACHE_TTL.get(routing_class, DEFAULT_CACHE_TTL))
+    return min(caps)
+
+
+def effective_search_cache_ttl(
+    query: str,
+    *,
+    freshness: Optional[str] = None,
+    requested_ttl: Optional[int] = None,
+    routing_class: Optional[str] = None,
+) -> int:
+    """Cap the search-cache TTL. Explicit no_cache still bypasses lookup."""
+    requested = DEFAULT_CACHE_TTL if requested_ttl is None else int(requested_ttl)
+    if requested <= 0:
+        requested = DEFAULT_CACHE_TTL
+    return min(requested, recency_cache_ttl_cap(query, freshness, routing_class))
