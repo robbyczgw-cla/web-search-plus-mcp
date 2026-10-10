@@ -89,7 +89,7 @@ def test_local_provider_endpoint_remains_allowed_for_public_target():
          mock.patch("web_search_plus_mcp.extract.get_api_key", return_value="fc-test-key"), \
          mock.patch("web_search_plus_mcp.provider_health.provider_in_cooldown", return_value=(False, 0)), \
          mock.patch("web_search_plus_mcp.provider_health.reset_provider_health"), \
-         mock.patch("web_search_plus_mcp.providers.extract_firecrawl", return_value={"provider": "firecrawl", "results": []}) as mock_extract:
+         mock.patch("web_search_plus_mcp.providers.extract_firecrawl", return_value={"provider": "firecrawl", "results": [{"url": "https://example.com/page", "content": "page"}]}) as mock_extract:
         result = extract.extract_plus(
             ["https://example.com/page"],
             provider="firecrawl",

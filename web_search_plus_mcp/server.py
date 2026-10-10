@@ -589,6 +589,14 @@ def _project_v3_payload(
     if urls is not None:
         projected["urls"] = list(urls)
 
+    failed_url_errors: dict[str, str] = {}
+    if capability == "extract":
+        for warning in payload.get("warnings") or []:
+            details = warning.get("details") if isinstance(warning, dict) else None
+            for failed in (details or {}).get("failed_urls") or []:
+                if isinstance(failed, dict) and failed.get("url") and failed.get("error"):
+                    failed_url_errors.setdefault(str(failed["url"]), str(failed["error"]))
+
     results = []
     for item in payload.get("results") or []:
         if not isinstance(item, dict):
@@ -597,6 +605,10 @@ def _project_v3_payload(
         result: dict[str, Any]
         if capability == "extract":
             result = {"url": url, "content": _field_text(item.get("text"))}
+            observed = (item.get("url") or {}).get("observed") if isinstance(item.get("url"), dict) else url
+            error_text = failed_url_errors.get(str(observed)) or failed_url_errors.get(str(url))
+            if error_text and not result["content"]:
+                result["error"] = error_text
             if isinstance(item.get("spans"), list):
                 result["spans"] = [
                     dict(span) for span in item["spans"] if isinstance(span, dict)
