@@ -13,9 +13,13 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 5.0.0` matches Hermes Web Search Plus 5.0.
+`web-search-plus-mcp 5.0.1` matches Hermes Web Search Plus 5.0.1.
 
-### What's new in 5.0.0
+### What's new in 5.0.1
+
+Bug fixes for 5.0.0: everyday words like "synthesizer" no longer trip the source-only filter, one bad URL no longer sinks a `web_extract` batch (each failed URL gets its own error), empty pages fall back to the next provider, rate-limit waits are capped at 30 s, long queries are shortened for Brave, and auto routing off or a private SearXNG URL no longer break every search. See [docs/RELEASE_5_0_1.md](docs/RELEASE_5_0_1.md).
+
+### Earlier: 5.0.0
 
 Automatic routing picks providers by query type (Brave for most queries, Exa for docs and academic, Serper for security and shopping), clearly detected query languages reach the provider, research mode fuses provider results, and automatic search falls back faster on errors, empty answers and slow providers. This changes which API quota is used; see [CHANGELOG.md](CHANGELOG.md) for breaking changes.
 
