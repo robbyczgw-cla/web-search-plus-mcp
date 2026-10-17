@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Documentation
+
+- Added a Parallel provider setup walkthrough with MCP search/extract examples, API mode configuration, and an explicit-only routing option.
+
 ## [5.0.1] - 2026-10-10
 
 Synced with Hermes Web Search Plus 5.0.1. Bug fixes for 5.0.0, no breaking changes; routing, providers and config format stay the same.

@@ -210,6 +210,50 @@ The package exposes stdio only; the specification's Streamable HTTP session remo
 - **Octen via Monid** — explicit-only source-result web search with native recency and domain filters (`MONID_API_KEY`, `auto_allow=false`)
 - **TinyFish** — explicit-only BYOK source-result search (`TINYFISH_API_KEY`, `auto_allow=false`)
 
+### Parallel source search and page extraction
+
+The built-in `parallel` provider calls the [Parallel Search API](https://docs.parallel.ai/search/search-quickstart) and Extract API with your own API key. Create a key at [Parallel Platform](https://platform.parallel.ai), add `PARALLEL_API_KEY` to the `env` block of your existing `web-search-plus` MCP host config above, and restart the MCP server. Keep the key out of `config.json` and committed files.
+
+Call `web_search` with these MCP arguments to select Parallel explicitly and find documentation sources:
+
+```json
+{
+  "query": "Parallel Search API source excerpts",
+  "provider": "parallel",
+  "count": 3,
+  "include_domains": ["docs.parallel.ai"]
+}
+```
+
+Then pass a returned source URL to `web_extract` to read the page, for example:
+
+```json
+{
+  "urls": ["https://docs.parallel.ai/search/search-quickstart"],
+  "provider": "parallel"
+}
+```
+
+Search defaults to Parallel's `fast` mode. To choose `turbo`, `fast`, `basic`, or `advanced`, merge the following setting into your existing `config.json` (shown with `turbo`):
+
+```json
+{
+  "parallel": {
+    "mode": "turbo"
+  }
+}
+```
+
+Use `WEB_SEARCH_PLUS_CONFIG` in the MCP host environment to select a configuration file at a stable path. `parallel.mode` selects the Parallel API mode; the `web_search` tool's `mode` selects Web Search Plus `normal` or `research` behavior.
+
+A configured Parallel key also makes the provider eligible for automatic search, extraction, and fallback. For explicit calls only, use the same configuration path as your MCP host:
+
+```bash
+web-search-plus-mcp config --config-path /path/to/config.json set-auto-allow parallel off
+```
+
+This keeps `provider="parallel"` available. Use `on` to allow automatic selection again.
+
 ### Octen source search via Monid
 
 The adapter executes Octen's `/search` endpoint through [Monid's documented HTTP API](https://docs.monid.ai/api/run.html) for ranked links and highlights. It explicitly disables full-content retrieval and does not call Octen's answer or Broad Search APIs. Configure `MONID_API_KEY` from [Monid](https://app.monid.ai/access/api-keys), then select `provider="octen"`; automatic routing remains unchanged unless you deliberately enable `auto_allow`. Access and billing use Monid's prepaid wallet; see Monid for current pricing and terms.
