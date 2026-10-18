@@ -1,6 +1,6 @@
 # web-search-plus-mcp 5.1.2
 
-Planned release 2026-10-18; not tagged or published yet. 5.1.1 was never released, so these notes cover everything since 5.0.1.
+Released 2026-10-18. 5.1.1 was never released, so these notes cover everything since 5.0.1.
 
 Matches the engine of Hermes Web Search Plus 5.1.2 (the 5.1.1 engine, which includes the engine parts of 5.1.0, plus the two extract fixes below). Bug fixes for 5.0.1 and one additive output field; no breaking changes, tool names, input schemas, routing defaults and config format stay the same.
 
