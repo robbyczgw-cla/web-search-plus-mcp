@@ -10,6 +10,7 @@ import secrets
 import sqlite3
 import stat
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -36,6 +37,12 @@ CONSECUTIVE_FAILURES_TO_OPEN = {
     ErrorClass.TRANSIENT: 3,
     ErrorClass.TIMEOUT: 3,
 }
+
+# After an I/O error the store reports itself unavailable; it is probed again
+# once this many seconds have passed, so one transient error (a locked
+# database, a full disk that was cleaned) does not disable durable state for
+# the rest of the store's lifetime.
+RECOVERY_PROBE_SECONDS = 30.0
 
 # Database files whose schema this process has initialized, keyed by path and
 # inode: a deleted or replaced file (restore, another process's migration) is
@@ -178,6 +185,9 @@ class SQLiteStateStore:
         self._read_only = False
         self._local_secret = secrets.token_bytes(32)
         self._secret_available = False
+        self._available_flag = False
+        self._unavailable_since: float | None = None
+        self._probe_lock = threading.Lock()
         self._available = False
         self._request_budgets: dict[tuple[str, str], list[int]] = {}
         self._request_budgets_lock = threading.Lock()
@@ -195,6 +205,9 @@ class SQLiteStateStore:
         store._read_only = True
         store._local_secret = b""
         store._secret_available = False
+        store._available_flag = False
+        store._unavailable_since = None
+        store._probe_lock = threading.Lock()
         store._available = False
         store._request_budgets = {}
         store._request_budgets_lock = threading.Lock()
@@ -244,6 +257,55 @@ class SQLiteStateStore:
         return credential_fingerprint(
             credential, local_secret=self._local_secret
         )
+
+    @property
+    def _available(self) -> bool:
+        """Whether durable state is usable; probes again after an error window."""
+        if self._available_flag:
+            return True
+        since = self._unavailable_since
+        if (
+            self._read_only
+            or since is None
+            or time.monotonic() - since < RECOVERY_PROBE_SECONDS
+        ):
+            return False
+        return self._reprobe()
+
+    @_available.setter
+    def _available(self, value: bool) -> None:
+        self._available_flag = bool(value)
+        self._unavailable_since = None if value else time.monotonic()
+
+    def _reprobe(self) -> bool:
+        """Try to bring the store back after an earlier error; rate limited."""
+        with self._probe_lock:
+            if self._available_flag:
+                return True
+            if time.monotonic() - (self._unavailable_since or 0.0) < RECOVERY_PROBE_SECONDS:
+                return False
+            # Restart the quiet period first so a failing probe is not repeated
+            # on every call.
+            self._unavailable_since = time.monotonic()
+            if not self._secret_available:
+                self._initialize_local_secret()
+            if not self._secret_available:
+                return False
+            self._initialize()
+            if self._available_flag:
+                # _initialize skips already-initialized files; confirm the file
+                # is really readable again before trusting it.
+                try:
+                    connection = self._connect()
+                    try:
+                        connection.execute(
+                            "SELECT 1 FROM circuit_state LIMIT 1"
+                        ).fetchall()
+                    finally:
+                        connection.close()
+                except sqlite3.Error:
+                    self._available = False
+            return self._available_flag
 
     @property
     def available(self) -> bool:
@@ -439,6 +501,75 @@ class SQLiteStateStore:
                         CircuitState.OPEN.value,
                         CircuitState.HALF_OPEN.value,
                         now,
+                    ),
+                )
+                connection.commit()
+                return cursor.rowcount == 1
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            self._available = False
+            return False
+
+    def expire_circuit(
+        self, key: CircuitKey, error_class: ErrorClass, *, now: int
+    ) -> bool:
+        """End an open window early so the next admission may probe.
+
+        The failure count is kept: a probe that fails again re-opens the
+        circuit at once, and only a successful probe clears it.
+        """
+        if not self._available:
+            return False
+        try:
+            connection = self._connect()
+            try:
+                cursor = connection.execute(
+                    """
+                    UPDATE circuit_state SET open_until=?, updated_at=?
+                    WHERE provider=? AND capability=? AND endpoint=?
+                      AND credential_fingerprint=? AND error_class=?
+                      AND state=? AND open_until > ?
+                    """,
+                    (
+                        now,
+                        now,
+                        *key.values(),
+                        error_class.value,
+                        CircuitState.OPEN.value,
+                        now,
+                    ),
+                )
+                return cursor.rowcount == 1
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            self._available = False
+            return False
+
+    def release_half_open(
+        self, key: CircuitKey, error_class: ErrorClass, *, now: int
+    ) -> bool:
+        """Give back a probe lease that was claimed but never used."""
+        if not self._available:
+            return False
+        try:
+            connection = self._connect()
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                cursor = connection.execute(
+                    """
+                    UPDATE circuit_state SET open_until=?, updated_at=?
+                    WHERE provider=? AND capability=? AND endpoint=?
+                      AND credential_fingerprint=? AND error_class=?
+                      AND state=?
+                    """,
+                    (
+                        now,
+                        now,
+                        *key.values(),
+                        error_class.value,
+                        CircuitState.HALF_OPEN.value,
                     ),
                 )
                 connection.commit()

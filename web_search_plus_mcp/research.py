@@ -414,9 +414,11 @@ def run_research_mode(
                 extraction_error = str(e)
                 extracted = {"provider": None, "results": []}
         else:
-            # Run extraction on a daemon thread so the remaining budget bounds it too.
+            # Provider deadlines remain unchanged. Allow bounded cleanup and
+            # projection time to publish pages fetched before that deadline.
+            harvest_grace = max(0.5, float(time_budget_seconds or 0) * 0.05)
             try:
-                extracted = DaemonTask(extract_urls, urls).result(timeout=remaining) or {"provider": None, "results": []}
+                extracted = DaemonTask(extract_urls, urls).result(timeout=remaining + harvest_grace) or {"provider": None, "results": []}
             except FuturesTimeoutError:
                 extraction_error = "timed out: research time budget exhausted"
                 extracted = {"provider": None, "results": []}

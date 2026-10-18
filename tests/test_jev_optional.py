@@ -20,15 +20,13 @@ def test_default_config_jev_is_off():
     assert settings_from_config(_deepcopy_default_config()).enabled is False
 
 
-def test_validate_runtime_rejects_api_key_in_config():
+def test_validate_runtime_ignores_api_key_in_config():
     cfg = _deepcopy_default_config()
     cfg["jev"]["api_key"] = "nope"
-    try:
-        _validate_runtime_config(cfg)
-    except ValueError as exc:
-        assert "api_key" in str(exc)
-    else:
-        raise AssertionError("expected ValueError")
+    cfg["jev"]["enabled"] = True
+    _validate_runtime_config(cfg)
+    assert "api_key" not in cfg["jev"]
+    assert cfg["jev"]["enabled"] is True
 
 
 def test_disabled_extract_keeps_cloudflare_page():

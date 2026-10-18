@@ -398,10 +398,42 @@ def project_results_from_observations(
             representatives.append((representative, members))
             emitted.add(canonical)
 
+    return _results_from_representatives(representatives)
+
+
+def project_extract_results_from_observations(
+    observations: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Project extract observations one result each, in the order given.
+
+    Extraction answers requested URLs, not distinct pages: ``/page?ref=1`` and
+    ``/page?ref=2`` share a canonical form but are two requests, and an empty
+    canonical form says nothing about identity. Source-cluster dedup is a
+    search concern, so nothing is merged or dropped here; the caller passes the
+    observations in requested-URL order and each keeps its rank.
+    """
+    return _results_from_representatives(
+        [(observation, [observation]) for observation in observations],
+        unique_clusters=True,
+    )
+
+
+def _results_from_representatives(
+    representatives: List[tuple],
+    *,
+    unique_clusters: bool = False,
+) -> List[Dict[str, Any]]:
     results = []
+    seen_clusters: set = set()
     for rank, (observation, members) in enumerate(representatives, 1):
         observation_id = observation["observation_id"]
         cluster_id = _stable_id("cluster", observation["url"]["canonical"])
+        if unique_clusters and cluster_id in seen_clusters:
+            # Distinct requests with one canonical form keep distinct clusters.
+            cluster_id = _stable_id(
+                "cluster", observation["url"]["canonical"], observation_id
+            )
+        seen_clusters.add(cluster_id)
         source_type = dict(
             observation.get("source_type")
             or _source_type(observation["url"]["canonical"])
@@ -475,8 +507,11 @@ def response_from_legacy(
         if isinstance(authoritative_attempts, (list, tuple))
         else _attempts(request, plan, payload, selected, len(raw_items))
     )
+    # A partial attempt (batch stopped by a provider-wide error) served pages too.
     successful_attempts = [
-        attempt for attempt in provider_attempts if attempt.outcome is AttemptOutcome.SUCCESS
+        attempt
+        for attempt in provider_attempts
+        if attempt.outcome in {AttemptOutcome.SUCCESS, AttemptOutcome.PARTIAL}
     ]
     # Prefer the selected provider's attempt: per-URL extract fallback can
     # leave later successful attempts that contributed nothing.
@@ -490,24 +525,39 @@ def response_from_legacy(
         {attempt.provider for attempt in successful_attempts}
         & {str(item.get("provider")) for item in raw_items if not item.get("error")}
     ) > 1
+    # Extract keeps each observation's slot in the item list: the legacy
+    # payload is already one item per requested URL in requested order.
+    slots: List[tuple] = []
     if (aggregate_research or multi_source_extract) and authoritative_attempts:
         observations = []
         for attempt in provider_attempts:
-            if attempt.outcome is not AttemptOutcome.SUCCESS:
+            if attempt not in successful_attempts:
                 continue
-            provider_items = [
-                item
-                for item in observation_items
+            # Failed or preflight-refused URLs have no serving provider;
+            # anchor their slots to the selected attempt instead of dropping them.
+            provider_slots = [
+                (slot, item)
+                for slot, item in enumerate(observation_items)
                 if str(item.get("provider") or "") == attempt.provider
+                or (
+                    multi_source_extract
+                    and not item.get("provider")
+                    and item.get("error")
+                    and attempt is successful_attempt
+                )
             ]
-            if provider_items:
-                observations.extend(
-                    observations_from_legacy(
-                        {**payload, "results": provider_items},
-                        attempt.provider,
-                        request.capability,
-                        attempt.attempt_id,
-                    )
+            if provider_slots:
+                made = observations_from_legacy(
+                    {**payload, "results": [item for _slot, item in provider_slots]},
+                    attempt.provider,
+                    request.capability,
+                    attempt.attempt_id,
+                )
+                observations.extend(made)
+                # Every item with a URL yields exactly one observation.
+                slots.extend(
+                    (slot, observation)
+                    for (slot, _item), observation in zip(provider_slots, made)
                 )
     else:
         observations = (
@@ -520,7 +570,13 @@ def response_from_legacy(
             if selected and successful_attempt
             else []
         )
-    results = project_results_from_observations(observations, raw_items)
+        slots = list(enumerate(observations))
+    if request.capability is Capability.EXTRACT:
+        results = project_extract_results_from_observations(
+            [observation for _slot, observation in sorted(slots, key=lambda pair: pair[0])]
+        )
+    else:
+        results = project_results_from_observations(observations, raw_items)
     failed_items = [item for item in raw_items if item.get("error")]
     top_error = payload.get("error")
     warnings: List[Dict[str, Any]] = []
@@ -554,6 +610,11 @@ def response_from_legacy(
                         {"url": str(item.get("url")), "error": str(item.get("error"))}
                         for item in failed_items
                     ],
+                    **(
+                        {"unmatched_count": len(payload["unmatched_results"])}
+                        if isinstance(payload.get("unmatched_results"), list)
+                        else {}
+                    ),
                 },
             }
         )

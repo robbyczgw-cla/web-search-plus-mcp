@@ -1,6 +1,10 @@
 """Shared environment loading helpers for Web Search Plus.
 
-The plugin supports three credential locations, in precedence order:
+The engine reads credentials through ``credentials.get_secret`` (the process
+environment unless a host installs a resolver). The MCP server fills the process
+environment from its own entrypoints by calling :func:`load_env_files`.
+
+:func:`load_env_files` reads three locations, in precedence order:
 1. plugin-local ``.env`` for standalone/plugin development
 2. legacy parent ``.env`` used by earlier installs
 3. Hermes profile ``.env`` (``$HERMES_HOME/.env`` or hermes_constants)

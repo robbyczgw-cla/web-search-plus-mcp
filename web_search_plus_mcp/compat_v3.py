@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import unicodedata
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, List, Mapping
 
 from .contract_v3 import Capability, RequestV3
 from .orchestrator_v3 import ExecutedV3
+
+
+def normalize_provider_id(value: Any) -> str:
+    """Canonical provider id: case and surrounding spaces do not matter; empty means auto."""
+    return str(value or "").strip().lower() or "auto"
 
 
 def legacy_request_to_v3(
@@ -18,7 +23,7 @@ def legacy_request_to_v3(
 ) -> RequestV3:
     """Project a public legacy invocation into a complete RequestV3."""
     capability = Capability(capability)
-    provider = str(payload.get("provider") or "auto")
+    provider = normalize_provider_id(payload.get("provider"))
     default_fallback = capability is Capability.EXTRACT or provider == "auto"
     routing = {
         "mode": "auto" if provider == "auto" else "fixed",
@@ -128,22 +133,31 @@ def v3_response_to_legacy_search(execution: ExecutedV3) -> Dict[str, Any]:
 def v3_response_to_legacy_extract(execution: ExecutedV3) -> Dict[str, Any]:
     """Project the bounded v3 extraction response onto the legacy payload shape."""
     legacy = _project(execution, Capability.EXTRACT)
-    originals = {
-        str(item.get("url") or ""): dict(item)
-        for item in legacy.get("results") or []
-        if isinstance(item, dict)
-    }
+    # One legacy item per requested URL, in requested order. Items are kept as
+    # a list, never keyed by URL: two requests that share a URL or a canonical
+    # form each keep their own slot.
+    originals = [
+        dict(item) for item in legacy.get("results") or [] if isinstance(item, dict)
+    ]
+    waiting: Dict[str, List[int]] = {}
+    for index, item in enumerate(originals):
+        waiting.setdefault(str(item.get("url") or ""), []).append(index)
     stored_by_observation = {
         str(stored.get("observation_id")): stored
         for stored in execution.response.stored_content
         if isinstance(stored, dict)
     }
-    projected_by_url: Dict[str, Dict[str, Any]] = {}
+    projected_by_slot: Dict[int, Dict[str, Any]] = {}
+    orphans: List[Dict[str, Any]] = []
     for item in execution.response.results:
         observed_url = str((item.get("url") or {}).get("observed") or "")
         title = item.get("title") or {}
         text = item.get("text") or {}
-        result = originals.get(observed_url, {}).copy()
+        # The response result answers the next legacy item that carries the
+        # same observed URL (results keep the legacy item order).
+        slots = waiting.get(observed_url)
+        slot = slots.pop(0) if slots else None
+        result = originals[slot].copy() if slot is not None else {}
         result["title"] = title.get("text")
         result["url"] = observed_url
         result["content"] = text.get("text")
@@ -166,22 +180,19 @@ def v3_response_to_legacy_extract(execution: ExecutedV3) -> Dict[str, Any]:
             result["spans"] = [dict(span) for span in item["spans"]]
         if "raw_content" in result:
             result["raw_content"] = result["content"]
-        projected_by_url.setdefault(observed_url, result)
+        if slot is not None:
+            projected_by_slot[slot] = result
+        else:
+            orphans.append(result)
     # Keep the payload's order; error items without an observation (e.g. a
     # URL rejected before any provider call) stay in their requested slot.
     projected = []
-    emitted = set()
-    for url, item in originals.items():
-        if url in projected_by_url:
-            projected.append(projected_by_url[url])
+    for slot, item in enumerate(originals):
+        if slot in projected_by_slot:
+            projected.append(projected_by_slot[slot])
         elif item.get("error"):
             projected.append(item)
-        else:
-            continue
-        emitted.add(url)
-    projected.extend(
-        result for url, result in projected_by_url.items() if url not in emitted
-    )
+    projected.extend(orphans)
     legacy["results"] = projected
     if execution.response.cache_status.get("disposition") in {
         "fresh_hit",

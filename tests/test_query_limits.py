@@ -12,6 +12,8 @@ from web_search_plus_mcp.http_client import ProviderRequestError
 from web_search_plus_mcp.quality import build_quality_report
 from web_search_plus_mcp.query_limits import MAX_QUERY_CHARS, PROVIDER_QUERY_LIMITS, fit_query
 
+BRAVE = PROVIDER_QUERY_LIMITS["brave"]
+
 
 def _args(**kw):
     base = dict(
@@ -36,61 +38,68 @@ def _long_query(chars=581):
     return " ".join(words)[:chars]
 
 
-def test_brave_581_char_query_is_shortened_within_both_limits():
-    query, result = _brave_query(_args(query=_long_query(581)))
-    assert len(query) <= 400 and len(query.split()) <= 50
+def test_overlong_brave_query_is_shortened_within_both_limits():
+    query, result = _brave_query(_args(query=_long_query(900)))
+    assert len(query) <= BRAVE.chars and len(query.split()) <= BRAVE.words
     info = result["metadata"]["query_truncated"]
-    assert info["provider"] == "brave" and info["original_chars"] == 581
+    assert info["provider"] == "brave" and info["original_chars"] == 900
     assert info["sent_chars"] == len(query)
 
 
 def test_brave_word_limit_applies_to_short_words():
     query, result = _brave_query(_args(query=" ".join(["ab"] * 120)))
-    assert len(query.split()) <= 50 and len(query) <= 400
+    assert len(query.split()) <= BRAVE.words and len(query) <= BRAVE.chars
     assert result["metadata"]["query_truncated"]["original_words"] == 120
 
 
 def test_free_text_is_cut_at_a_word_boundary():
-    text = _long_query(581)
+    text = _long_query(900)
     query, _ = _brave_query(_args(query=text))
     assert text.startswith(query) and text[len(query)] == " "
 
 
 def test_site_operators_survive_and_count_towards_the_limit():
     args = _args(
-        query=_long_query(581),
+        query=_long_query(900),
         include_domains=["docs.rs", "tokio.rs"],
         exclude_domains=["reddit.com", "x.com"],
     )
     query, result = _brave_query(args)
     suffix = "site:docs.rs OR site:tokio.rs -site:reddit.com -site:x.com"
     assert query.endswith(" " + suffix)
-    assert len(query) <= 400 and len(query.split()) <= 50
+    assert len(query) <= BRAVE.chars and len(query.split()) <= BRAVE.words
     assert "operators_dropped" not in result["metadata"]["query_truncated"]
 
 
 def test_twenty_operators_still_fit_with_free_text():
     domains = [f"d{i}.example.org" for i in range(10)]
-    args = _args(query=_long_query(581), include_domains=domains, exclude_domains=[f"x{i}.example.net" for i in range(10)])
+    args = _args(query=_long_query(900), include_domains=domains, exclude_domains=[f"x{i}.example.net" for i in range(10)])
     query, _ = _brave_query(args)
-    assert len(query) <= 400 and len(query.split()) <= 50
+    assert len(query) <= BRAVE.chars and len(query.split()) <= BRAVE.words
     assert all(f"site:{d}" in query for d in domains)
 
 
 def test_exclusions_are_dropped_only_when_nothing_else_fits():
-    query, info = fit_query("brave", "hello world", ["site:a.com", *[f"-site:{'z' * 40}{i}.com" for i in range(10)]])
-    assert len(query) <= 400 and "site:a.com" in query and "hello" in query
+    query, info = fit_query("brave", "hello world", ["site:a.com", *[f"-site:{'z' * 55}{i}.com" for i in range(10)]])
+    assert len(query) <= BRAVE.chars and "site:a.com" in query and "hello" in query
     assert info["operators_dropped"] >= 1
 
 
 def test_include_filter_that_cannot_fit_fails_closed():
     with pytest.raises(ValueError, match="Too many domain filters for brave"):
-        fit_query("brave", "hello", ["site:" + "a" * 500 + ".com"])
+        fit_query("brave", "hello", ["site:" + "a" * 700 + ".com"])
 
 
 def test_single_overlong_token_is_hard_cut():
-    query, info = fit_query("brave", "x" * 700)
-    assert len(query) == 400 and info["original_chars"] == 700
+    query, info = fit_query("brave", "x" * 900)
+    assert len(query) == BRAVE.chars and info["original_chars"] == 900
+
+
+def test_brave_documented_limit_is_600_characters_and_75_words():
+    # Brave Web Search API reference: "Maximum of 600 characters and 75 words in the query."
+    assert BRAVE.chars == 600 and BRAVE.words == 75
+    query = " ".join(["word"] * 70)  # 70 words, 349 characters: within Brave's limit
+    assert fit_query("brave", query) == (query, None)
 
 
 def test_normal_queries_are_unchanged():
@@ -101,14 +110,14 @@ def test_normal_queries_are_unchanged():
 
 
 def test_provider_without_documented_limit_is_untouched():
-    text = _long_query(581)
+    text = _long_query(900)
     assert fit_query("serper", text, ["site:a.com"]) == (text + " site:a.com", None)
     assert set(PROVIDER_QUERY_LIMITS) == {"brave"}
 
 
 def test_other_site_operator_providers_keep_their_query():
     fn = MagicMock(return_value={"provider": "serper", "query": "", "results": []})
-    text = _long_query(581)
+    text = _long_query(900)
     pd.SEARCH_DISPATCH["serper"](SimpleNamespace(search_serper=fn), "serper", _args(query=text), "k", {}, {})
     assert fn.call_args.kwargs["query"] == text
 

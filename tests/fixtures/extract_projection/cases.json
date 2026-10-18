@@ -1,0 +1,218 @@
+{
+  "_doc": "Golden cases for the extract projection. Each case feeds fixed provider answers through the real engine and pins what the legacy payload, the v3 response and the native backend report per requested URL. legacy/v3 rows are [url the layer reports, status, content]; native rows are [requested url, status, content]. Exactly one row per requested URL, in request order.",
+  "cases": [
+    {
+      "name": "ref_variants_keep_two_results",
+      "urls": ["https://example.com/page?ref=1", "https://example.com/page?ref=2"],
+      "tavily": [
+        {"url": "https://example.com/page?ref=1", "content": "body one"},
+        {"url": "https://example.com/page?ref=2", "content": "body two"}
+      ],
+      "legacy": [
+        ["https://example.com/page?ref=1", "ok", "body one"],
+        ["https://example.com/page?ref=2", "ok", "body two"]
+      ],
+      "v3": [
+        ["https://example.com/page?ref=1", "ok", "body one"],
+        ["https://example.com/page?ref=2", "ok", "body two"]
+      ],
+      "native": [
+        ["https://example.com/page?ref=1", "ok", "body one"],
+        ["https://example.com/page?ref=2", "ok", "body two"]
+      ],
+      "calls": {"tavily": 1, "linkup": 0}
+    },
+    {
+      "name": "provider_reverses_order",
+      "urls": ["https://example.com/first", "https://example.com/second"],
+      "tavily": [
+        {"url": "https://example.com/second", "content": "second body"},
+        {"url": "https://example.com/first", "content": "first body"}
+      ],
+      "legacy": [
+        ["https://example.com/first", "ok", "first body"],
+        ["https://example.com/second", "ok", "second body"]
+      ],
+      "v3": [
+        ["https://example.com/first", "ok", "first body"],
+        ["https://example.com/second", "ok", "second body"]
+      ],
+      "native": [
+        ["https://example.com/first", "ok", "first body"],
+        ["https://example.com/second", "ok", "second body"]
+      ],
+      "calls": {"tavily": 1, "linkup": 0}
+    },
+    {
+      "name": "same_url_twice_answered_once",
+      "urls": ["https://example.com/a", "https://example.com/a"],
+      "tavily": [{"url": "https://example.com/a", "content": "body a"}],
+      "legacy": [
+        ["https://example.com/a", "ok", "body a"],
+        ["https://example.com/a", "ok", "body a"]
+      ],
+      "v3": [
+        ["https://example.com/a", "ok", "body a"],
+        ["https://example.com/a", "ok", "body a"]
+      ],
+      "native": [
+        ["https://example.com/a", "ok", "body a"],
+        ["https://example.com/a", "ok", "body a"]
+      ],
+      "calls": {"tavily": 1, "linkup": 0}
+    },
+    {
+      "name": "same_url_twice_answered_twice",
+      "urls": ["https://example.com/a", "https://example.com/a"],
+      "tavily": [
+        {"url": "https://example.com/a", "content": "first fetch"},
+        {"url": "https://example.com/a", "content": "second fetch"}
+      ],
+      "legacy": [
+        ["https://example.com/a", "ok", "first fetch"],
+        ["https://example.com/a", "ok", "second fetch"]
+      ],
+      "v3": [
+        ["https://example.com/a", "ok", "first fetch"],
+        ["https://example.com/a", "ok", "second fetch"]
+      ],
+      "native": [
+        ["https://example.com/a", "ok", "first fetch"],
+        ["https://example.com/a", "ok", "second fetch"]
+      ],
+      "calls": {"tavily": 1, "linkup": 0}
+    },
+    {
+      "name": "canonical_only_answer_for_two_variants_is_ambiguous",
+      "urls": ["https://example.com/page?ref=1", "https://example.com/page?ref=2"],
+      "tavily": [{"url": "https://example.com/page", "content": "which one?"}],
+      "linkup": [
+        {"url": "https://example.com/page?ref=1", "content": "linkup one"},
+        {"url": "https://example.com/page?ref=2", "content": "linkup two"}
+      ],
+      "legacy": [
+        ["https://example.com/page?ref=1", "ok", "linkup one"],
+        ["https://example.com/page?ref=2", "ok", "linkup two"]
+      ],
+      "v3": [
+        ["https://example.com/page?ref=1", "ok", "linkup one"],
+        ["https://example.com/page?ref=2", "ok", "linkup two"]
+      ],
+      "native": [
+        ["https://example.com/page?ref=1", "ok", "linkup one"],
+        ["https://example.com/page?ref=2", "ok", "linkup two"]
+      ],
+      "calls": {"tavily": 1, "linkup": 1}
+    },
+    {
+      "name": "trailing_slash_matches_by_canonical_url",
+      "urls": ["https://example.com/a/"],
+      "tavily": [{"url": "https://example.com/a", "content": "body a"}],
+      "legacy": [["https://example.com/a", "ok", "body a"]],
+      "v3": [["https://example.com/a", "ok", "body a"]],
+      "native": [["https://example.com/a/", "ok", "body a"]],
+      "calls": {"tavily": 1, "linkup": 0}
+    },
+    {
+      "name": "redirect_with_reported_source_url",
+      "urls": ["https://example.com/a"],
+      "tavily": [
+        {
+          "url": "https://cdn.example.org/final",
+          "content": "body a",
+          "metadata": {"sourceURL": "https://example.com/a"}
+        }
+      ],
+      "legacy": [["https://cdn.example.org/final", "ok", "body a"]],
+      "v3": [["https://cdn.example.org/final", "ok", "body a"]],
+      "native": [["https://example.com/a", "ok", "body a"]],
+      "calls": {"tavily": 1, "linkup": 0}
+    },
+    {
+      "name": "single_remaining_redirect_preserves_paid_content",
+      "urls": ["https://example.com/a", "https://example.com/b"],
+      "tavily": [
+        {"url": "https://example.com/b", "content": "body b"},
+        {"url": "https://cdn.example.org/a-final", "content": "redirected a"}
+      ],
+      "linkup": [{"url": "https://example.com/a", "content": "linkup a"}],
+      "legacy": [
+        ["https://cdn.example.org/a-final", "ok", "redirected a"],
+        ["https://example.com/b", "ok", "body b"]
+      ],
+      "v3": [
+        ["https://cdn.example.org/a-final", "ok", "redirected a"],
+        ["https://example.com/b", "ok", "body b"]
+      ],
+      "native": [
+        ["https://example.com/a", "ok", "redirected a"],
+        ["https://example.com/b", "ok", "body b"]
+      ],
+      "calls": {"tavily": 1, "linkup": 0}
+    },
+    {
+      "name": "idn_requested_punycode_reported",
+      "urls": ["https://bücher.example.org/x"],
+      "tavily": [{"url": "https://xn--bcher-kva.example.org/x", "content": "body x"}],
+      "legacy": [["https://xn--bcher-kva.example.org/x", "ok", "body x"]],
+      "v3": [["https://xn--bcher-kva.example.org/x", "ok", "body x"]],
+      "native": [["https://bücher.example.org/x", "ok", "body x"]],
+      "calls": {"tavily": 1, "linkup": 0}
+    },
+    {
+      "name": "idn_requested_unicode_reported",
+      "urls": ["https://bücher.example.org/x"],
+      "tavily": [{"url": "https://bücher.example.org/x", "content": "body x"}],
+      "legacy": [["https://bücher.example.org/x", "ok", "body x"]],
+      "v3": [["https://bücher.example.org/x", "ok", "body x"]],
+      "native": [["https://bücher.example.org/x", "ok", "body x"]],
+      "calls": {"tavily": 1, "linkup": 0}
+    },
+    {
+      "name": "partial_failure_one_status_per_url",
+      "urls": [
+        "https://example.com/good",
+        "https://example.com/bad",
+        "https://example.com/missing"
+      ],
+      "tavily": [
+        {"url": "https://example.com/good", "content": "good body"},
+        {"url": "https://example.com/bad", "content": "", "error": "Tavily extract failed"}
+      ],
+      "legacy": [
+        ["https://example.com/good", "ok", "good body"],
+        ["https://example.com/bad", "error", null],
+        ["https://example.com/missing", "error", null]
+      ],
+      "v3": [
+        ["https://example.com/good", "ok", "good body"],
+        ["https://example.com/bad", "error", null],
+        ["https://example.com/missing", "error", null]
+      ],
+      "native": [
+        ["https://example.com/good", "ok", "good body"],
+        ["https://example.com/bad", "error", null],
+        ["https://example.com/missing", "error", null]
+      ],
+      "calls": {"tavily": 1, "linkup": 1}
+    },
+    {
+      "name": "rejected_url_keeps_its_slot",
+      "urls": ["http://127.0.0.1/admin", "https://example.com/good"],
+      "tavily": [{"url": "https://example.com/good", "content": "good body"}],
+      "legacy": [
+        ["http://127.0.0.1/admin", "error", null],
+        ["https://example.com/good", "ok", "good body"]
+      ],
+      "v3": [
+        ["http://127.0.0.1/admin", "error", null],
+        ["https://example.com/good", "ok", "good body"]
+      ],
+      "native": [
+        ["http://127.0.0.1/admin", "error", null],
+        ["https://example.com/good", "ok", "good body"]
+      ],
+      "calls": {"tavily": 1, "linkup": 0}
+    }
+  ]
+}

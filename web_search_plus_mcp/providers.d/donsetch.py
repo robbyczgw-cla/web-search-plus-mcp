@@ -16,6 +16,7 @@ pre-compact structured shape so 3.2.x binaries keep working.
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import re
@@ -27,12 +28,40 @@ import time
 from typing import Any
 from urllib.parse import urlsplit
 
-from wsp_sdk import ProviderSpec, extract_result, search_result, source_result
+import wsp_sdk
+from wsp_sdk import (
+    ProviderSpec,
+    RequestDeadlineExceeded,
+    deadline_passed,
+    dispatch_timeout,
+    extract_result,
+    search_result,
+    source_result,
+)
 
 _ALLOWED_OUTPUT_FORMATS = {"markdown"}
 _ALLOWED_SEARCH_TYPES = {"search", "news"}
 _ALLOWED_INTENTS = {"auto", "web", "code", "paper", "news", "entity"}
 TESTED_VERSION = "4.7.0"
+
+
+def _engine_credentials():
+    """The credentials module of the engine that loaded this provider.
+
+    ``wsp_sdk`` re-exports the engine's HTTP helpers, so the package those come
+    from (``web_search_plus_mcp``, or the flat test layout) also holds the
+    sibling ``credentials`` module with the active secret resolver.
+    """
+    engine = wsp_sdk.dispatch_timeout.__module__.rpartition(".")[0]
+    return importlib.import_module(f"{engine}.credentials" if engine else "credentials")
+
+
+def file_credentials_allowed() -> bool:
+    return _engine_credentials().file_credentials_allowed()
+
+
+def get_secret(name: str, default: str | None = None) -> str | None:
+    return _engine_credentials().get_secret(name, default)
 STDERR_LIMIT = 2048
 _VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 _SECRET_RE = re.compile(
@@ -134,7 +163,9 @@ def _candidate_binary(key: str | None, config: dict[str, Any]) -> str:
     section = config.get("donsetch", {}) if isinstance(config, dict) else {}
     if not isinstance(section, dict):
         section = {}
-    candidate = key or section.get("binary") or section.get("api_key")
+    candidate = key or section.get("binary")
+    if not candidate and file_credentials_allowed():
+        candidate = section.get("api_key")
     if not isinstance(candidate, str) or not candidate.strip():
         return shutil.which("donsetch") or ""
     candidate = candidate.strip()
@@ -252,8 +283,16 @@ def _child_env() -> dict[str, str]:
     env = {
         key: value
         for key, value in os.environ.items()
-        if key in _CHILD_ENV_ALLOWLIST or key.startswith("LC_") or key.startswith("DONSETCH_")
+        if key in _CHILD_ENV_ALLOWLIST or key.startswith("LC_")
     }
+    # The resolver has no enumeration API. Discover extension names from the
+    # process, but read their values only from the active scope (never fallback).
+    names = {name for name in os.environ if name.startswith("DONSETCH_")}
+    names.add("DONSETCH_BIN")
+    for name in names:
+        value = get_secret(name)
+        if value is not None:
+            env[name] = value
     env["DONSETCH_TRANSPORT"] = "stdio"
     return env
 
@@ -687,6 +726,8 @@ def execute_search(search_module, prov, args, key, config, routing_info):
     include_domains = _clean_string_list(getattr(args, "include_domains", None))
     exclude_domains = _clean_string_list(getattr(args, "exclude_domains", None))
     max_results = _bounded_int(getattr(args, "max_results", 7), 7, 1, 12)
+    # The session deadline follows the engine's attempt cap and request deadline.
+    timeout_seconds = dispatch_timeout(timeout_seconds)
     payload = _call_donsetch_tool(
         binary,
         "web_search",
@@ -817,7 +858,7 @@ def _fetch_failure(structured: dict[str, Any], url: str, status: int) -> dict[st
 def _project_fetch_item(payload: dict[str, Any], fallback_url: str) -> dict[str, Any]:
     structured = payload.get("structured")
     if not isinstance(structured, dict):
-        return {"url": fallback_url, "error": "donsetch_fetch_contract_failed", "status": 0}
+        return {"url": fallback_url, "requested_url": fallback_url, "error": "donsetch_fetch_contract_failed", "status": 0}
     debug = _whitelist_fetch_debug(payload.get("meta") or {})
     observed_url = structured.get("url")
     url = observed_url if isinstance(observed_url, str) and observed_url else fallback_url
@@ -844,9 +885,10 @@ def _project_fetch_item(payload: dict[str, Any], fallback_url: str) -> dict[str,
         or status >= 400
         or not content.strip()
     ):
-        return _fetch_failure(structured, url, status)
+        return {**_fetch_failure(structured, url, status), "requested_url": fallback_url}
     return source_result(
         url,
+        requested_url=fallback_url,
         title=title,
         content=content,
         images=[],
@@ -894,18 +936,50 @@ def execute_extract(
         tier = "auto"
 
     projected = []
+    # The session deadline follows the engine's attempt cap and request deadline.
+    timeout_seconds = dispatch_timeout(timeout_seconds)
     try:
         with DonsetchSession(binary, timeout_seconds) as session:
-            for requested_url in [str(url) for url in urls]:
-                payload = session.call(
-                    "web_fetch",
-                    {
-                        "url": requested_url,
-                        "max_chars": max_chars,
-                        "media": bool(include_images),
-                        "tier": tier,
-                    },
-                )
+            requested_urls = [str(url) for url in urls]
+            for index, requested_url in enumerate(requested_urls):
+                if deadline_passed():
+                    # Fetched pages are kept; no new fetch after the deadline.
+                    projected.append(
+                        {"url": requested_url, "requested_url": requested_url, "error": str(RequestDeadlineExceeded()), "status": 0}
+                    )
+                    continue
+                try:
+                    payload = session.call(
+                        "web_fetch",
+                        {
+                            "url": requested_url,
+                            "max_chars": max_chars,
+                            "media": bool(include_images),
+                            "tier": tier,
+                        },
+                    )
+                except TimeoutError:
+                    if not any(not item.get("error") for item in projected):
+                        raise
+                    projected.append({"url": requested_url, "requested_url": requested_url, "error": "donsetch_timeout", "status": 0})
+                    projected.extend(
+                        {"url": url, "requested_url": url, "error": str(RequestDeadlineExceeded()), "status": 0}
+                        for url in requested_urls[index + 1:]
+                    )
+                    # A late MCP reply can no longer be paired safely. Exit the
+                    # session (and reap its child) without discarding earlier pages.
+                    break
+                except RuntimeError as exc:
+                    if not any(not item.get("error") for item in projected):
+                        raise
+                    # The session failed midway: keep the fetched pages and
+                    # stop instead of sending more calls into a broken process.
+                    projected.append({"url": requested_url, "requested_url": requested_url, "error": str(exc), "status": 0})
+                    projected.extend(
+                        {"url": url, "requested_url": url, "error": f"not tried: {exc}", "status": 0}
+                        for url in requested_urls[index + 1:]
+                    )
+                    break
                 result = _project_fetch_item(payload, requested_url)
                 if include_raw_html and not result.get("error"):
                     # DonSeTch deliberately returns Markdown; do not label it HTML.

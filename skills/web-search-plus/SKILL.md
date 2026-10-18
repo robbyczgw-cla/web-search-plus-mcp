@@ -75,6 +75,13 @@ Useful parameters:
 Extraction refuses private or internal targets (loopback, RFC1918, cloud
 metadata hosts). That is deliberate; do not try to work around it.
 
+`results` has one entry per requested URL, in request order. Match an entry to
+your input by `requested_url`; `url` is where the page was actually fetched
+(redirects, normalization) and can be shared by several inputs. A failed or
+skipped URL carries an `error`, for example `not tried: provider rate limit
+reached` or `not tried: limit of 10 URLs per call reached`; retry those later
+or with another provider.
+
 Example:
 
 ```json
@@ -87,7 +94,7 @@ Example:
 2. `web_extract` the one or two URLs that actually answer the question.
 3. Cite the URLs you used. Say when sources disagree.
 4. If `web_search` returns an error that no provider is configured, tell the
-   user to run `uvx --from web-search-plus-mcp==5.0.1 web-search-plus-mcp status`
+   user to run `uvx --from web-search-plus-mcp==5.1.2 web-search-plus-mcp status`
    and set at least one provider key (see Setup). Do not guess results.
 
 ## Setup (first run)
@@ -109,13 +116,13 @@ Optional: `TAVILY_API_KEY`, `EXA_API_KEY`, `FIRECRAWL_API_KEY`, `PARALLEL_API_KE
 Check what is configured:
 
 ```bash
-uvx --from web-search-plus-mcp==5.0.1 web-search-plus-mcp status
+uvx --from web-search-plus-mcp==5.1.2 web-search-plus-mcp status
 ```
 
 Write a starter `.env` template:
 
 ```bash
-uvx --from web-search-plus-mcp==5.0.1 web-search-plus-mcp setup --preset starter
+uvx --from web-search-plus-mcp==5.1.2 web-search-plus-mcp setup --preset starter
 ```
 
 Full provider list, routing rules, and tool reference:

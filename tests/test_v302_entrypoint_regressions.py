@@ -1083,3 +1083,35 @@ def test_bounded_extract_is_cached_after_limits(tmp_path, monkeypatch):
     assert cached_response.stored_content == material["stored_content"]
 
 
+def test_research_names_why_a_blocked_provider_was_skipped(tmp_path, monkeypatch):
+    # Live with Linkup out of credits: a direct search said "Out of credits", but
+    # research only said "Provider attempt did not return a payload".
+    def tavily(**_kwargs):
+        return _provider_payload("tavily")
+
+    def linkup(**_kwargs):
+        raise ProviderRequestError(
+            "Out of credits: the provider account has no funds left; top it up or remove its key",
+            status_code=429,
+            out_of_credit=True,
+        )
+
+    monkeypatch.setattr(search, "auto_route_provider", lambda _query, _config: _routing())
+    monkeypatch.setattr(providers, "search_tavily", tavily)
+    monkeypatch.setattr(providers, "search_linkup", linkup)
+    monkeypatch.setattr(search, "extract_plus", lambda **_kwargs: {"provider": "fixture-extract", "results": []})
+    config = _runtime_config(tmp_path)
+
+    def research(request_id):
+        request = legacy_request_to_v3(
+            Capability.SEARCH,
+            {"query": "compare alpha beta", "provider": "auto", "mode": "research",
+             "count": 5, "research_time_budget": 5.0, "no_cache": True},
+            request_id=request_id,
+        )
+        return json.dumps(search.execute_v3_request(request, search._search_adapter(), config).legacy_payload)
+
+    assert "Out of credits" in research("research-quota-first")
+    second = research("research-quota-blocked")  # linkup is now skipped as quota-blocked
+    assert "did not return a payload" not in second
+    assert "Out of credits or quota at its last call" in second

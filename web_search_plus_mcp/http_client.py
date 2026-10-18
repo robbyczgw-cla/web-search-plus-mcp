@@ -6,6 +6,7 @@ from email.utils import parsedate_to_datetime
 from http.client import IncompleteRead
 import http.client
 from contextlib import contextmanager
+from contextvars import ContextVar
 import io
 import json
 import math
@@ -326,33 +327,85 @@ def _pooled_open(req: Request, timeout: float):
         raise URLError(exc) from exc
 
 
-_TIMEOUT_CAP = threading.local()
+# Context variables, not thread-locals: DaemonTask copies the creating
+# context, so a cap or deadline set around a provider attempt also reaches the
+# worker threads a batch adapter starts (Linkup fetches each URL on its own).
+_TIMEOUT_CAP: ContextVar[float | None] = ContextVar("wsp_request_timeout_cap", default=None)
+_REQUEST_DEADLINE: ContextVar[float | None] = ContextVar("wsp_request_deadline", default=None)
+
+# Per-URL error text for batch URLs skipped because the request deadline passed.
+NOT_TRIED_DEADLINE_ERROR = "not tried: request ran out of time"
 
 
 @contextmanager
 def request_timeout_cap(seconds: float | None):
-    """Cap the socket timeout of every provider request made in this thread.
+    """Cap the socket timeout of every provider request made in this context.
 
     Providers pass their own timeouts (often 30 s). When a fallback provider
     is waiting, a hung call should give up sooner; the engine wraps such an
     attempt in this cap instead of threading a timeout through every adapter.
     """
-    previous = getattr(_TIMEOUT_CAP, "seconds", None)
-    _TIMEOUT_CAP.seconds = seconds
+    token = _TIMEOUT_CAP.set(seconds)
     try:
         yield
     finally:
-        _TIMEOUT_CAP.seconds = previous
+        _TIMEOUT_CAP.reset(token)
 
 
-def _capped_timeout(timeout: float) -> float:
-    cap = getattr(_TIMEOUT_CAP, "seconds", None)
-    return min(timeout, cap) if cap else timeout
+@contextmanager
+def request_deadline_scope(deadline_monotonic: float | None):
+    """Bind the request deadline (``time.monotonic()`` value) for provider calls.
+
+    The attempt engine enters this around each provider operation. No new HTTP
+    request starts after the deadline: the shared client refuses it, and batch
+    adapters ask :func:`deadline_passed` before each per-URL request. A nested
+    scope can only tighten the deadline, never extend it.
+    """
+    outer = _REQUEST_DEADLINE.get()
+    if deadline_monotonic is None or (outer is not None and outer <= deadline_monotonic):
+        deadline_monotonic = outer
+    token = _REQUEST_DEADLINE.set(deadline_monotonic)
+    try:
+        yield
+    finally:
+        _REQUEST_DEADLINE.reset(token)
+
+
+def remaining_seconds() -> float | None:
+    """Seconds left until the request deadline, or None without a deadline."""
+    deadline = _REQUEST_DEADLINE.get()
+    if deadline is None:
+        return None
+    return deadline - time.monotonic()
+
+
+def deadline_passed() -> bool:
+    """True once the request deadline is reached; start no new provider call."""
+    remaining = remaining_seconds()
+    return remaining is not None and remaining <= 0
+
+
+def dispatch_timeout(timeout: float) -> float:
+    """Socket timeout for a provider call about to start, or raise if none may start.
+
+    Applies the per-attempt cap and the time left until the request deadline.
+    Adapters with their own transport call this right before each dispatch.
+    Raises :class:`RequestDeadlineExceeded` once the deadline has passed.
+    """
+    cap = _TIMEOUT_CAP.get()
+    if cap:
+        timeout = min(timeout, cap)
+    remaining = remaining_seconds()
+    if remaining is not None:
+        if remaining <= 0:
+            raise RequestDeadlineExceeded()
+        timeout = min(timeout, remaining)
+    return timeout
 
 
 def urlopen(req, timeout: float = 30):
     """Drop-in for urllib.request.urlopen: HTTP(S) only, same-origin redirects only."""
-    timeout = _capped_timeout(timeout)
+    timeout = dispatch_timeout(timeout)
     url = req.full_url if isinstance(req, Request) else str(req)
     if _origin(url) is None:
         raise ProviderRequestError("Provider URL must be an http(s) URL.", transient=False)
@@ -385,6 +438,51 @@ class ProviderRequestError(Exception):
         # The provider account is empty. status_code stays the provider's real
         # status (Linkup answers 429, Serper 400); this flag drives QUOTA.
         self.out_of_credit = out_of_credit
+
+
+class ProviderBatchStopped(Exception):
+    """A provider-wide error (rate limit, quota, auth) stopped a batch midway.
+
+    ``payload`` keeps the pages fetched before the stop, with error items for
+    the rest. The attempt engine records ``cause`` for retry and circuit state
+    like any failure, keeps the payload and never retries the batch: that
+    would pay again for pages already fetched.
+    """
+
+    def __init__(self, cause: BaseException, payload: dict):
+        super().__init__(str(cause))
+        self.cause = cause
+        self.payload = payload
+
+
+class RequestDeadlineExceeded(ProviderRequestError, TimeoutError):
+    """No provider request was started: the request deadline had passed.
+
+    A TimeoutError too, so the v3 error taxonomy reports TIMEOUT.
+    """
+
+    def __init__(self, message: str = NOT_TRIED_DEADLINE_ERROR):
+        super().__init__(message, transient=False)
+
+
+def is_request_deadline_abort(
+    error: BaseException, *, deadline_monotonic: float | None = None
+) -> bool:
+    """Caller exhaustion is not evidence that the provider is unhealthy."""
+    if isinstance(error, RequestDeadlineExceeded):
+        return True
+    remaining = (
+        remaining_seconds() if deadline_monotonic is None
+        else deadline_monotonic - time.monotonic()
+    )
+    return remaining is not None and remaining <= 0 and (
+        isinstance(error, TimeoutError)
+        or (
+            isinstance(error, ProviderRequestError)
+            and error.transient
+            and error.status_code is None
+        )
+    )
 
 
 def _response_header(response, name: str) -> str:
@@ -593,7 +691,7 @@ def _raise_provider_http_error(error: HTTPError) -> None:
 
 def make_request(url: str, headers: dict, body: dict, timeout: int = 30) -> dict:
     """Make HTTP POST request and return JSON response."""
-    timeout = _capped_timeout(timeout)
+    timeout = dispatch_timeout(timeout)
     # Ensure User-Agent is set (required by some APIs like Exa/Cloudflare)
     if "User-Agent" not in headers:
         headers["User-Agent"] = DEFAULT_USER_AGENT
@@ -603,6 +701,8 @@ def make_request(url: str, headers: dict, body: dict, timeout: int = 30) -> dict
     try:
         with urlopen(req, timeout=timeout) as response:
             return _read_json_response(response)
+    except RequestDeadlineExceeded:
+        raise
     except HTTPError as e:
         _raise_provider_http_error(e)
         raise
@@ -642,7 +742,7 @@ def make_get_request(
     ``capture_headers`` names response headers to copy into
     ``response_headers``, on success and on HTTP errors.
     """
-    timeout = _capped_timeout(timeout)
+    timeout = dispatch_timeout(timeout)
     if "User-Agent" not in headers:
         headers["User-Agent"] = DEFAULT_USER_AGENT
     req = Request(url, headers=headers, method="GET")
@@ -651,6 +751,8 @@ def make_get_request(
         with urlopen(req, timeout=timeout) as response:
             _capture_headers(response, capture_headers, response_headers)
             return _read_json_response(response)
+    except RequestDeadlineExceeded:
+        raise
     except HTTPError as e:
         _capture_headers(e, capture_headers, response_headers)
         _raise_provider_http_error(e)

@@ -35,7 +35,8 @@ from .bounded_context_v3 import (
 )
 from .attempt_engine_v3 import AttemptEngine, provider_attempt_context, request_deadline
 from .errors_v3 import ProviderContractFailure
-from .http_client import ProviderRequestError
+from .http_client import NOT_TRIED_DEADLINE_ERROR, RequestDeadlineExceeded
+from .http_client import ProviderBatchStopped, ProviderRequestError
 # Provider dispatch resolves implementations late through this module.
 from . import providers as _providers
 from .provider_adapter_protocol import validate_adapter_result
@@ -45,7 +46,7 @@ from .provider_registry import (
     EXTRACT_PROVIDER_IDS,
     PROVIDER_SPECS,
 )
-from .compat_v3 import legacy_request_to_v3, v3_response_to_legacy_extract
+from .compat_v3 import legacy_request_to_v3, normalize_provider_id, v3_response_to_legacy_extract
 from .contract_v3 import Capability, RequestV3, ResponseV3, SkipReason
 from .orchestrator_v3 import (
     CapabilityAdapter,
@@ -55,7 +56,7 @@ from .orchestrator_v3 import (
 )
 from .runtime_v3 import response_from_legacy
 from .state_store_v3 import SQLiteStateStore
-from .urls import canonical_url
+from .extract_match import match_extract_items
 
 
 EXTRACT_PROVIDER_PRIORITY = list(EXTRACT_PROVIDER_IDS)
@@ -310,6 +311,12 @@ def _validate_extract_urls(urls: List[str], config: Optional[Dict[str, Any]] = N
     final fetcher; that needs a fetcher-side egress policy.
     """
     config = config or {}
+    # Scheme spelling and surrounding whitespace do not change URL policy.
+    urls = [
+        u.strip().partition(":")[0].lower() + ":" + u.strip().partition(":")[2]
+        if isinstance(u, str) and ":" in u else u
+        for u in urls
+    ]
     invalid = [u for u in urls if not (isinstance(u, str) and u.startswith(("http://", "https://")))]
     if invalid:
         raise ValueError(f"Invalid URL(s) — must start with http:// or https://: {invalid}")
@@ -378,29 +385,12 @@ def _extract_item_usable(item: Any) -> bool:
 def _match_extract_items(urls: List[str], items: List[Any]) -> List[Optional[Dict[str, Any]]]:
     """Pair provider result items with the requested URLs, one item per URL.
 
-    Exact URL first, then canonical URL, then the remaining items in order
-    (providers report redirect targets). URLs left without an item get None.
+    Exact URL first, then canonical URL, then the source URL the provider
+    reports (redirect targets, Firecrawl ``sourceURL``). An item with none of
+    these is never handed to a URL by position; URLs left without an item get
+    None and stay open for fallback.
     """
-    candidates = [item for item in items if isinstance(item, dict)]
-    matched: List[Optional[Dict[str, Any]]] = [None] * len(urls)
-    used = set()
-    for key in (str, canonical_url):
-        for position, url in enumerate(urls):
-            if matched[position] is not None:
-                continue
-            wanted = key(url)
-            if not wanted:
-                continue
-            for index, item in enumerate(candidates):
-                if index not in used and key(str(item.get("url") or "")) == wanted:
-                    matched[position] = item
-                    used.add(index)
-                    break
-    leftovers = [item for index, item in enumerate(candidates) if index not in used]
-    for position in range(len(urls)):
-        if matched[position] is None and leftovers:
-            matched[position] = leftovers.pop(0)
-    return matched
+    return match_extract_items(urls, items)[0]
 
 
 def _extract_error_item(url: str, error: str, item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -456,12 +446,15 @@ def _extract_plus_core(
         raise ValueError(f"Unknown extract provider: {selected}")
     # provider_dispatch.EXTRACT_DISPATCH builds provider kwargs; this module is
     # passed so adapters resolve extract_<provider> late.
-    result = validate_adapter_result(
-        selected,
-        "extract",
-        adapter(_providers, selected, urls, key, output_format, include_images,
-                include_raw_html, render_js, config, keyless_allowed),
-    )
+    stopped: Optional[ProviderBatchStopped] = None
+    try:
+        raw_result = adapter(_providers, selected, urls, key, output_format, include_images,
+                             include_raw_html, render_js, config, keyless_allowed)
+    except ProviderBatchStopped as exc:
+        # A provider-wide error ended the batch: check the fetched pages like
+        # any result, then hand them back on the exception.
+        stopped, raw_result = exc, exc.payload
+    result = validate_adapter_result(selected, "extract", raw_result)
     from .jev_optional import filter_extract_results
 
     res_list, jev_meta = filter_extract_results(result.get("results") or [], config=config)
@@ -471,12 +464,19 @@ def _extract_plus_core(
         if not res_list:
             raise ProviderContractFailure("jev_extract_quality_rejected")
     if not any(_extract_item_usable(r) for r in res_list):
+        if stopped is not None:
+            raise stopped.cause
+        if res_list and all(r.get("error") == NOT_TRIED_DEADLINE_ERROR for r in res_list):
+            raise RequestDeadlineExceeded()
         # Empty lists and blank pages are failures too, so they fall back
         # and are never cached as a success.
         raise ProviderContractFailure("all_urls_failed")
     result["routing"] = {"provider": selected, "requested_provider": selected, "fallback_used": False, "fallback_errors": []}
     if profile_deviation:
         result.setdefault("metadata", {})["profile_deviation"] = True
+    if stopped is not None:
+        stopped.payload = result
+        raise stopped
     return result
 
 
@@ -532,6 +532,7 @@ def _execute_extract_v3(
                 "provider": requested,
                 "results": [],
                 "error": "; ".join(messages),
+                "refused_urls": [url for url, _validated, error in checked if error is not None],
                 "requested_provider": requested,
             },
             stages=(),
@@ -564,6 +565,8 @@ def _execute_extract_v3(
     succeeded: Dict[int, Dict[str, Any]] = {}
     failed: Dict[int, Dict[str, Any]] = {}
     serving_providers = []
+    provider_payloads: Dict[str, Dict[str, Any]] = {}
+    unmatched_results: List[Dict[str, Any]] = []
 
     for provider in plan.candidate_order:
         context = provider_attempt_context(
@@ -583,30 +586,60 @@ def _execute_extract_v3(
         batch = [urls[position] for position in pending]
 
         def operation(current_provider=provider, batch=batch):
-            result = _extract_plus_core(
-                urls=batch,
-                provider=current_provider,
-                output_format=str(options.get("output_format", "markdown")),
-                include_images=bool(options.get("include_images", False)),
-                include_raw_html=bool(options.get("include_raw_html", False)),
-                render_js=bool(options.get("render_js", False)),
-                config=dict(config),
-                urls_validated=True,
-            )
+            stopped = None
+            try:
+                result = _extract_plus_core(
+                    urls=batch,
+                    provider=current_provider,
+                    output_format=str(options.get("output_format", "markdown")),
+                    include_images=bool(options.get("include_images", False)),
+                    include_raw_html=bool(options.get("include_raw_html", False)),
+                    render_js=bool(options.get("render_js", False)),
+                    config=dict(config),
+                    urls_validated=True,
+                )
+            except ProviderBatchStopped as exc:
+                stopped, result = exc, exc.payload
             if result.get("error"):
                 raise ProviderRequestError(str(result["error"]), transient=False)
+            matched, unmatched = match_extract_items(batch, result.get("results") or [])
+            if not any(_extract_item_usable(item) for item in matched):
+                unmatched_results.extend(
+                    {"provider": current_provider, "url": str(item.get("url") or ""),
+                     "has_content": _extract_item_usable(item)}
+                    for item in unmatched
+                )
+                if stopped is not None:
+                    raise stopped.cause
+                raise ProviderContractFailure("all_urls_unmatched_or_failed")
+            if stopped is not None:
+                # The engine records the failure and keeps the fetched pages;
+                # the URLs left open go to the next provider below.
+                raise stopped
             return result
 
         attempted = engine.execute(context, operation)
         receipts.append(attempted.receipt)
         if attempted.payload is not None:
+            provider_payloads[provider] = attempted.payload
             if payload is None:
                 payload = attempted.payload
                 successful_provider = provider
             still_pending = []
-            for position, item in zip(
-                pending, _match_extract_items(batch, attempted.payload.get("results") or [])
-            ):
+            matched_items, unmatched_items = match_extract_items(
+                batch, attempted.payload.get("results") or []
+            )
+            # An item that answers no requested URL is not attributed to one
+            # by position: the URL stays open and the item is only noted.
+            unmatched_results.extend(
+                {
+                    "provider": provider,
+                    "url": str(item.get("url") or ""),
+                    "has_content": _extract_item_usable(item),
+                }
+                for item in unmatched_items
+            )
+            for position, item in zip(pending, matched_items):
                 if _extract_item_usable(item):
                     succeeded[position] = (provider, item)
                     if provider not in serving_providers:
@@ -615,6 +648,9 @@ def _execute_extract_v3(
                     failed[position] = _extract_error_item(urls[position], _EMPTY_EXTRACT_ERROR, item)
                     still_pending.append(position)
             pending = still_pending
+            if attempted.receipt.error is not None:
+                # Partial attempt stopped by a provider-wide error.
+                fallback_errors.append({"provider": provider, "error": attempted.receipt.error.error_class.value})
             continue
         error_code = (
             "all_urls_failed"
@@ -628,7 +664,12 @@ def _execute_extract_v3(
         )
         fallback_errors.append({"provider": provider, "error": error_code})
 
-    if payload is not None and not succeeded:
+    if serving_providers:
+        # Provenance belongs to the last contributor, not the first provider
+        # to return a payload (which may contain only unrelated items).
+        successful_provider = serving_providers[-1]
+        payload = {**provider_payloads[successful_provider], "provider": successful_provider}
+    elif payload is not None:
         payload = None
     if payload is None:
         payload = {
@@ -637,35 +678,44 @@ def _execute_extract_v3(
             "error": "All extraction providers failed",
             "fallback_errors": fallback_errors,
         }
+        refused_urls = [url for url, _validated, error in checked if error is not None]
+        if refused_urls:
+            payload["refused_urls"] = refused_urls
+        if unmatched_results:
+            payload["unmatched_results"] = unmatched_results
         add_provider_setup_guidance(payload, "extract", list(plan.candidate_order), config,
                                     requested_provider=str(request.routing.get("provider") or "auto"))
     else:
-        if pending or len(serving_providers) > 1 or len(urls) < len(checked):
-            # Rebuild the result list in requested-URL order: content from
-            # whichever provider served each URL, error items for the rest.
-            merged = len(serving_providers) > 1
-            results = []
-            positions = iter(range(len(urls)))
-            for requested_url, _validated, error in checked:
-                if error is not None:
-                    results.append(_extract_error_item(requested_url, error))
-                    continue
-                position = next(positions)
-                if position in succeeded:
-                    provider, item = succeeded[position]
-                    if merged:
-                        # Ties each item to the attempt that produced it.
-                        item = {**item, "provider": provider}
-                else:
-                    item = failed.get(position) or _extract_error_item(urls[position], _EMPTY_EXTRACT_ERROR)
-                results.append(item)
-            payload = {**payload, "results": results}
-            if merged:
-                # The receipt names one selected provider: the last one the
-                # fallback reached. Earlier contributors are recorded as
-                # attempts with insufficient results.
-                successful_provider = serving_providers[-1]
-                payload["provider"] = successful_provider
+        # Rebuild the result list in requested-URL order, one entry per
+        # requested URL: content from whichever provider served it, error
+        # items for the rest. Providers may reorder, drop, rewrite or
+        # repeat URLs; the caller sees none of that.
+        merged = len(serving_providers) > 1
+        results = []
+        positions = iter(range(len(urls)))
+        for requested_url, _validated, error in checked:
+            if error is not None:
+                results.append(_extract_error_item(requested_url, error))
+                continue
+            position = next(positions)
+            if position in succeeded:
+                provider, item = succeeded[position]
+                if merged:
+                    # Ties each item to the attempt that produced it.
+                    item = {**item, "provider": provider}
+            else:
+                item = failed.get(position) or _extract_error_item(urls[position], _EMPTY_EXTRACT_ERROR)
+            if isinstance(item, dict) and item.get("requested_url") == item.get("url"):
+                # Adapters stamp requested_url only so the matcher can pair
+                # redirects. Without a redirect it says nothing new; keeping
+                # it would change tool output and make the item uncacheable.
+                item = {key: value for key, value in item.items() if key != "requested_url"}
+            results.append(item)
+        payload = {**payload, "results": results}
+        if pending and unmatched_results:
+            # Content a provider returned for no requested URL. It is not
+            # attributed to one; this note keeps it from vanishing silently.
+            payload["unmatched_results"] = unmatched_results
         # Failures after the selected provider (retrying leftover URLs) stay
         # in the attempt receipts; fallback_errors lists what preceded it.
         selected_index = plan.candidate_order.index(successful_provider)
@@ -1167,17 +1217,30 @@ def extract_plus(
     spans_query: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
     max_wall_time_ms: Optional[int] = None,
+    request_id: Optional[str] = None,
 ) -> dict:
-    """Legacy extract projection over the sole native v3 execution path."""
-    selected = provider or "auto"
+    """Legacy extract projection over the sole native v3 execution path.
+
+    ``request_id`` names the request budget scope; a caller such as Research
+    passes it to file the extraction under its own request.
+    """
+    selected = normalize_provider_id(provider)
     if not urls:
         return {"provider": selected, "results": [], "error": "No URLs provided", "requested_provider": selected}
+    if selected != "auto" and selected not in EXTRACT_PROVIDER_IDS:
+        valid = ", ".join(["auto", *EXTRACT_PROVIDER_IDS])
+        return {
+            "provider": selected,
+            "results": [],
+            "error": f"unknown extraction provider {provider!r}. Valid providers: {valid}",
+            "requested_provider": selected,
+        }
     runtime_config = config or load_config()
     request = legacy_request_to_v3(
         Capability.EXTRACT,
         {
             "urls": urls,
-            "provider": provider,
+            "provider": selected,
             "output_format": output_format,
             "include_images": include_images,
             "include_raw_html": include_raw_html,
@@ -1186,6 +1249,7 @@ def extract_plus(
             "spans_query": spans_query,
             "max_wall_time_ms": max_wall_time_ms,
         },
+        request_id=request_id,
     )
     execution = execute_v3_request(
         request,
@@ -1194,4 +1258,22 @@ def extract_plus(
     )
     legacy = v3_response_to_legacy_extract(execution)
     _resolve_full_text_paths(legacy, runtime_config)
+    _append_omitted_url_errors(legacy, prepare_extract_request(request, runtime_config))
     return legacy
+
+
+def _append_omitted_url_errors(legacy: Dict[str, Any], plan: Any) -> None:
+    """One result per requested URL: URLs past the fan-out cap get an error row.
+
+    The engine only processes the first ``max_urls`` URLs; the rest used to
+    vanish from the tool output with just an internal warning.
+    """
+    if not plan.omitted_urls:
+        return
+    results = legacy.get("results")
+    if not isinstance(results, list):
+        results = []
+        legacy["results"] = results
+    message = f"not tried: limit of {plan.max_urls} URLs per call reached"
+    for url in plan.omitted_urls:
+        results.append({"url": url, "title": "", "content": None, "error": message})

@@ -13,9 +13,13 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 5.0.1` matches Hermes Web Search Plus 5.0.1.
+`web-search-plus-mcp 5.1.2` carries the engine fixes of Hermes Web Search Plus 5.1.2 (released 2026-10-18).
 
-### What's new in 5.0.1
+### What's new in 5.1.2
+
+5.1.1 was never released, so this covers everything since 5.0.1. No provider request starts after the request deadline, `web_extract` returns exactly one result per requested URL in request order, and each result now carries `requested_url`, the URL you passed in (`url` is where the page was fetched). A rate limit, out-of-credit or auth error partway through a batch keeps the pages already fetched and marks the rest `not tried: …` instead of failing the whole batch, and URLs past the per-call limit of 10 get their own `not tried` row instead of disappearing. The per-request budget no longer depends on SQLite, half-open circuit probes release their lease, and the search cache is keyed by the credentials that produced a result. Brave accepts queries up to its documented 600 characters and 75 words. Hermes-only changes (profile-scoped keys, native backend, `hermes` commands) are not part of this package. See [docs/RELEASE_5_1_2.md](docs/RELEASE_5_1_2.md).
+
+### Earlier: 5.0.1
 
 Bug fixes for 5.0.0: everyday words like "synthesizer" no longer trip the source-only filter, one bad URL no longer sinks a `web_extract` batch (each failed URL gets its own error), empty pages fall back to the next provider, rate-limit waits are capped at 30 s, long queries are shortened for Brave, and auto routing off or a private SearXNG URL no longer break every search. See [docs/RELEASE_5_0_1.md](docs/RELEASE_5_0_1.md).
 
@@ -351,6 +355,8 @@ Example MCP arguments:
   "format": "markdown"
 }
 ```
+
+Result shape: `results` holds one entry per requested URL, in request order. Each entry has `url` (where the page was actually fetched, after redirects and normalization), `requested_url` (the URL you passed in, so you can match results to inputs without relying on order), `content`, and `error` when the URL failed. URLs past the per-call limit (default 10) and URLs a provider never reached after a rate-limit, credit or auth error come back as their own entries with `error: "not tried: …"`; pages fetched before such an error are kept. `requested_url` is additive: `url` is unchanged.
 
 ## 🧠 Classic Routing v2 examples
 

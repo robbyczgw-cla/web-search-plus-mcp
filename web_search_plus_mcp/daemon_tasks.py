@@ -7,10 +7,15 @@ budget-bounded caller returns on time, but a CLI/subprocess invocation then
 stalls at exit — exactly the path web-search-plus uses for its subprocess
 fallback. Daemon threads are abandoned at interpreter shutdown instead, so
 the time budget bounds both the function return and the process lifetime.
+
+Each task runs in a copy of the creating thread's ``contextvars`` context, so
+host state bound to the caller (a host secret scope) reaches the
+provider calls made on the worker thread.
 """
 
 from __future__ import annotations
 
+import contextvars
 import threading
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any, Callable, Optional
@@ -25,9 +30,10 @@ class DaemonTask:
         self._exc: Optional[BaseException] = None
         self._callback_lock = threading.Lock()
         self._callbacks = []
+        context = contextvars.copy_context()
         self._thread = threading.Thread(
-            target=self._run,
-            args=(fn, args, kwargs),
+            target=context.run,
+            args=(self._run, fn, args, kwargs),
             daemon=True,
             name="wsp-daemon-task",
         )

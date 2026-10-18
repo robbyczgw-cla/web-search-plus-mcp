@@ -20,7 +20,7 @@ class QueryLimit(NamedTuple):
 
 # Only limits the provider documents. Do not add a guess.
 PROVIDER_QUERY_LIMITS: Dict[str, QueryLimit] = {
-    "brave": QueryLimit(chars=400, words=50),  # Brave Web Search API: q
+    "brave": QueryLimit(chars=600, words=75),  # Brave Web Search API: q (max 600 chars, 75 words)
 }
 
 

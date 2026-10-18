@@ -121,6 +121,38 @@ def normalize_query_for_cache(query: str) -> str:
     return " ".join(unicodedata.normalize("NFC", query).casefold().split())
 
 
+def search_credential_context(providers, config: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    """Opaque effective credential/opt-in identities, including missing keys.
+
+    Use the circuit store's local HMAC secret so neither cache keys nor cache
+    envelopes disclose credentials or permit offline guesses of small secrets.
+    Anonymous providers share evidence only when their opt-in also agrees.
+    """
+    from .config import get_api_key, keyless_public_allowed, load_config
+    from .credentials import is_secret_scope_error
+    from .state_store_v3 import SQLiteStateStore
+
+    config = load_config() if config is None else config
+    settings = config.get("v3") or {}
+    cache_dir = Path(settings.get("cache_dir") or CACHE_DIR)
+    store = SQLiteStateStore(settings.get("state_path") or cache_dir / "v3" / "state.sqlite3")
+    identities = {}
+    for provider in sorted(set(providers)):
+        try:
+            credential = get_api_key(provider, config)
+        except ValueError as exc:
+            if is_secret_scope_error(exc):
+                raise
+            # Invalid/blocked endpoints are not a configured credential.
+            credential = None
+        material = json.dumps({
+            "credential": credential or None,
+            "public": keyless_public_allowed(provider, config),
+        }, sort_keys=True)
+        identities[provider] = store.fingerprint_credential(material)
+    return identities
+
+
 def _build_cache_payload(query: str, provider: str, max_results: int, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Build normalized payload used for cache key hashing."""
     payload = {
@@ -130,6 +162,8 @@ def _build_cache_payload(query: str, provider: str, max_results: int, params: Op
     }
     if params:
         payload.update(params)
+    # Resolve at lookup/write time, never trust a caller-supplied fingerprint.
+    payload["credential_scope"] = search_credential_context([provider])
     return payload
 
 

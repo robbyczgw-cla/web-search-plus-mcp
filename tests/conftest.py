@@ -135,3 +135,13 @@ def _default_to_subprocess_dispatch(request, monkeypatch):
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "inprocess: run MCP tool calls through the in-process engine")
+
+
+@pytest.fixture(autouse=True)
+def _reset_secret_resolver():
+    """A test that installs a credentials resolver must not leak it into the next test."""
+    from web_search_plus_mcp import credentials
+
+    before = credentials.get_secret_resolver()
+    yield
+    credentials.set_secret_resolver(before)

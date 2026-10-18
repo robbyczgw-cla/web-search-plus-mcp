@@ -204,3 +204,49 @@ def test_last_resort_probe_answers_when_every_candidate_is_circuit_open(tmp_path
     assert race.receipts[0].decision == "attempted"
     assert race.receipts[1].skip_reason is SkipReason.CIRCUIT_OPEN
     assert store.admit(contexts["brave"].circuit_key, now=int(time.time())).circuit_state is CircuitState.CLOSED
+
+
+def test_last_resort_probe_keeps_failure_counts_until_it_succeeds(tmp_path):
+    search = importlib.import_module("web_search_plus_mcp.search")
+
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    engine = AttemptEngine(store, max_attempts=1)
+    context = AttemptContext(
+        provider="brave",
+        capability=Capability.SEARCH,
+        endpoint="provider://brave/search",
+        credential_fingerprint="fp",
+        budget_scope="req",
+        budget_window="request",
+        budget_limit_units=0,
+    )
+    now = int(time.time())
+    for _ in range(3):
+        store.record_failure(
+            context.circuit_key, ErrorClass.TRANSIENT, now=now, retry_after_seconds=3600
+        )
+    calls = []
+
+    def operation_for(_name):
+        def op():
+            calls.append(1)
+            raise ProviderRequestError("boom", status_code=503, transient=True)
+        return op
+
+    race = search._Race(None, None, [], [])
+    # Budget-blocked probe: nothing ran, so the failure history must survive.
+    search._last_resort_probe(
+        engine, store, "brave", {"brave": context}, operation_for, race
+    )
+    assert calls == []
+    assert store.get_circuit(context.circuit_key, ErrorClass.TRANSIENT).failure_count == 3
+
+    # A probe that runs and fails keeps counting instead of starting from zero.
+    context = AttemptContext(
+        **{**context.__dict__, "budget_limit_units": 3}
+    )
+    search._last_resort_probe(
+        engine, store, "brave", {"brave": context}, operation_for, race
+    )
+    assert calls == [1]
+    assert store.get_circuit(context.circuit_key, ErrorClass.TRANSIENT).failure_count == 4

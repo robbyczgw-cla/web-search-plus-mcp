@@ -28,9 +28,21 @@ from .errors import (
     ProviderStartupDiagnostic,
 )
 try:
-    from web_search_plus_mcp.http_client import ProviderRequestError
+    from web_search_plus_mcp.http_client import (
+        ProviderRequestError,
+        RequestDeadlineExceeded,
+        deadline_passed,
+        dispatch_timeout,
+        remaining_seconds,
+    )
 except ImportError:  # pragma: no cover - flat test/script layout
-    from http_client import ProviderRequestError
+    from http_client import (
+        ProviderRequestError,
+        RequestDeadlineExceeded,
+        deadline_passed,
+        dispatch_timeout,
+        remaining_seconds,
+    )
 
 __all__ = [
     "DuplicateProviderError",
@@ -43,11 +55,15 @@ __all__ = [
     "ProviderSDKError",
     "ProviderSpec",
     "ProviderStartupDiagnostic",
+    "RequestDeadlineExceeded",
     "SearchExecute",
+    "deadline_passed",
+    "dispatch_timeout",
     "extract_result",
     "make_extract_result",
     "make_search_result",
     "register_provider",
+    "remaining_seconds",
     "search_result",
     "source_result",
 ]
