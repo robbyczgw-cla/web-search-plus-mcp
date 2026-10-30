@@ -151,7 +151,8 @@ def test_unsupported_argv_falls_back_to_subprocess(monkeypatch):
     monkeypatch.setattr(server.subprocess, "run", fake_run)
     payload = _call("web_search", {"query": "q", "provider": "serper"})
     assert payload["via"] == "subprocess"
-    assert calls["cmd"][1] == str(server.SEARCH_SCRIPT)
+    # search.py has package-relative imports, so it must run as a module.
+    assert calls["cmd"][1:3] == ["-m", "web_search_plus_mcp.search"]
 
 
 def test_force_subprocess_env_restores_old_path(monkeypatch):
@@ -194,3 +195,23 @@ def test_concurrent_calls_do_not_cross_results(monkeypatch):
     assert echoes == [f"q{i}" for i in range(20)]
     # Calls overlap instead of serialising (20 x 50 ms would be 1 s).
     assert elapsed < 0.8
+
+
+@pytest.mark.parametrize("tool,arguments", [
+    ("web_search", {"query": "python release notes", "provider": "serper"}),
+    ("web_extract", {"urls": ["https://example.org/"], "provider": "serper"}),
+])
+def test_forced_subprocess_really_runs_search_py(tool, arguments, monkeypatch, tmp_path):
+    # No fake subprocess.run: a real child interpreter imports the package. Before
+    # 5.1.5 it ran `python search.py`, which died on the relative imports, and every
+    # call answered "Web Search Plus subprocess failed." No network: Serper has no key.
+    monkeypatch.setenv("WSP_FORCE_SUBPROCESS", "1")
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.delenv("SERPER_API_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
+    payload = _call(tool, arguments)
+    text = json.dumps(payload)
+    assert "subprocess failed" not in text
+    assert "serper" in text.lower()
+    assert "not configured" in text.lower() or "missing api key" in text.lower()

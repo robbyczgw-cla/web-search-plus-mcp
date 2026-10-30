@@ -523,6 +523,9 @@ def test_version_detection_classifies_missing_tested_compatible_and_incompatible
     assert tested["tested_version"] == "4.10.3"
     assert "api_key" not in tested
 
+    older = module["inspect_donsetch_readiness"](binary=_version_bin("4.7.0"))
+    assert older["compatibility"] == "compatible_unverified"
+
     other = module["inspect_donsetch_readiness"](binary=_version_bin("4.2.8"))
     assert other["compatibility"] == "compatible_unverified"
     assert other["version"] == "4.2.8"
@@ -870,3 +873,13 @@ def test_donsetch_fetch_failure_drops_malformed_codes():
     payload = {"structured": {"content_ok": False, "code": "x" * 200, "errorKind": "bad kind!"}, "text": "", "meta": {}}
     item = module["_project_fetch_item"](payload, "https://example.com/")
     assert "donsetch_code" not in item and "donsetch_error_kind" not in item
+
+
+def test_handshake_sends_the_web_search_plus_version_not_the_donsetch_pin():
+    # #167 point 5: clientInfo.version is the client's (WSP's) version.
+    from web_search_plus_mcp.http_client import DEFAULT_USER_AGENT
+
+    _spec, module = _provider()
+    version = module["_wsp_version"]()
+    assert version == DEFAULT_USER_AGENT.rpartition("/")[2]
+    assert version != module["TESTED_VERSION"]

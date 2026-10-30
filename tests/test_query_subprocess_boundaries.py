@@ -13,7 +13,8 @@ def test_subprocess_arguments_preserve_free_text(text, capability, monkeypatch):
     seen = []
 
     def run(cmd, **kwargs):
-        args = search.build_parser({}).parse_args(cmd[2:])
+        assert cmd[1:3] == ["-m", "web_search_plus_mcp.search"]
+        args = search.build_parser({}).parse_args(cmd[3:])
         seen.append(args.query if capability == "search" else args.spans_query)
         return SimpleNamespace(returncode=0, stdout=json.dumps({"results": [], "query": text}), stderr="")
 
