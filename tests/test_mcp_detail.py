@@ -372,3 +372,24 @@ def test_detail_changes_only_output_at_inprocess_boundary(
     assert [[row.get(field) for field in fields] for row in compact["results"]] == [
         [row.get(field) for field in fields] for row in full["results"]
     ]
+
+
+def test_long_provider_snippets_are_capped_in_compact_only():
+    # Real Exa run (2026-10-30): one "snippet" was 21,830 characters and a five-result
+    # compact search came to ~32 KB. Compact caps each snippet like the Hermes display.
+    case = deepcopy(CASES[0])
+    long_text = ("Python 3.14 changelog entry with details " * 600).strip()
+    for row in case["canonical"]["results"]:
+        row["snippet"] = long_text
+    compact = project(case, "compact")
+    full = project(case, "full")
+    for row in compact["results"]:
+        assert len(row["snippet"]) <= server._COMPACT_SNIPPET_CHARS + 80
+        assert "[TRUNCATED: showing first" in row["snippet"]
+    assert all(row["snippet"] == long_text for row in full["results"])
+    size = len(json.dumps(compact, ensure_ascii=False).encode())
+    assert size <= 8 * 1300 + 2000, size
+
+
+def test_short_snippets_are_untouched():
+    assert server._compact_snippet("short text") == "short text"
