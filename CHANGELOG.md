@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [5.1.5] - 2026-10-30
+
+### Fixed
+
+- **DonSeTch works again with DonSeTch 4.7.1 and newer.** With DonSeTch 4.10.3, 5.1.4 answered every explicit `provider: "donsetch"` search with "Provider execution failed": DonSeTch folds results into a `[meta]` text line for clients it does not recognize, and the MCP copy of the adapter had not received the Hermes fixes. The adapter is now the Hermes 5.1.6 one: it asks for the split result shape (`DONSETCH_MCP__TEXT_ONLY=false`), still reads a folded `[meta]` answer, reads the child's output with a thread instead of `select` (which fails on Windows pipes), and sends the Web Search Plus version in the MCP handshake. Tests use recorded DonSeTch 4.7.0 and 4.10.1 answers.
+- **`WSP_FORCE_SUBPROCESS=1` and the subprocess fallback work.** `search.py` was started as a file and stopped on its package-relative imports, so every call returned "Web Search Plus subprocess failed." It now runs as `python -m web_search_plus_mcp.search`. The server tests had replaced `subprocess.run` and never started the real child; a new test does.
+- **A tool call no longer moves your config file.** Choosing the output detail read the config with a stricter check than the engine uses. A config with `"extract_provider_priority": []` (valid, it means the default order) was renamed to `config.json.broken-*` on the first tool call, and the search then ran without your `disabled_providers`. Read paths leave the file alone now, and an empty list means the default order, as in the engine. The `config` command still keeps an invalid file as a `.broken-*` backup before it writes a new one.
+
 ## [5.1.4] - 2026-10-30
 
 ### Fixed
