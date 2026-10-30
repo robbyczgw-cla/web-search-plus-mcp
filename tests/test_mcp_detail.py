@@ -115,7 +115,8 @@ def test_compact_search_shape_dates_and_small_enrichment():
     assert payload["results"][0]["source_type"] == "other"
     assert isinstance(payload["results"][0]["fetch_priority"], str)
     assert "snippet_aggregate" not in payload["results"][0]
-    assert payload["routing"] == {"auto_routed": True, "reason": "none"}
+    # No fallback happened: no misleading "reason": "none" in the compact summary.
+    assert payload["routing"] == {"auto_routed": True}
     assert payload["cached"] is False
 
 

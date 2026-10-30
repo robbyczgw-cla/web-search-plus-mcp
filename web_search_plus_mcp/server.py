@@ -656,8 +656,11 @@ def _compact_payload(
         routing = {}
         if requested_provider is not None:
             routing["auto_routed"] = requested_provider == "auto"
-        if receipt.get("fallback_reason"):
-            routing["reason"] = _short_message(receipt["fallback_reason"])
+        # The receipt's fallback_reason is "none" without a fallback; only a real
+        # fallback is worth a field, and it is named for what it is.
+        fallback_reason = receipt.get("fallback_reason")
+        if fallback_reason and str(fallback_reason).lower() != "none":
+            routing["fallback_reason"] = _short_message(fallback_reason)
         fallback = []
         for attempt in attempts:
             if (
