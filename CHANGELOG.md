@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [5.1.6] - 2026-10-30
+
+### Fixed
+
+- **Failed extractions say why.** A request where no page could be read used to return `results: []` with "Provider returned an invalid response". It now returns one row per URL with a reason (`page not found (HTTP 404)`, `page removed (HTTP 410)`, `the site refused automated access`, `the site could not be reached or timed out`, `<provider> does not support this site`) and a summary such as "Could not read the page: page not found (HTTP 404)", or which providers were tried and how many were not tried because of the per-request attempt limit. Reasons come from Tavily, Exa, Parallel, Linkup and Firecrawl signals; provider text is matched, never copied.
+- **A missing page costs one call.** When a provider reports 404/410 from the site, no other provider is tried for that URL (live: 1 call instead of 3 paid calls).
+- **Extract fallback reaches three providers again.** With another provider waiting, each provider gets one try; a retry used to spend one of the three attempt units.
+- **Firecrawl:** a 404 page came back and was cached as content; its HTTP 403 "we do not support this site" counted as an auth failure and blocked Firecrawl for five minutes for all URLs.
+- Research counts only pages actually read in `extracted_url_count`.
+
+Same engine changes as the Hermes plugin 5.1.7.
+
 ## [5.1.5] - 2026-10-30
 
 ### Fixed
