@@ -11,7 +11,6 @@ count the paid provider calls.
 import asyncio
 import io
 import json
-import socket
 from email.message import Message
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
