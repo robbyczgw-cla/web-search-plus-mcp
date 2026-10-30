@@ -623,6 +623,8 @@ def _compact_payload(
     )
     for index, item in enumerate(projected.get("results") or []):
         result = {key: deepcopy(item[key]) for key in fields if key in item}
+        if capability != "extract" and isinstance(result.get("snippet"), str):
+            result["snippet"] = _compact_snippet(result["snippet"])
         original = originals[index] if index < len(originals) else {}
         observation_id = original.get("representative_observation_id")
         observation = observations.get(observation_id) or {}
@@ -741,6 +743,29 @@ def _compact_payload(
         if reasons:
             compact["provider_errors"] = reasons
     return compact
+
+
+_COMPACT_SNIPPET_CHARS = 1200
+
+
+def _compact_snippet(snippet: str) -> str:
+    """Cap one search snippet for compact output, like the Hermes plugin's display.
+
+    Some providers (Exa, measured 2026-10-30) return whole page sections as a
+    "snippet", up to ~22,000 characters, which made one compact search ~32 KB.
+    The cut falls on a word boundary when that keeps at least half of the limit;
+    the marker says how much was shown. Full mode keeps the original text.
+    """
+    if len(snippet) <= _COMPACT_SNIPPET_CHARS:
+        return snippet
+    flat = " ".join(snippet.split())
+    if len(flat) <= _COMPACT_SNIPPET_CHARS:
+        return flat
+    cut = flat[: _COMPACT_SNIPPET_CHARS + 1].rpartition(" ")[0]
+    if len(cut) < _COMPACT_SNIPPET_CHARS // 2:
+        cut = flat[:_COMPACT_SNIPPET_CHARS]
+    shown = f"{cut} … [TRUNCATED: showing first {len(cut)} of {len(snippet)} characters]"
+    return shown if len(shown) < len(flat) else flat
 
 
 def _project_v3_payload(

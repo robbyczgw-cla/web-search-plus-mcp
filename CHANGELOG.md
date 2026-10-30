@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [5.1.4] - 2026-10-30
+
+### Fixed
+
+- Compact `web_search` output caps each snippet at 1,200 characters (word boundary, with a `[TRUNCATED: showing first N of M characters]` marker), like the Hermes plugin's display. A real Exa search returned a 21,830-character snippet and made one five-result compact response ~32 KB. `detail: "full"` keeps the original text. Found in the release smoke test of the built package; a size test with long provider snippets now guards it.
+
+5.1.3 was tagged and released on GitHub but not published to PyPI; 5.1.4 contains all of it.
+
 ## [5.1.3] - 2026-10-30
 
 
