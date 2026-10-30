@@ -62,6 +62,12 @@ PRESETS = {
 }
 
 CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
+DETAIL_ENV_VAR = "WEB_SEARCH_PLUS_MCP_DETAIL"
+DETAIL_SCHEMA = {
+    "type": "string",
+    "enum": ["compact", "full"],
+    "description": "Response detail: compact by default; full returns the complete v3 contract. Overrides the server default.",
+}
 PROVIDER_ALIASES = {"kilo_perplexity": "kilo-perplexity"}
 RETIRED_ANSWER_PROVIDERS = {"perplexity", "kilo-perplexity"}
 ROUTING_PROVIDER_ORDER = list(DEFAULT_PROVIDER_PRIORITY)
@@ -103,6 +109,7 @@ def _default_config_path() -> Path:
 
 def _default_behavior_config() -> dict[str, Any]:
     return {
+        "mcp": {"detail": "compact"},
         "defaults": {"provider": "serper", "max_results": 5},
         "auto_routing": {
             "enabled": True,
@@ -193,6 +200,9 @@ def _normalize_behavior_config(
     config: dict[str, Any], *, migrate_retired: bool = False
 ) -> dict[str, Any]:
     normalized = _merge_dict(_default_behavior_config(), config or {})
+    mcp = normalized.get("mcp")
+    if not isinstance(mcp, dict) or mcp.get("detail") not in {"compact", "full"}:
+        raise ValueError("mcp.detail must be compact or full")
     defaults = normalized.setdefault("defaults", {})
     default_provider = _canonical_provider(str(defaults.get("provider", "serper")))
     if default_provider in RETIRED_ANSWER_PROVIDERS and migrate_retired:
@@ -282,6 +292,20 @@ def _write_behavior_config(config: dict[str, Any], path: Optional[Path] = None, 
     return path
 
 
+def _resolve_detail(arguments: dict[str, Any]) -> str:
+    """An explicit argument wins over environment, config, and compact."""
+    if "detail" in arguments:
+        detail = arguments["detail"]
+    else:
+        detail = os.environ.get(DETAIL_ENV_VAR)
+        if detail is None:
+            config, _warning = _load_behavior_config()
+            detail = config["mcp"]["detail"]
+    if detail not in ("compact", "full"):
+        raise ValueError("detail must be compact or full")
+    return detail
+
+
 def _truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -345,12 +369,14 @@ def _unsafe_variadic_values(label: str, values: Any) -> Optional[str]:
     return None
 
 
-def _invalid_arguments_payload(message: str) -> list[TextContent]:
+def _invalid_arguments_payload(message: str, *, detail: str = "full") -> list[TextContent]:
     payload = _typed_error_payload(
         code="wsp.request.invalid_arguments",
         message=message,
         error_class="invalid_request",
     )
+    if detail == "compact":
+        payload = _compact_payload(payload, capability="search")
     return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
 
 
@@ -376,12 +402,13 @@ async def list_tools() -> list[Tool]:
             name="web_search",
             description=(
                 "Source-only web search through the Web Search Plus v3 runtime. "
-                "Routes across configured source-result providers and returns additive v3 evidence, "
-                "routing receipts, provider attempts, cache provenance, and typed errors."
+                "Routes across configured source-result providers. Returns compact sources by default; "
+                "detail='full' includes the complete v3 evidence and routing contract."
             ),
             input_schema={
                 "type": "object",
                 "properties": {
+                    "detail": DETAIL_SCHEMA.copy(),
                     "query": {"type": "string", "description": "Search query"},
                     "provider": {
                         "type": "string",
@@ -425,12 +452,13 @@ async def list_tools() -> list[Tool]:
             name="web_extract",
             description=(
                 "Source-only URL extraction through 9 Web Search Plus v3 providers. "
-                "Responses preserve bounded-context limits, truncation warnings, evidence, "
-                "and page-on-demand stored-content references."
+                "Returns bounded page text, truncation warnings and stored-content references. "
+                "Compact by default; detail='full' includes the complete v3 contract."
             ),
             input_schema={
                 "type": "object",
                 "properties": {
+                    "detail": DETAIL_SCHEMA.copy(),
                     "urls": {"type": "array", "items": {"type": "string"}, "description": "URLs to extract"},
                     "provider": {"type": "string", "enum": ["auto", *EXTRACT_PROVIDERS], "default": "auto"},
                     "format": {"type": "string", "enum": ["markdown", "html"], "default": "markdown"},
@@ -548,6 +576,173 @@ def _freshness_from_v3_payload(payload: dict[str, Any]) -> dict[str, Any] | None
     return None
 
 
+def _short_message(value: Any) -> str:
+    if isinstance(value, dict):
+        value = value.get("message") or value.get("code") or value.get("error_class")
+    return " ".join(str(value or "").split())[:240]
+
+
+def _compact_payload(
+    projected: dict[str, Any],
+    *,
+    capability: str,
+    canonical: Optional[dict[str, Any]] = None,
+    requested_provider: Optional[str] = None,
+) -> dict[str, Any]:
+    """Keep model-facing data without repeating the v3 execution evidence."""
+    canonical = canonical or projected
+    compact = {
+        "detail": "compact",
+        "hint": 'Use detail="full" for the complete v3 contract.',
+        "provider": projected.get("provider"),
+        "results": [],
+    }
+    for key in ("query", "status", "error_type", "env_vars", "how_to_fix"):
+        if key in projected:
+            compact[key] = deepcopy(projected[key])
+    error_v3 = projected.get("error_v3") or {}
+    guidance = error_v3.get("details") or {}
+    for key in ("how_to_fix", "env_var", "env_vars", "setup_required"):
+        if key in guidance:
+            compact.setdefault(key, deepcopy(guidance[key]))
+    observations = {
+        item.get("observation_id"): item
+        for item in canonical.get("observations") or []
+        if isinstance(item, dict)
+    }
+    stored = {
+        item.get("observation_id"): item
+        for item in canonical.get("stored_content") or []
+        if isinstance(item, dict)
+    }
+    originals = [item for item in canonical.get("results") or [] if isinstance(item, dict)]
+    fields = (
+        ("url", "requested_url", "title", "content", "error", "full_text", "spans", "span_contract_version")
+        if capability == "extract"
+        else ("title", "url", "snippet", "published", "published_at", "date", "source_type", "fetch_priority")
+    )
+    for index, item in enumerate(projected.get("results") or []):
+        result = {key: deepcopy(item[key]) for key in fields if key in item}
+        original = originals[index] if index < len(originals) else {}
+        observation_id = original.get("representative_observation_id")
+        observation = observations.get(observation_id) or {}
+        if capability == "extract":
+            result.setdefault("requested_url", result.get("url"))
+            result.setdefault("title", _field_text(original.get("title")))
+            storage = stored.get(observation_id)
+            if storage:
+                succeeded = storage.get("storage_succeeded") is True
+                result["full_text"] = {"truncated": True, "stored": succeeded}
+                if succeeded:
+                    result["full_text"].update({
+                        "reference": deepcopy(storage.get("reference")),
+                        "chars": storage.get("full_text_chars"),
+                        "sha256": storage.get("full_text_sha256"),
+                    })
+        else:
+            for key, value_key in (("source_type", "value"), ("fetch_priority", "tier")):
+                if isinstance(result.get(key), dict):
+                    result[key] = result[key].get(value_key)
+            published = observation.get("published_at") or original.get("published_at")
+            if isinstance(published, dict):
+                published = published.get("normalized") or published.get("raw")
+            if published:
+                result["published"] = published
+        compact["results"].append(result)
+
+    attempts = [item for item in projected.get("provider_attempts") or [] if isinstance(item, dict)]
+    receipt = projected.get("routing_receipt") or {}
+    if receipt:
+        routing = {}
+        if requested_provider is not None:
+            routing["auto_routed"] = requested_provider == "auto"
+        # The receipt's fallback_reason is "none" without a fallback; only a real
+        # fallback is worth a field, and it is named for what it is.
+        fallback_reason = receipt.get("fallback_reason")
+        if fallback_reason and str(fallback_reason).lower() != "none":
+            routing["fallback_reason"] = _short_message(fallback_reason)
+        fallback = []
+        for attempt in attempts:
+            if (
+                attempt.get("provider") == projected.get("provider")
+                and attempt.get("outcome") in {"success", "partial"}
+                and attempt.get("result_count", 1) > 0
+            ):
+                break
+            failed_or_empty = attempt.get("outcome") in {"failed", "empty"} or (
+                attempt.get("outcome") == "success" and attempt.get("result_count") == 0
+            )
+            if failed_or_empty and attempt.get("provider") not in fallback:
+                fallback.append(attempt.get("provider"))
+        if fallback and projected.get("provider") != "research":
+            routing["fallback_from"] = fallback
+        if routing:
+            compact["routing"] = routing
+
+    cache = projected.get("cache_status") or {}
+    if cache:
+        compact["cached"] = cache.get("disposition") in {"fresh_hit", "stale_hit"}
+        if cache.get("age_seconds") is not None:
+            compact["cache_age_seconds"] = cache["age_seconds"]
+    if projected.get("provider") == "research":
+        extraction_attempts = [item for item in attempts if item.get("capability") == "extract"]
+        compact["research"] = {
+            "providers_merged": list(dict.fromkeys(
+                item.get("provider") for item in attempts
+                if item.get("capability") == "search" and item.get("outcome") in {"success", "partial"}
+                and item.get("result_count", 0) > 0
+            )),
+        }
+        # The current search contract may omit extraction receipts entirely.
+        # An unknown page count must not look like zero extracted pages.
+        if extraction_attempts:
+            compact["research"]["pages_count"] = sum(
+                item.get("result_count", 0) for item in extraction_attempts
+                if item.get("outcome") in {"success", "partial"}
+            )
+    warnings = list(dict.fromkeys(
+        message for item in projected.get("warnings") or []
+        if (message := _short_message(item))
+    ))
+    if warnings:
+        compact["warnings"] = warnings
+    if capability == "search":
+        counts = dict(projected.get("metadata") or {})
+        for warning in projected.get("warnings") or []:
+            if isinstance(warning, dict) and warning.get("code") in {
+                "wsp.search.redirects", "wsp.search.invalid_urls",
+            }:
+                counts.update(warning.get("details") or {})
+        for key in (
+            "redirects_wrapped", "redirects_resolved", "redirects_dropped",
+            "invalid_urls_dropped",
+        ):
+            value = counts.get(key)
+            if isinstance(value, int) and value > 0:
+                compact[key] = value
+    freshness = _freshness_from_v3_payload(projected)
+    if freshness:
+        compact["freshness"] = deepcopy(freshness)
+    if projected.get("error"):
+        compact["error"] = _short_message(projected["error"])
+    if projected.get("status") == "failed":
+        compact.setdefault("error", _short_message(projected.get("error_v3")) or "Web Search Plus request failed")
+        reasons = []
+        for attempt in attempts:
+            empty = attempt.get("outcome") == "success" and attempt.get("result_count") == 0
+            if attempt.get("outcome") in {"failed", "empty", "skipped"} or empty:
+                reason = _short_message(
+                    attempt.get("error") or attempt.get("skip_reason")
+                    or ("empty results" if empty else attempt.get("outcome"))
+                )
+                message = f"{attempt.get('provider')}: {reason}"
+                if message not in reasons:
+                    reasons.append(message)
+        if reasons:
+            compact["provider_errors"] = reasons
+    return compact
+
+
 def _project_v3_payload(
     payload: dict[str, Any],
     *,
@@ -558,8 +753,10 @@ def _project_v3_payload(
     quality_report_requested: bool = False,
     recency_time_range: Optional[str] = None,
     recency_freshness: Optional[str] = None,
+    detail: str = "full",
+    requested_provider: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Project canonical v3 output to the stable MCP shape, additively."""
+    """Preserve the additive 5.1.2 projection, then optionally compact it."""
     projected = {key: value for key, value in payload.items() if key not in {"results", "error"}}
     if capability == "extract" and isinstance(projected.get("observations"), list):
         # results[].content carries the bounded text; full observation text would
@@ -696,6 +893,11 @@ def _project_v3_payload(
             provider_name,
             requested,
         )
+    if detail == "compact":
+        return _compact_payload(
+            projected, capability=capability, canonical=payload,
+            requested_provider=requested_provider,
+        )
     return projected
 
 
@@ -820,6 +1022,8 @@ async def _run_cmd(
     quality_report_requested: bool = False,
     recency_time_range: Optional[str] = None,
     recency_freshness: Optional[str] = None,
+    detail: str = "full",
+    requested_provider: Optional[str] = None,
 ) -> list[TextContent]:
     payload = None
     engine = None if _force_subprocess() else _load_search_engine()
@@ -837,11 +1041,14 @@ async def _run_cmd(
             quality_report_requested=quality_report_requested,
             recency_time_range=recency_time_range,
             recency_freshness=recency_freshness,
+            detail=detail,
+            requested_provider=requested_provider,
         )
     return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
 
 
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    detail = _resolve_detail(arguments)
     if name == "web_search":
         query = arguments["query"]
         provider = _canonical_provider(arguments.get("provider", "auto"))
@@ -852,11 +1059,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 error_class="unsupported",
                 provider=provider,
             )
+            if detail == "compact":
+                payload = _compact_payload(payload, capability="search")
             return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
         for label in ("include_domains", "exclude_domains"):
             problem = _unsafe_variadic_values(label, arguments.get(label))
             if problem:
-                return _invalid_arguments_payload(problem)
+                return _invalid_arguments_payload(problem, detail=detail)
         cmd = [
             sys.executable,
             str(SEARCH_SCRIPT),
@@ -906,6 +1115,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             quality_report_requested=quality_report_requested,
             recency_time_range=arguments.get("time_range"),
             recency_freshness=arguments.get("freshness"),
+            detail=detail,
+            requested_provider=provider,
         )
 
     if name == "web_extract":
@@ -914,7 +1125,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             urls = [urls]
         problem = _unsafe_variadic_values("urls", urls)
         if problem or not urls:
-            return _invalid_arguments_payload(problem or "Invalid urls: at least one URL is required")
+            return _invalid_arguments_payload(problem or "Invalid urls: at least one URL is required", detail=detail)
         cmd = [
             sys.executable,
             str(SEARCH_SCRIPT),
@@ -943,7 +1154,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if _donsetch_outer_budget_applies(provider)
             else 90
         )
-        return await _run_cmd(cmd, timeout=timeout, capability="extract", urls=urls)
+        return await _run_cmd(
+            cmd, timeout=timeout, capability="extract", urls=urls,
+            detail=detail, requested_provider=provider,
+        )
 
     raise ValueError(f"Unknown tool: {name}")
 
@@ -991,6 +1205,13 @@ async def _mcp_call_tool(
             message="Web Search Plus tool execution failed.",
             error_class="internal",
         )
+        # Invalid server defaults must still produce a compact, typed failure.
+        try:
+            detail = _resolve_detail(arguments)
+        except ValueError:
+            detail = "compact"
+        if detail == "compact":
+            payload = _compact_payload(payload, capability="search")
         return CallToolResult(
             content=[TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))],
             is_error=True,

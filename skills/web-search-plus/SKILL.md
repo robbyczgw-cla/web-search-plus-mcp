@@ -20,6 +20,11 @@ You read the sources and synthesize; the server does not generate truth claims.
 - `web_extract` — fetches one or more URLs and returns bounded markdown (or
   HTML), with optional query-ranked spans for long pages.
 
+Both tools return compact JSON by default. Use `detail: "full"` when you need
+the complete v3 contract, observations or routing receipts. The server default
+can also be set with `WEB_SEARCH_PLUS_MCP_DETAIL` or config `mcp.detail`;
+an explicit tool argument wins.
+
 ## When to prefer these over the built-in search
 
 - The user wants to see **which sources** say something, or wants a
@@ -50,7 +55,7 @@ Useful parameters:
 - `include_domains` / `exclude_domains` — allow or deny lists.
 - `mode` — `research` queries up to three providers concurrently, dedupes,
   and extracts the top sources. Slower and costs more; use for deep questions.
-- `quality_report` — `true` to include routing class, provider scores, and
+- `quality_report` — `true` with `detail: "full"` to include routing class, provider scores, and
   authority signals. Useful when the user asks why a result ranked where it did.
 
 Example:
@@ -94,7 +99,7 @@ Example:
 2. `web_extract` the one or two URLs that actually answer the question.
 3. Cite the URLs you used. Say when sources disagree.
 4. If `web_search` returns an error that no provider is configured, tell the
-   user to run `uvx --from web-search-plus-mcp==5.1.2 web-search-plus-mcp status`
+   user to run `uvx --from web-search-plus-mcp==5.1.3 web-search-plus-mcp status`
    and set at least one provider key (see Setup). Do not guess results.
 
 ## Setup (first run)
@@ -116,13 +121,13 @@ Optional: `TAVILY_API_KEY`, `EXA_API_KEY`, `FIRECRAWL_API_KEY`, `PARALLEL_API_KE
 Check what is configured:
 
 ```bash
-uvx --from web-search-plus-mcp==5.1.2 web-search-plus-mcp status
+uvx --from web-search-plus-mcp==5.1.3 web-search-plus-mcp status
 ```
 
 Write a starter `.env` template:
 
 ```bash
-uvx --from web-search-plus-mcp==5.1.2 web-search-plus-mcp setup --preset starter
+uvx --from web-search-plus-mcp==5.1.3 web-search-plus-mcp setup --preset starter
 ```
 
 Full provider list, routing rules, and tool reference:

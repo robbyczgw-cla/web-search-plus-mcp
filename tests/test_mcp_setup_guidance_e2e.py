@@ -88,11 +88,12 @@ def _stdio_call(home, calls):
         proc.wait(10)
 
 
-def test_stdio_client_sees_guidance_and_is_error_without_keys(tmp_path):
+@pytest.mark.parametrize("detail", ["compact", "full"])
+def test_stdio_client_sees_guidance_and_is_error_without_keys(tmp_path, detail):
     search, explicit, extract = _stdio_call(tmp_path, [
-        ("web_search", {"query": "python asyncio taskgroup"}),
-        ("web_search", {"query": "python asyncio taskgroup", "provider": "tinyfish"}),
-        ("web_extract", {"urls": ["https://example.com"]}),
+        ("web_search", {"query": "python asyncio taskgroup", "detail": detail}),
+        ("web_search", {"query": "python asyncio taskgroup", "provider": "tinyfish", "detail": detail}),
+        ("web_extract", {"urls": ["https://example.com"], "detail": detail}),
     ])
     for result in (search, explicit, extract):
         assert result["isError"] is True
@@ -102,4 +103,5 @@ def test_stdio_client_sees_guidance_and_is_error_without_keys(tmp_path):
         assert "web-search-plus-mcp setup" in text
         assert "config.json" not in text
     explicit_payload = json.loads(explicit["content"][0]["text"])
-    assert explicit_payload["error_v3"]["details"]["env_var"] == "TINYFISH_API_KEY"
+    guidance = explicit_payload["error_v3"]["details"] if detail == "full" else explicit_payload
+    assert guidance["env_var"] == "TINYFISH_API_KEY"

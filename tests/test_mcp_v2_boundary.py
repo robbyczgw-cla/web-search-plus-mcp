@@ -33,12 +33,12 @@ def test_sdk_v2_negotiates_modern_and_legacy_stdio_eras():
 
     assert modern == {
         "protocol": "2026-07-28",
-        "server_version": "5.1.2",
+        "server_version": "5.1.3",
         "tools": ["web_search", "web_extract"],
     }
     assert legacy == {
         "protocol": "2025-11-25",
-        "server_version": "5.1.2",
+        "server_version": "5.1.3",
         "tools": ["web_search", "web_extract"],
     }
 
@@ -121,7 +121,8 @@ def test_sdk_v2_rejects_unknown_tools_and_invalid_arguments_without_reflection()
     assert secret not in invalid.message
 
 
-def test_sdk_v2_sanitizes_unexpected_tool_failures(monkeypatch):
+@pytest.mark.parametrize("detail", ["compact", "full"])
+def test_sdk_v2_sanitizes_unexpected_tool_failures(monkeypatch, detail):
     secret = "private upstream detail"
 
     async def explode(_name, _arguments):
@@ -131,10 +132,13 @@ def test_sdk_v2_sanitizes_unexpected_tool_failures(monkeypatch):
 
     async def scenario():
         async with Client(server.app, mode="auto") as client:
-            return await client.call_tool("web_search", {"query": "example"})
+            return await client.call_tool("web_search", {"query": "example", "detail": detail})
 
     result = run(scenario())
     payload = json.loads(result.content[0].text)
     assert result.is_error is True
-    assert payload["error_v3"]["code"] == "wsp.mcp.tool_execution_failed"
+    if detail == "full":
+        assert payload["error_v3"]["code"] == "wsp.mcp.tool_execution_failed"
+    else:
+        assert payload["detail"] == "compact"
     assert secret not in result.content[0].text

@@ -13,9 +13,15 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 5.1.2` carries the engine fixes of Hermes Web Search Plus 5.1.2 (released 2026-10-18).
+`web-search-plus-mcp 5.1.3` (released 2026-10-30) returns compact MCP responses by default and carries the Hermes Web Search Plus 5.1.6 engine fixes.
 
-### What's new in 5.1.2
+### What's new in 5.1.3
+
+Search and page reading now return compact JSON by default, saving context by removing repeated evidence and execution diagnostics. Source titles, URLs, snippets and bounded page text stay intact. Clients that parse the full v3 contract (including observations and routing receipts) must pass `detail: "full"` or set the server default below. See [docs/RELEASE_5_1_3.md](docs/RELEASE_5_1_3.md).
+
+Google `/goto` source wrappers are dropped without contacting Google by default; classic `/url?q=` links decode locally. Opt in to the bounded resolver with `{"serper": {"resolve_redirects": true}}` in config.json. SerpBase defaults to `device: "mobile"` (configurable as `mobile` or `desktop` under `serpbase`) and prefers canonical URLs. Every search provider shares a conservative corrupt-URL filter. Compact output includes positive `redirects_wrapped`, `redirects_resolved`, `redirects_dropped` and `invalid_urls_dropped` counts; full output retains their complete receipts. DonSeTch 4.10.3 is the tested version.
+
+### Earlier: 5.1.2
 
 5.1.1 was never released, so this covers everything since 5.0.1. No provider request starts after the request deadline, `web_extract` returns exactly one result per requested URL in request order, and each result now carries `requested_url`, the URL you passed in (`url` is where the page was fetched). A rate limit, out-of-credit or auth error partway through a batch keeps the pages already fetched and marks the rest `not tried: …` instead of failing the whole batch, and URLs past the per-call limit of 10 get their own `not tried` row instead of disappearing. The per-request budget no longer depends on SQLite, half-open circuit probes release their lease, and the search cache is keyed by the credentials that produced a result. Brave accepts queries up to its documented 600 characters and 75 words. Hermes-only changes (profile-scoped keys, native backend, `hermes` commands) are not part of this package. See [docs/RELEASE_5_1_2.md](docs/RELEASE_5_1_2.md).
 
@@ -25,7 +31,7 @@ Bug fixes for 5.0.0: everyday words like "synthesizer" no longer trip the source
 
 ### Earlier: 5.0.0
 
-Automatic routing picks providers by query type (Brave for most queries, Exa for docs and academic, Serper for security and shopping), clearly detected query languages reach the provider, research mode fuses provider results, and automatic search falls back faster on errors, empty answers and slow providers. This changes which API quota is used; see [CHANGELOG.md](CHANGELOG.md) for breaking changes.
+Automatic routing picks providers by query type (Brave for most queries including security and shopping, Exa for docs and academic; Serper remains a later fallback), clearly detected query languages reach the provider, research mode fuses provider results, and automatic search falls back faster on errors, empty answers and slow providers. This changes which API quota is used; see [CHANGELOG.md](CHANGELOG.md) for breaking changes.
 
 ### Earlier: 4.3.5
 
@@ -301,12 +307,29 @@ This MCP server exposes exactly two stable, source-only tools: `web_search` and 
 
 The Hermes plugin exposes the same stable capability as `web_search_plus` and `web_extract_plus`; the names differ because MCP and Hermes use different tool surfaces.
 
+### Response detail (both tools)
+
+Both tools return one JSON `TextContent`. The new optional `detail` argument accepts `"compact"` or `"full"`. Selection order is **argument > `WEB_SEARCH_PLUS_MCP_DETAIL` environment variable > `mcp.detail` in config.json > `"compact"`**. Only these two values are accepted. The tool schema deliberately has no fixed default, so clients can omit the argument and inherit the server setting.
+
+For clients that cannot pass `detail`, put `WEB_SEARCH_PLUS_MCP_DETAIL=full` in the server process environment or the MCP client's `env` block, or add this to the existing config file (selected by `WEB_SEARCH_PLUS_CONFIG`):
+
+```json
+{"mcp": {"detail": "full"}}
+```
+
+`full` preserves the 5.1.2 response structure, including `contract_version`, observations, provider attempts, routing receipts, policy actions, dedup clusters, source diversity and requested quality reports. Clients that parse those fields must opt in to `full`. Routing, provider calls, caching and extraction limits are unchanged.
+
+`compact` includes `detail: "compact"` and a hint for requesting the full contract. Search keeps titles, URLs, snippets, publication dates when available, and small source-type and fetch-priority labels. It also includes a short routing summary (failed or empty providers before the serving provider, excluding cancelled hedges), cache hits/age, short warning strings, and research providers merged. Research page counts are included only when extraction receipts provide a count; today's canonical search response may omit them. `quality_report: true` requires `detail: "full"` to return the detailed report. Failures keep `status: "failed"`, a short error, provider reasons, setup instructions and environment-variable names; MCP `isError` remains true.
+
+Compact extraction keeps one result per requested URL, in request order, with `url`, `requested_url`, `title`, bounded `content`, per-URL errors, requested spans and `full_text` storage references when present. A truncated page reports whether storing its full text succeeded; successful storage retains its reference, character count and checksum. Compact mode does not expose unbounded observation text.
+
 ### `web_search`
 
 Use for source discovery, current events, prices, weather, sports lineups, schedules, and whenever you want the raw search landscape first.
 
 Parameters:
 
+- `detail` — `compact` (server default) or `full`; overrides env/config
 - `query` — required search query
 - `provider` — `auto`, `serper`, `serpbase`, `brave`, `tavily`, `querit`, `linkup`, `exa`, `firecrawl`, `parallel`, `you`, `searxng`, `keenable`, `donsetch`, `octen`, `tinyfish`
 - `count` — results to return, default `5`, max `20`
@@ -317,7 +340,7 @@ Parameters:
 - `country` / `language` — explicit locale overrides
 - `include_domains` / `exclude_domains` — domain allow/deny lists
 - `mode` — `normal` or `research`
-- `quality_report` — include routing/result diagnostics
+- `quality_report` — include routing/result diagnostics with `detail: "full"`
 - `research_time_budget` — best-effort wall-clock budget for research mode
 - `no_cache` — bypass the search cache and fetch live results
 - `cache_ttl` — search-cache TTL in seconds (default 3600)
@@ -329,7 +352,8 @@ Example MCP arguments:
   "query": "latest AI hardware news",
   "provider": "auto",
   "count": 5,
-  "quality_report": true
+  "quality_report": true,
+  "detail": "full"
 }
 ```
 
@@ -337,6 +361,7 @@ Example MCP arguments:
 
 Parameters:
 
+- `detail` — `compact` (server default) or `full`; overrides env/config
 - `urls` — required list of URLs
 - `provider` — `auto`, `tavily`, `exa`, `linkup`, `parallel`, `firecrawl`, `you`, `keenable`, `serper`, `donsetch`
 - `format` — `markdown` or `html`
@@ -362,8 +387,8 @@ Result shape: `results` holds one entry per requested URL, in request order. Eac
 
 - `東京 AI ニュース 今日` → You.com multilingual/current search
 - `arXiv 2024 LLM scaling laws` → Exa academic discovery
-- `CVE-2025 openssl advisory` → Serper security/current search
-- `best bookshelf speakers under 1000 EUR Austria` → Serper/Firecrawl shopping/local search
+- `CVE-2025 openssl advisory` → Brave security/current search
+- `best bookshelf speakers under 1000 EUR Austria` → Brave shopping/local search, with Serper as a later fallback
 - `open source alternatives to Linear` → Exa/Firecrawl OSS discovery
 - `recent RAG vs fine-tuning benchmark sources` → source-result discovery; the MCP host may synthesize from returned sources
 

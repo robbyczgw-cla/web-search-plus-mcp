@@ -13,7 +13,7 @@ pytestmark = pytest.mark.inprocess
 
 
 def _call(name, arguments):
-    return json.loads(asyncio.run(server.call_tool(name, arguments))[0].text)
+    return json.loads(asyncio.run(server.call_tool(name, {"detail": "full", **arguments}))[0].text)
 
 
 def _no_subprocess(monkeypatch):
@@ -184,7 +184,7 @@ def test_concurrent_calls_do_not_cross_results(monkeypatch):
     monkeypatch.setattr(search, "run_cli_contract_v3", echo)
 
     async def many():
-        calls = [server.call_tool("web_search", {"query": f"q{i}", "provider": "serper"}) for i in range(20)]
+        calls = [server.call_tool("web_search", {"query": f"q{i}", "provider": "serper", "detail": "full"}) for i in range(20)]
         return await asyncio.gather(*calls)
 
     started = time.monotonic()

@@ -2,9 +2,29 @@
 
 ## [Unreleased]
 
+## [5.1.3] - 2026-10-30
+
+
+### Changed
+
+- **MCP responses are compact by default.** `web_search` and `web_extract` accept the optional `detail: "compact" | "full"` argument. Compact JSON removes repeated observations and execution diagnostics while preserving source text, short routing/cache/warning summaries, per-URL extraction errors, bounded content and full-text storage references. Failures retain setup guidance and MCP `isError: true`.
+- **Clients parsing the full v3 contract must opt in:** pass `detail: "full"`, set `WEB_SEARCH_PLUS_MCP_DETAIL=full` in the server environment, or add `{"mcp": {"detail": "full"}}` to the existing config file. Precedence: argument > environment > config > compact. Full output preserves the 5.1.2 projection, including routing receipts, observations and requested quality reports. Tool names, existing arguments and content limits are unchanged; the compact projection itself does not change provider execution.
+
+### Fixed
+
+5.1.3 also carries the Hermes 5.1.6 engine fixes (upstream `faa0110`, `2b7e544`, `1eb9b8c`):
+
+- Google `/goto` source wrappers are dropped by default without Google requests; classic `/url?q=` wrappers decode locally. `serper.resolve_redirects=true` opts into the bounded, one-hop resolver. Redirect counts survive fallback, Research and cache hits; compact output includes positive counts only, full mode retains all receipt details.
+- SerpBase defaults to `device=mobile`, configurable via `serpbase.device` (`mobile` or `desktop`), prefers canonical `url` over `link` and sends the WSP user agent. Cache identities separate devices and redirect policies.
+- Every search provider filters corrupt source URLs before ranking, observations and caching, preserving legitimate IRIs and UTF-8 escapes. `invalid_urls_dropped` is included only when positive in compact output.
+- Security and shopping start with Brave; Serper remains a later fallback, matching the Hermes routing tables.
+- DonSeTch's tested version is 4.10.3; setup documentation and status assertions are updated.
+
+Hermes text headers, Hermes-only output-size tests and unrelated host configuration changes are not ported. MCP compact regression tests cover the new metadata within the existing ≤30% / <6 KB eight-source budget.
+
 ## [5.1.2] - 2026-10-18
 
-Planned release date; not tagged or published yet. 5.1.1 was never released, so this section covers everything since 5.0.1. Synced with the Hermes Web Search Plus 5.1.2 engine (5.0.1 → 5.1.2, including the engine parts of 5.1.0 and 5.1.1). Hermes-plugin-only changes are not ported: profile-scoped keys (catalog rule 11), the native backend, `hermes web-search-plus` commands, Hermes Desktop settings and the Jev key-file removal. Tool names, input schemas and the `.env` loading of the MCP server are unchanged.
+5.1.1 was never released, so this section covers everything since 5.0.1. Synced with the Hermes Web Search Plus 5.1.2 engine (5.0.1 → 5.1.2, including the engine parts of 5.1.0 and 5.1.1). Hermes-plugin-only changes are not ported: profile-scoped keys (catalog rule 11), the native backend, `hermes web-search-plus` commands, Hermes Desktop settings and the Jev key-file removal. Tool names, input schemas and the `.env` loading of the MCP server are unchanged.
 
 ### Fixed
 

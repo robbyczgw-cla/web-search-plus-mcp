@@ -1,0 +1,1983 @@
+[
+  {
+    "name": "search",
+    "canonical": {
+      "contract_version": "3.0",
+      "request_id": "exec_detail_fixture",
+      "execution_id": "exec_detail_fixture",
+      "capability": "search",
+      "status": "ok",
+      "results": [
+        {
+          "result_id": "result_8b6b0d44cf3f8a54",
+          "kind": "search_result",
+          "engine_rank": 1,
+          "representative_observation_id": "obs_575bb25e135d89fc",
+          "observation_ids": [
+            "obs_575bb25e135d89fc"
+          ],
+          "dedup_cluster_id": "cluster_b0488a90bb596791",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-0",
+            "canonical": "https://example.com/fm27/skins-guide-0"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 0",
+            "text_sha256": "002aa2bde7735233422c61e21973f69541b6fec6db7e6876e633db2868fd31c7",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_575bb25e135d89fc",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 0"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_575bb25e135d89fc",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "medium",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_top_3",
+              "source_type_general"
+            ]
+          }
+        },
+        {
+          "result_id": "result_235a44fcf97ea3b8",
+          "kind": "search_result",
+          "engine_rank": 2,
+          "representative_observation_id": "obs_3e5a3098804c7d38",
+          "observation_ids": [
+            "obs_3e5a3098804c7d38"
+          ],
+          "dedup_cluster_id": "cluster_1de6a02b3cc15adb",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-1",
+            "canonical": "https://example.com/fm27/skins-guide-1"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 1",
+            "text_sha256": "d09a1290bc40d1e185db92820473f1356ff4349d7c6c52aac45ccf118affcbcd",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_3e5a3098804c7d38",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 1"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_3e5a3098804c7d38",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "medium",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_top_3",
+              "source_type_general"
+            ]
+          }
+        },
+        {
+          "result_id": "result_03a310f130597d07",
+          "kind": "search_result",
+          "engine_rank": 3,
+          "representative_observation_id": "obs_979cd287908b0114",
+          "observation_ids": [
+            "obs_979cd287908b0114"
+          ],
+          "dedup_cluster_id": "cluster_d043446653204b21",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-2",
+            "canonical": "https://example.com/fm27/skins-guide-2"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 2",
+            "text_sha256": "1ae88464a55d69c8e81b706e772a5974970027af095aabeff8af900e33902f9a",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_979cd287908b0114",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 2"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_979cd287908b0114",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "medium",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_top_3",
+              "source_type_general"
+            ]
+          }
+        },
+        {
+          "result_id": "result_c51a6f4708834b46",
+          "kind": "search_result",
+          "engine_rank": 4,
+          "representative_observation_id": "obs_f19aa043c90ed369",
+          "observation_ids": [
+            "obs_f19aa043c90ed369"
+          ],
+          "dedup_cluster_id": "cluster_ba916d4eb559cdcf",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-3",
+            "canonical": "https://example.com/fm27/skins-guide-3"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 3",
+            "text_sha256": "10cf1738ace12045b67931682b10b616420071f3c06149733528e44b7d4ca032",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_f19aa043c90ed369",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 3"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_f19aa043c90ed369",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "low",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_beyond_top_3",
+              "source_type_general"
+            ]
+          }
+        },
+        {
+          "result_id": "result_9ebe0b0b811259a0",
+          "kind": "search_result",
+          "engine_rank": 5,
+          "representative_observation_id": "obs_6d40a1d46cb7216e",
+          "observation_ids": [
+            "obs_6d40a1d46cb7216e"
+          ],
+          "dedup_cluster_id": "cluster_ddbab996716032bf",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-4",
+            "canonical": "https://example.com/fm27/skins-guide-4"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 4",
+            "text_sha256": "5fd4f5b9fdfffe844ba53768d6a9268300cb2c263a8d5ad00d072e4802c1d77f",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_6d40a1d46cb7216e",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 4"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_6d40a1d46cb7216e",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "low",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_beyond_top_3",
+              "source_type_general"
+            ]
+          }
+        },
+        {
+          "result_id": "result_d6de8c159db6de41",
+          "kind": "search_result",
+          "engine_rank": 6,
+          "representative_observation_id": "obs_271186a4a5272ecf",
+          "observation_ids": [
+            "obs_271186a4a5272ecf"
+          ],
+          "dedup_cluster_id": "cluster_ee5b185b36cb3a10",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-5",
+            "canonical": "https://example.com/fm27/skins-guide-5"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 5",
+            "text_sha256": "3d4c897537c36872c8eb764a2273c587613c5317a3fae62dfa6f52f0bc6a1cab",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_271186a4a5272ecf",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 5"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_271186a4a5272ecf",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "low",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_beyond_top_3",
+              "source_type_general"
+            ]
+          }
+        },
+        {
+          "result_id": "result_99374e7e276b7b0d",
+          "kind": "search_result",
+          "engine_rank": 7,
+          "representative_observation_id": "obs_8b3b6082f3bc62ed",
+          "observation_ids": [
+            "obs_8b3b6082f3bc62ed"
+          ],
+          "dedup_cluster_id": "cluster_af46341141c4c9a4",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-6",
+            "canonical": "https://example.com/fm27/skins-guide-6"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 6",
+            "text_sha256": "38a9e44e7baba20675659ed7e5c7ed9fc8f239cf10740fa6d5b05addb6b97ab0",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_8b3b6082f3bc62ed",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 6"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_8b3b6082f3bc62ed",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "low",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_beyond_top_3",
+              "source_type_general"
+            ]
+          }
+        },
+        {
+          "result_id": "result_4e97b3190a910c04",
+          "kind": "search_result",
+          "engine_rank": 8,
+          "representative_observation_id": "obs_b168384367e15cd3",
+          "observation_ids": [
+            "obs_b168384367e15cd3"
+          ],
+          "dedup_cluster_id": "cluster_7a43e7882c985f76",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-7",
+            "canonical": "https://example.com/fm27/skins-guide-7"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 7",
+            "text_sha256": "facd19872aea83f11ec3c03a61fb63471f1666c9d2d09146a045419832b64a78",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_b168384367e15cd3",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 7"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_b168384367e15cd3",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "low",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_beyond_top_3",
+              "source_type_general"
+            ]
+          }
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "obs_575bb25e135d89fc",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 0,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-0",
+            "canonical": "https://example.com/fm27/skins-guide-0"
+          },
+          "title": "Football Manager 27 skins and modding guide 0",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 1,
+          "provider_score": null,
+          "published_at": {
+            "raw": "2026-10-30",
+            "normalized": null
+          },
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        },
+        {
+          "observation_id": "obs_3e5a3098804c7d38",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 1,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-1",
+            "canonical": "https://example.com/fm27/skins-guide-1"
+          },
+          "title": "Football Manager 27 skins and modding guide 1",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 2,
+          "provider_score": null,
+          "published_at": null,
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        },
+        {
+          "observation_id": "obs_979cd287908b0114",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 2,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-2",
+            "canonical": "https://example.com/fm27/skins-guide-2"
+          },
+          "title": "Football Manager 27 skins and modding guide 2",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 3,
+          "provider_score": null,
+          "published_at": null,
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        },
+        {
+          "observation_id": "obs_f19aa043c90ed369",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 3,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-3",
+            "canonical": "https://example.com/fm27/skins-guide-3"
+          },
+          "title": "Football Manager 27 skins and modding guide 3",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 4,
+          "provider_score": null,
+          "published_at": null,
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        },
+        {
+          "observation_id": "obs_6d40a1d46cb7216e",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 4,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-4",
+            "canonical": "https://example.com/fm27/skins-guide-4"
+          },
+          "title": "Football Manager 27 skins and modding guide 4",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 5,
+          "provider_score": null,
+          "published_at": null,
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        },
+        {
+          "observation_id": "obs_271186a4a5272ecf",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 5,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-5",
+            "canonical": "https://example.com/fm27/skins-guide-5"
+          },
+          "title": "Football Manager 27 skins and modding guide 5",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 6,
+          "provider_score": null,
+          "published_at": null,
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        },
+        {
+          "observation_id": "obs_8b3b6082f3bc62ed",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 6,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-6",
+            "canonical": "https://example.com/fm27/skins-guide-6"
+          },
+          "title": "Football Manager 27 skins and modding guide 6",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 7,
+          "provider_score": null,
+          "published_at": null,
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        },
+        {
+          "observation_id": "obs_b168384367e15cd3",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 7,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-7",
+            "canonical": "https://example.com/fm27/skins-guide-7"
+          },
+          "title": "Football Manager 27 skins and modding guide 7",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 8,
+          "provider_score": null,
+          "published_at": null,
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        }
+      ],
+      "policy_actions": [
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_575bb25e135d89fc",
+          "reason": "dedup_representative"
+        },
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_3e5a3098804c7d38",
+          "reason": "dedup_representative"
+        },
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_979cd287908b0114",
+          "reason": "dedup_representative"
+        },
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_f19aa043c90ed369",
+          "reason": "dedup_representative"
+        },
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_6d40a1d46cb7216e",
+          "reason": "dedup_representative"
+        },
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_271186a4a5272ecf",
+          "reason": "dedup_representative"
+        },
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_8b3b6082f3bc62ed",
+          "reason": "dedup_representative"
+        },
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_b168384367e15cd3",
+          "reason": "dedup_representative"
+        }
+      ],
+      "source_diversity": {
+        "method": "component_count",
+        "method_version": "1",
+        "method_degraded": false,
+        "provider_count": 1,
+        "host_count": 1,
+        "source_family_count": 1,
+        "unique_cluster_count": 8
+      },
+      "provider_attempts": [
+        {
+          "attempt_id": "attempt-1",
+          "provider": "linkup",
+          "capability": "search",
+          "outcome": "success",
+          "retry_count": 0,
+          "result_count": 8,
+          "circuit_state_before": "unknown",
+          "circuit_state_after": "closed",
+          "endpoint_id": "",
+          "decision": "attempted",
+          "tries": []
+        }
+      ],
+      "routing_receipt": {
+        "policy_id": "classic",
+        "policy_revision": "v2.9.1",
+        "mode": "classic",
+        "candidate_order": [
+          "linkup"
+        ],
+        "selected_provider": "linkup",
+        "fallback_reason": "none"
+      },
+      "cache_status": {
+        "disposition": "miss"
+      },
+      "limits_applied": {
+        "max_results": 8
+      },
+      "stored_content": [],
+      "dedup_clusters": [
+        {
+          "dedup_cluster_id": "cluster_b0488a90bb596791",
+          "observation_ids": [
+            "obs_575bb25e135d89fc"
+          ],
+          "representative_observation_id": "obs_575bb25e135d89fc"
+        },
+        {
+          "dedup_cluster_id": "cluster_1de6a02b3cc15adb",
+          "observation_ids": [
+            "obs_3e5a3098804c7d38"
+          ],
+          "representative_observation_id": "obs_3e5a3098804c7d38"
+        },
+        {
+          "dedup_cluster_id": "cluster_d043446653204b21",
+          "observation_ids": [
+            "obs_979cd287908b0114"
+          ],
+          "representative_observation_id": "obs_979cd287908b0114"
+        },
+        {
+          "dedup_cluster_id": "cluster_ba916d4eb559cdcf",
+          "observation_ids": [
+            "obs_f19aa043c90ed369"
+          ],
+          "representative_observation_id": "obs_f19aa043c90ed369"
+        },
+        {
+          "dedup_cluster_id": "cluster_ddbab996716032bf",
+          "observation_ids": [
+            "obs_6d40a1d46cb7216e"
+          ],
+          "representative_observation_id": "obs_6d40a1d46cb7216e"
+        },
+        {
+          "dedup_cluster_id": "cluster_ee5b185b36cb3a10",
+          "observation_ids": [
+            "obs_271186a4a5272ecf"
+          ],
+          "representative_observation_id": "obs_271186a4a5272ecf"
+        },
+        {
+          "dedup_cluster_id": "cluster_af46341141c4c9a4",
+          "observation_ids": [
+            "obs_8b3b6082f3bc62ed"
+          ],
+          "representative_observation_id": "obs_8b3b6082f3bc62ed"
+        },
+        {
+          "dedup_cluster_id": "cluster_7a43e7882c985f76",
+          "observation_ids": [
+            "obs_b168384367e15cd3"
+          ],
+          "representative_observation_id": "obs_b168384367e15cd3"
+        }
+      ],
+      "warnings": []
+    },
+    "options": {
+      "capability": "search",
+      "query": "Football Manager 27 skins modding"
+    },
+    "full_json": "{\"contract_version\": \"3.0\", \"request_id\": \"exec_detail_fixture\", \"execution_id\": \"exec_detail_fixture\", \"capability\": \"search\", \"status\": \"ok\", \"observations\": [{\"observation_id\": \"obs_575bb25e135d89fc\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 0, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-0\", \"canonical\": \"https://example.com/fm27/skins-guide-0\"}, \"title\": \"Football Manager 27 skins and modding guide 0\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 1, \"provider_score\": null, \"published_at\": {\"raw\": \"2026-10-30\", \"normalized\": null}, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}, {\"observation_id\": \"obs_3e5a3098804c7d38\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 1, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-1\", \"canonical\": \"https://example.com/fm27/skins-guide-1\"}, \"title\": \"Football Manager 27 skins and modding guide 1\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 2, \"provider_score\": null, \"published_at\": null, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}, {\"observation_id\": \"obs_979cd287908b0114\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 2, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-2\", \"canonical\": \"https://example.com/fm27/skins-guide-2\"}, \"title\": \"Football Manager 27 skins and modding guide 2\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 3, \"provider_score\": null, \"published_at\": null, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}, {\"observation_id\": \"obs_f19aa043c90ed369\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 3, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-3\", \"canonical\": \"https://example.com/fm27/skins-guide-3\"}, \"title\": \"Football Manager 27 skins and modding guide 3\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 4, \"provider_score\": null, \"published_at\": null, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}, {\"observation_id\": \"obs_6d40a1d46cb7216e\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 4, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-4\", \"canonical\": \"https://example.com/fm27/skins-guide-4\"}, \"title\": \"Football Manager 27 skins and modding guide 4\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 5, \"provider_score\": null, \"published_at\": null, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}, {\"observation_id\": \"obs_271186a4a5272ecf\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 5, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-5\", \"canonical\": \"https://example.com/fm27/skins-guide-5\"}, \"title\": \"Football Manager 27 skins and modding guide 5\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 6, \"provider_score\": null, \"published_at\": null, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}, {\"observation_id\": \"obs_8b3b6082f3bc62ed\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 6, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-6\", \"canonical\": \"https://example.com/fm27/skins-guide-6\"}, \"title\": \"Football Manager 27 skins and modding guide 6\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 7, \"provider_score\": null, \"published_at\": null, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}, {\"observation_id\": \"obs_b168384367e15cd3\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 7, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-7\", \"canonical\": \"https://example.com/fm27/skins-guide-7\"}, \"title\": \"Football Manager 27 skins and modding guide 7\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 8, \"provider_score\": null, \"published_at\": null, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}], \"policy_actions\": [{\"action\": \"selected_as_representative\", \"observation_id\": \"obs_575bb25e135d89fc\", \"reason\": \"dedup_representative\"}, {\"action\": \"selected_as_representative\", \"observation_id\": \"obs_3e5a3098804c7d38\", \"reason\": \"dedup_representative\"}, {\"action\": \"selected_as_representative\", \"observation_id\": \"obs_979cd287908b0114\", \"reason\": \"dedup_representative\"}, {\"action\": \"selected_as_representative\", \"observation_id\": \"obs_f19aa043c90ed369\", \"reason\": \"dedup_representative\"}, {\"action\": \"selected_as_representative\", \"observation_id\": \"obs_6d40a1d46cb7216e\", \"reason\": \"dedup_representative\"}, {\"action\": \"selected_as_representative\", \"observation_id\": \"obs_271186a4a5272ecf\", \"reason\": \"dedup_representative\"}, {\"action\": \"selected_as_representative\", \"observation_id\": \"obs_8b3b6082f3bc62ed\", \"reason\": \"dedup_representative\"}, {\"action\": \"selected_as_representative\", \"observation_id\": \"obs_b168384367e15cd3\", \"reason\": \"dedup_representative\"}], \"source_diversity\": {\"method\": \"component_count\", \"method_version\": \"1\", \"method_degraded\": false, \"provider_count\": 1, \"host_count\": 1, \"source_family_count\": 1, \"unique_cluster_count\": 8}, \"provider_attempts\": [{\"attempt_id\": \"attempt-1\", \"provider\": \"linkup\", \"capability\": \"search\", \"outcome\": \"success\", \"retry_count\": 0, \"result_count\": 8, \"circuit_state_before\": \"unknown\", \"circuit_state_after\": \"closed\", \"endpoint_id\": \"\", \"decision\": \"attempted\", \"tries\": []}], \"routing_receipt\": {\"policy_id\": \"classic\", \"policy_revision\": \"v2.9.1\", \"mode\": \"classic\", \"candidate_order\": [\"linkup\"], \"selected_provider\": \"linkup\", \"fallback_reason\": \"none\"}, \"cache_status\": {\"disposition\": \"miss\"}, \"limits_applied\": {\"max_results\": 8}, \"stored_content\": [], \"dedup_clusters\": [{\"dedup_cluster_id\": \"cluster_b0488a90bb596791\", \"observation_ids\": [\"obs_575bb25e135d89fc\"], \"representative_observation_id\": \"obs_575bb25e135d89fc\"}, {\"dedup_cluster_id\": \"cluster_1de6a02b3cc15adb\", \"observation_ids\": [\"obs_3e5a3098804c7d38\"], \"representative_observation_id\": \"obs_3e5a3098804c7d38\"}, {\"dedup_cluster_id\": \"cluster_d043446653204b21\", \"observation_ids\": [\"obs_979cd287908b0114\"], \"representative_observation_id\": \"obs_979cd287908b0114\"}, {\"dedup_cluster_id\": \"cluster_ba916d4eb559cdcf\", \"observation_ids\": [\"obs_f19aa043c90ed369\"], \"representative_observation_id\": \"obs_f19aa043c90ed369\"}, {\"dedup_cluster_id\": \"cluster_ddbab996716032bf\", \"observation_ids\": [\"obs_6d40a1d46cb7216e\"], \"representative_observation_id\": \"obs_6d40a1d46cb7216e\"}, {\"dedup_cluster_id\": \"cluster_ee5b185b36cb3a10\", \"observation_ids\": [\"obs_271186a4a5272ecf\"], \"representative_observation_id\": \"obs_271186a4a5272ecf\"}, {\"dedup_cluster_id\": \"cluster_af46341141c4c9a4\", \"observation_ids\": [\"obs_8b3b6082f3bc62ed\"], \"representative_observation_id\": \"obs_8b3b6082f3bc62ed\"}, {\"dedup_cluster_id\": \"cluster_7a43e7882c985f76\", \"observation_ids\": [\"obs_b168384367e15cd3\"], \"representative_observation_id\": \"obs_b168384367e15cd3\"}], \"warnings\": [], \"provider\": \"linkup\", \"query\": \"Football Manager 27 skins modding\", \"results\": [{\"title\": \"Football Manager 27 skins and modding guide 0\", \"url\": \"https://example.com/fm27/skins-guide-0\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"medium\", \"reason_codes\": [\"cluster_single_observation\", \"rank_top_3\", \"source_type_general\"]}}, {\"title\": \"Football Manager 27 skins and modding guide 1\", \"url\": \"https://example.com/fm27/skins-guide-1\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"medium\", \"reason_codes\": [\"cluster_single_observation\", \"rank_top_3\", \"source_type_general\"]}}, {\"title\": \"Football Manager 27 skins and modding guide 2\", \"url\": \"https://example.com/fm27/skins-guide-2\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"medium\", \"reason_codes\": [\"cluster_single_observation\", \"rank_top_3\", \"source_type_general\"]}}, {\"title\": \"Football Manager 27 skins and modding guide 3\", \"url\": \"https://example.com/fm27/skins-guide-3\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"low\", \"reason_codes\": [\"cluster_single_observation\", \"rank_beyond_top_3\", \"source_type_general\"]}}, {\"title\": \"Football Manager 27 skins and modding guide 4\", \"url\": \"https://example.com/fm27/skins-guide-4\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"low\", \"reason_codes\": [\"cluster_single_observation\", \"rank_beyond_top_3\", \"source_type_general\"]}}, {\"title\": \"Football Manager 27 skins and modding guide 5\", \"url\": \"https://example.com/fm27/skins-guide-5\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"low\", \"reason_codes\": [\"cluster_single_observation\", \"rank_beyond_top_3\", \"source_type_general\"]}}, {\"title\": \"Football Manager 27 skins and modding guide 6\", \"url\": \"https://example.com/fm27/skins-guide-6\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"low\", \"reason_codes\": [\"cluster_single_observation\", \"rank_beyond_top_3\", \"source_type_general\"]}}, {\"title\": \"Football Manager 27 skins and modding guide 7\", \"url\": \"https://example.com/fm27/skins-guide-7\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"low\", \"reason_codes\": [\"cluster_single_observation\", \"rank_beyond_top_3\", \"source_type_general\"]}}]}"
+  },
+  {
+    "name": "extract",
+    "canonical": {
+      "contract_version": "3.0",
+      "request_id": "req_test",
+      "execution_id": "exec_test",
+      "capability": "extract",
+      "status": "degraded",
+      "results": [
+        {
+          "representative_observation_id": "obs_page",
+          "observation_ids": [
+            "obs_page"
+          ],
+          "url": {
+            "observed": "https://example.com/",
+            "canonical": "https://example.com/"
+          },
+          "title": {
+            "text": "Example Domain"
+          },
+          "text": {
+            "text": "Bounded page text."
+          }
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "obs_page",
+          "title": "Example Domain",
+          "text": "Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text.Full unbounded text."
+        }
+      ],
+      "policy_actions": [],
+      "source_diversity": {
+        "method": "provider_host_family_clusters",
+        "method_version": "1",
+        "method_degraded": false,
+        "provider_count": 1,
+        "host_count": 1,
+        "source_family_count": 1,
+        "unique_cluster_count": 1
+      },
+      "provider_attempts": [
+        {
+          "attempt_id": "attempt-1",
+          "provider": "linkup",
+          "capability": "extract",
+          "outcome": "success",
+          "retry_count": 0,
+          "result_count": 1
+        }
+      ],
+      "routing_receipt": {
+        "selected_provider": "linkup",
+        "candidate_order": [
+          "linkup"
+        ]
+      },
+      "cache_status": {
+        "disposition": "miss"
+      },
+      "limits_applied": {
+        "extract": {
+          "processed_urls": [
+            "https://example.com"
+          ],
+          "omitted_urls": [
+            "https://example.com/over-limit"
+          ],
+          "max_urls": 1,
+          "truncated": true
+        }
+      },
+      "stored_content": [
+        {
+          "observation_id": "obs_page",
+          "storage_attempted": true,
+          "storage_succeeded": true,
+          "reference": {
+            "store": "web_text_v3",
+            "key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "media_type": "text/markdown"
+          },
+          "full_text_chars": 120000,
+          "full_text_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "dedup_clusters": [],
+      "warnings": [
+        {
+          "code": "wsp.content.truncated",
+          "message": "Inline content was truncated.",
+          "details": {
+            "truncated_result_count": 1
+          }
+        }
+      ],
+      "error": null
+    },
+    "options": {
+      "capability": "extract",
+      "urls": [
+        "https://example.com",
+        "https://example.com/over-limit"
+      ]
+    },
+    "full_json": "{\"contract_version\": \"3.0\", \"request_id\": \"req_test\", \"execution_id\": \"exec_test\", \"capability\": \"extract\", \"status\": \"degraded\", \"observations\": [{\"observation_id\": \"obs_page\", \"title\": \"Example Domain\", \"text\": null}], \"policy_actions\": [], \"source_diversity\": {\"method\": \"provider_host_family_clusters\", \"method_version\": \"1\", \"method_degraded\": false, \"provider_count\": 1, \"host_count\": 1, \"source_family_count\": 1, \"unique_cluster_count\": 1}, \"provider_attempts\": [{\"attempt_id\": \"attempt-1\", \"provider\": \"linkup\", \"capability\": \"extract\", \"outcome\": \"success\", \"retry_count\": 0, \"result_count\": 1}], \"routing_receipt\": {\"selected_provider\": \"linkup\", \"candidate_order\": [\"linkup\"]}, \"cache_status\": {\"disposition\": \"miss\"}, \"limits_applied\": {\"extract\": {\"processed_urls\": [\"https://example.com\"], \"omitted_urls\": [\"https://example.com/over-limit\"], \"max_urls\": 1, \"truncated\": true}}, \"stored_content\": [{\"observation_id\": \"obs_page\", \"storage_attempted\": true, \"storage_succeeded\": true, \"reference\": {\"store\": \"web_text_v3\", \"key\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"media_type\": \"text/markdown\"}, \"full_text_chars\": 120000, \"full_text_sha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}], \"dedup_clusters\": [], \"warnings\": [{\"code\": \"wsp.content.truncated\", \"message\": \"Inline content was truncated.\", \"details\": {\"truncated_result_count\": 1}}], \"provider\": \"linkup\", \"urls\": [\"https://example.com\", \"https://example.com/over-limit\"], \"results\": [{\"url\": \"https://example.com/\", \"content\": \"Bounded page text.\", \"requested_url\": \"https://example.com\"}, {\"url\": \"https://example.com/over-limit\", \"requested_url\": \"https://example.com/over-limit\", \"content\": \"\", \"error\": \"not tried: limit of 1 URLs per call reached\"}]}"
+  },
+  {
+    "name": "research",
+    "canonical": {
+      "contract_version": "3.0",
+      "request_id": "exec_detail_fixture",
+      "execution_id": "exec_detail_fixture",
+      "capability": "search",
+      "status": "ok",
+      "results": [
+        {
+          "result_id": "result_8b6b0d44cf3f8a54",
+          "kind": "search_result",
+          "engine_rank": 1,
+          "representative_observation_id": "obs_575bb25e135d89fc",
+          "observation_ids": [
+            "obs_575bb25e135d89fc"
+          ],
+          "dedup_cluster_id": "cluster_b0488a90bb596791",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-0",
+            "canonical": "https://example.com/fm27/skins-guide-0"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 0",
+            "text_sha256": "002aa2bde7735233422c61e21973f69541b6fec6db7e6876e633db2868fd31c7",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_575bb25e135d89fc",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 0"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_575bb25e135d89fc",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "medium",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_top_3",
+              "source_type_general"
+            ]
+          }
+        },
+        {
+          "result_id": "result_235a44fcf97ea3b8",
+          "kind": "search_result",
+          "engine_rank": 2,
+          "representative_observation_id": "obs_3e5a3098804c7d38",
+          "observation_ids": [
+            "obs_3e5a3098804c7d38"
+          ],
+          "dedup_cluster_id": "cluster_1de6a02b3cc15adb",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-1",
+            "canonical": "https://example.com/fm27/skins-guide-1"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 1",
+            "text_sha256": "d09a1290bc40d1e185db92820473f1356ff4349d7c6c52aac45ccf118affcbcd",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_3e5a3098804c7d38",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 1"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_3e5a3098804c7d38",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "medium",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_top_3",
+              "source_type_general"
+            ]
+          }
+        },
+        {
+          "result_id": "result_03a310f130597d07",
+          "kind": "search_result",
+          "engine_rank": 3,
+          "representative_observation_id": "obs_979cd287908b0114",
+          "observation_ids": [
+            "obs_979cd287908b0114"
+          ],
+          "dedup_cluster_id": "cluster_d043446653204b21",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-2",
+            "canonical": "https://example.com/fm27/skins-guide-2"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 2",
+            "text_sha256": "1ae88464a55d69c8e81b706e772a5974970027af095aabeff8af900e33902f9a",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_979cd287908b0114",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 2"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_979cd287908b0114",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "medium",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_top_3",
+              "source_type_general"
+            ]
+          }
+        },
+        {
+          "result_id": "result_c51a6f4708834b46",
+          "kind": "search_result",
+          "engine_rank": 4,
+          "representative_observation_id": "obs_f19aa043c90ed369",
+          "observation_ids": [
+            "obs_f19aa043c90ed369"
+          ],
+          "dedup_cluster_id": "cluster_ba916d4eb559cdcf",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-3",
+            "canonical": "https://example.com/fm27/skins-guide-3"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 3",
+            "text_sha256": "10cf1738ace12045b67931682b10b616420071f3c06149733528e44b7d4ca032",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_f19aa043c90ed369",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 3"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_f19aa043c90ed369",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "low",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_beyond_top_3",
+              "source_type_general"
+            ]
+          }
+        },
+        {
+          "result_id": "result_9ebe0b0b811259a0",
+          "kind": "search_result",
+          "engine_rank": 5,
+          "representative_observation_id": "obs_6d40a1d46cb7216e",
+          "observation_ids": [
+            "obs_6d40a1d46cb7216e"
+          ],
+          "dedup_cluster_id": "cluster_ddbab996716032bf",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-4",
+            "canonical": "https://example.com/fm27/skins-guide-4"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 4",
+            "text_sha256": "5fd4f5b9fdfffe844ba53768d6a9268300cb2c263a8d5ad00d072e4802c1d77f",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_6d40a1d46cb7216e",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 4"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_6d40a1d46cb7216e",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "low",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_beyond_top_3",
+              "source_type_general"
+            ]
+          }
+        },
+        {
+          "result_id": "result_d6de8c159db6de41",
+          "kind": "search_result",
+          "engine_rank": 6,
+          "representative_observation_id": "obs_271186a4a5272ecf",
+          "observation_ids": [
+            "obs_271186a4a5272ecf"
+          ],
+          "dedup_cluster_id": "cluster_ee5b185b36cb3a10",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-5",
+            "canonical": "https://example.com/fm27/skins-guide-5"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 5",
+            "text_sha256": "3d4c897537c36872c8eb764a2273c587613c5317a3fae62dfa6f52f0bc6a1cab",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_271186a4a5272ecf",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 5"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_271186a4a5272ecf",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "low",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_beyond_top_3",
+              "source_type_general"
+            ]
+          }
+        },
+        {
+          "result_id": "result_99374e7e276b7b0d",
+          "kind": "search_result",
+          "engine_rank": 7,
+          "representative_observation_id": "obs_8b3b6082f3bc62ed",
+          "observation_ids": [
+            "obs_8b3b6082f3bc62ed"
+          ],
+          "dedup_cluster_id": "cluster_af46341141c4c9a4",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-6",
+            "canonical": "https://example.com/fm27/skins-guide-6"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 6",
+            "text_sha256": "38a9e44e7baba20675659ed7e5c7ed9fc8f239cf10740fa6d5b05addb6b97ab0",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_8b3b6082f3bc62ed",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 6"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_8b3b6082f3bc62ed",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "low",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_beyond_top_3",
+              "source_type_general"
+            ]
+          }
+        },
+        {
+          "result_id": "result_4e97b3190a910c04",
+          "kind": "search_result",
+          "engine_rank": 8,
+          "representative_observation_id": "obs_b168384367e15cd3",
+          "observation_ids": [
+            "obs_b168384367e15cd3"
+          ],
+          "dedup_cluster_id": "cluster_7a43e7882c985f76",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-7",
+            "canonical": "https://example.com/fm27/skins-guide-7"
+          },
+          "title": {
+            "text": "Football Manager 27 skins and modding guide 7",
+            "text_sha256": "facd19872aea83f11ec3c03a61fb63471f1666c9d2d09146a045419832b64a78",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_b168384367e15cd3",
+              "source_field": "title",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 45,
+                "text": "Football Manager 27 skins and modding guide 7"
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+            "text_sha256": "b2497c92525dc80e781d4d569867932b6b2c5628dbfceadf5d7099316b43b25c",
+            "origin": "provider",
+            "provenance": {
+              "observation_id": "obs_b168384367e15cd3",
+              "source_field": "snippet",
+              "transformations": [
+                "mechanical_segmentation"
+              ]
+            },
+            "segments": [
+              {
+                "start": 0,
+                "end": 270,
+                "text": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. "
+              }
+            ]
+          },
+          "text": null,
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          },
+          "fetch_priority": {
+            "tier": "low",
+            "reason_codes": [
+              "cluster_single_observation",
+              "rank_beyond_top_3",
+              "source_type_general"
+            ]
+          }
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "obs_575bb25e135d89fc",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 0,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-0",
+            "canonical": "https://example.com/fm27/skins-guide-0"
+          },
+          "title": "Football Manager 27 skins and modding guide 0",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 1,
+          "provider_score": null,
+          "published_at": {
+            "raw": "2026-10-30",
+            "normalized": null
+          },
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        },
+        {
+          "observation_id": "obs_3e5a3098804c7d38",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 1,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-1",
+            "canonical": "https://example.com/fm27/skins-guide-1"
+          },
+          "title": "Football Manager 27 skins and modding guide 1",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 2,
+          "provider_score": null,
+          "published_at": null,
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        },
+        {
+          "observation_id": "obs_979cd287908b0114",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 2,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-2",
+            "canonical": "https://example.com/fm27/skins-guide-2"
+          },
+          "title": "Football Manager 27 skins and modding guide 2",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 3,
+          "provider_score": null,
+          "published_at": null,
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        },
+        {
+          "observation_id": "obs_f19aa043c90ed369",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 3,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-3",
+            "canonical": "https://example.com/fm27/skins-guide-3"
+          },
+          "title": "Football Manager 27 skins and modding guide 3",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 4,
+          "provider_score": null,
+          "published_at": null,
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        },
+        {
+          "observation_id": "obs_6d40a1d46cb7216e",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 4,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-4",
+            "canonical": "https://example.com/fm27/skins-guide-4"
+          },
+          "title": "Football Manager 27 skins and modding guide 4",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 5,
+          "provider_score": null,
+          "published_at": null,
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        },
+        {
+          "observation_id": "obs_271186a4a5272ecf",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 5,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-5",
+            "canonical": "https://example.com/fm27/skins-guide-5"
+          },
+          "title": "Football Manager 27 skins and modding guide 5",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 6,
+          "provider_score": null,
+          "published_at": null,
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        },
+        {
+          "observation_id": "obs_8b3b6082f3bc62ed",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 6,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-6",
+            "canonical": "https://example.com/fm27/skins-guide-6"
+          },
+          "title": "Football Manager 27 skins and modding guide 6",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 7,
+          "provider_score": null,
+          "published_at": null,
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        },
+        {
+          "observation_id": "obs_b168384367e15cd3",
+          "provider_attempt_id": "attempt-1",
+          "provider_result_index": 7,
+          "provider": "linkup",
+          "endpoint_id": "linkup:search",
+          "kind": "search_result",
+          "url": {
+            "observed": "https://example.com/fm27/skins-guide-7",
+            "canonical": "https://example.com/fm27/skins-guide-7"
+          },
+          "title": "Football Manager 27 skins and modding guide 7",
+          "snippet": "Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. ",
+          "text": null,
+          "provider_rank": 8,
+          "provider_score": null,
+          "published_at": null,
+          "provider_fields": {},
+          "source_type": {
+            "value": "other",
+            "method": "url_heuristic",
+            "method_version": "1",
+            "confidence": "low"
+          }
+        }
+      ],
+      "policy_actions": [
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_575bb25e135d89fc",
+          "reason": "dedup_representative"
+        },
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_3e5a3098804c7d38",
+          "reason": "dedup_representative"
+        },
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_979cd287908b0114",
+          "reason": "dedup_representative"
+        },
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_f19aa043c90ed369",
+          "reason": "dedup_representative"
+        },
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_6d40a1d46cb7216e",
+          "reason": "dedup_representative"
+        },
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_271186a4a5272ecf",
+          "reason": "dedup_representative"
+        },
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_8b3b6082f3bc62ed",
+          "reason": "dedup_representative"
+        },
+        {
+          "action": "selected_as_representative",
+          "observation_id": "obs_b168384367e15cd3",
+          "reason": "dedup_representative"
+        }
+      ],
+      "source_diversity": {
+        "method": "component_count",
+        "method_version": "1",
+        "method_degraded": false,
+        "provider_count": 1,
+        "host_count": 1,
+        "source_family_count": 1,
+        "unique_cluster_count": 8
+      },
+      "provider_attempts": [
+        {
+          "attempt_id": "attempt-1",
+          "provider": "linkup",
+          "capability": "search",
+          "outcome": "success",
+          "retry_count": 0,
+          "result_count": 8,
+          "circuit_state_before": "unknown",
+          "circuit_state_after": "closed",
+          "endpoint_id": "",
+          "decision": "attempted",
+          "tries": []
+        },
+        {
+          "provider": "serper",
+          "capability": "search",
+          "outcome": "success",
+          "result_count": 8
+        },
+        {
+          "provider": "tavily",
+          "capability": "extract",
+          "outcome": "partial",
+          "result_count": 2
+        }
+      ],
+      "routing_receipt": {
+        "policy_id": "classic",
+        "policy_revision": "v2.9.1",
+        "mode": "classic",
+        "candidate_order": [
+          "linkup"
+        ],
+        "selected_provider": "linkup",
+        "fallback_reason": "none"
+      },
+      "cache_status": {
+        "disposition": "miss"
+      },
+      "limits_applied": {
+        "max_results": 8
+      },
+      "stored_content": [],
+      "dedup_clusters": [
+        {
+          "dedup_cluster_id": "cluster_b0488a90bb596791",
+          "observation_ids": [
+            "obs_575bb25e135d89fc"
+          ],
+          "representative_observation_id": "obs_575bb25e135d89fc"
+        },
+        {
+          "dedup_cluster_id": "cluster_1de6a02b3cc15adb",
+          "observation_ids": [
+            "obs_3e5a3098804c7d38"
+          ],
+          "representative_observation_id": "obs_3e5a3098804c7d38"
+        },
+        {
+          "dedup_cluster_id": "cluster_d043446653204b21",
+          "observation_ids": [
+            "obs_979cd287908b0114"
+          ],
+          "representative_observation_id": "obs_979cd287908b0114"
+        },
+        {
+          "dedup_cluster_id": "cluster_ba916d4eb559cdcf",
+          "observation_ids": [
+            "obs_f19aa043c90ed369"
+          ],
+          "representative_observation_id": "obs_f19aa043c90ed369"
+        },
+        {
+          "dedup_cluster_id": "cluster_ddbab996716032bf",
+          "observation_ids": [
+            "obs_6d40a1d46cb7216e"
+          ],
+          "representative_observation_id": "obs_6d40a1d46cb7216e"
+        },
+        {
+          "dedup_cluster_id": "cluster_ee5b185b36cb3a10",
+          "observation_ids": [
+            "obs_271186a4a5272ecf"
+          ],
+          "representative_observation_id": "obs_271186a4a5272ecf"
+        },
+        {
+          "dedup_cluster_id": "cluster_af46341141c4c9a4",
+          "observation_ids": [
+            "obs_8b3b6082f3bc62ed"
+          ],
+          "representative_observation_id": "obs_8b3b6082f3bc62ed"
+        },
+        {
+          "dedup_cluster_id": "cluster_7a43e7882c985f76",
+          "observation_ids": [
+            "obs_b168384367e15cd3"
+          ],
+          "representative_observation_id": "obs_b168384367e15cd3"
+        }
+      ],
+      "warnings": []
+    },
+    "options": {
+      "capability": "search",
+      "query": "Football Manager 27 skins modding",
+      "request_mode": "research"
+    },
+    "full_json": "{\"contract_version\": \"3.0\", \"request_id\": \"exec_detail_fixture\", \"execution_id\": \"exec_detail_fixture\", \"capability\": \"search\", \"status\": \"ok\", \"observations\": [{\"observation_id\": \"obs_575bb25e135d89fc\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 0, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-0\", \"canonical\": \"https://example.com/fm27/skins-guide-0\"}, \"title\": \"Football Manager 27 skins and modding guide 0\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 1, \"provider_score\": null, \"published_at\": {\"raw\": \"2026-10-30\", \"normalized\": null}, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}, {\"observation_id\": \"obs_3e5a3098804c7d38\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 1, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-1\", \"canonical\": \"https://example.com/fm27/skins-guide-1\"}, \"title\": \"Football Manager 27 skins and modding guide 1\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 2, \"provider_score\": null, \"published_at\": null, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}, {\"observation_id\": \"obs_979cd287908b0114\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 2, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-2\", \"canonical\": \"https://example.com/fm27/skins-guide-2\"}, \"title\": \"Football Manager 27 skins and modding guide 2\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 3, \"provider_score\": null, \"published_at\": null, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}, {\"observation_id\": \"obs_f19aa043c90ed369\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 3, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-3\", \"canonical\": \"https://example.com/fm27/skins-guide-3\"}, \"title\": \"Football Manager 27 skins and modding guide 3\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 4, \"provider_score\": null, \"published_at\": null, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}, {\"observation_id\": \"obs_6d40a1d46cb7216e\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 4, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-4\", \"canonical\": \"https://example.com/fm27/skins-guide-4\"}, \"title\": \"Football Manager 27 skins and modding guide 4\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 5, \"provider_score\": null, \"published_at\": null, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}, {\"observation_id\": \"obs_271186a4a5272ecf\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 5, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-5\", \"canonical\": \"https://example.com/fm27/skins-guide-5\"}, \"title\": \"Football Manager 27 skins and modding guide 5\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 6, \"provider_score\": null, \"published_at\": null, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}, {\"observation_id\": \"obs_8b3b6082f3bc62ed\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 6, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-6\", \"canonical\": \"https://example.com/fm27/skins-guide-6\"}, \"title\": \"Football Manager 27 skins and modding guide 6\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 7, \"provider_score\": null, \"published_at\": null, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}, {\"observation_id\": \"obs_b168384367e15cd3\", \"provider_attempt_id\": \"attempt-1\", \"provider_result_index\": 7, \"provider\": \"linkup\", \"endpoint_id\": \"linkup:search\", \"kind\": \"search_result\", \"url\": {\"observed\": \"https://example.com/fm27/skins-guide-7\", \"canonical\": \"https://example.com/fm27/skins-guide-7\"}, \"title\": \"Football Manager 27 skins and modding guide 7\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"text\": null, \"provider_rank\": 8, \"provider_score\": null, \"published_at\": null, \"provider_fields\": {}, \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}}], \"policy_actions\": [{\"action\": \"selected_as_representative\", \"observation_id\": \"obs_575bb25e135d89fc\", \"reason\": \"dedup_representative\"}, {\"action\": \"selected_as_representative\", \"observation_id\": \"obs_3e5a3098804c7d38\", \"reason\": \"dedup_representative\"}, {\"action\": \"selected_as_representative\", \"observation_id\": \"obs_979cd287908b0114\", \"reason\": \"dedup_representative\"}, {\"action\": \"selected_as_representative\", \"observation_id\": \"obs_f19aa043c90ed369\", \"reason\": \"dedup_representative\"}, {\"action\": \"selected_as_representative\", \"observation_id\": \"obs_6d40a1d46cb7216e\", \"reason\": \"dedup_representative\"}, {\"action\": \"selected_as_representative\", \"observation_id\": \"obs_271186a4a5272ecf\", \"reason\": \"dedup_representative\"}, {\"action\": \"selected_as_representative\", \"observation_id\": \"obs_8b3b6082f3bc62ed\", \"reason\": \"dedup_representative\"}, {\"action\": \"selected_as_representative\", \"observation_id\": \"obs_b168384367e15cd3\", \"reason\": \"dedup_representative\"}], \"source_diversity\": {\"method\": \"component_count\", \"method_version\": \"1\", \"method_degraded\": false, \"provider_count\": 1, \"host_count\": 1, \"source_family_count\": 1, \"unique_cluster_count\": 8}, \"provider_attempts\": [{\"attempt_id\": \"attempt-1\", \"provider\": \"linkup\", \"capability\": \"search\", \"outcome\": \"success\", \"retry_count\": 0, \"result_count\": 8, \"circuit_state_before\": \"unknown\", \"circuit_state_after\": \"closed\", \"endpoint_id\": \"\", \"decision\": \"attempted\", \"tries\": []}, {\"provider\": \"serper\", \"capability\": \"search\", \"outcome\": \"success\", \"result_count\": 8}, {\"provider\": \"tavily\", \"capability\": \"extract\", \"outcome\": \"partial\", \"result_count\": 2}], \"routing_receipt\": {\"policy_id\": \"classic\", \"policy_revision\": \"v2.9.1\", \"mode\": \"classic\", \"candidate_order\": [\"linkup\"], \"selected_provider\": \"linkup\", \"fallback_reason\": \"none\"}, \"cache_status\": {\"disposition\": \"miss\"}, \"limits_applied\": {\"max_results\": 8}, \"stored_content\": [], \"dedup_clusters\": [{\"dedup_cluster_id\": \"cluster_b0488a90bb596791\", \"observation_ids\": [\"obs_575bb25e135d89fc\"], \"representative_observation_id\": \"obs_575bb25e135d89fc\"}, {\"dedup_cluster_id\": \"cluster_1de6a02b3cc15adb\", \"observation_ids\": [\"obs_3e5a3098804c7d38\"], \"representative_observation_id\": \"obs_3e5a3098804c7d38\"}, {\"dedup_cluster_id\": \"cluster_d043446653204b21\", \"observation_ids\": [\"obs_979cd287908b0114\"], \"representative_observation_id\": \"obs_979cd287908b0114\"}, {\"dedup_cluster_id\": \"cluster_ba916d4eb559cdcf\", \"observation_ids\": [\"obs_f19aa043c90ed369\"], \"representative_observation_id\": \"obs_f19aa043c90ed369\"}, {\"dedup_cluster_id\": \"cluster_ddbab996716032bf\", \"observation_ids\": [\"obs_6d40a1d46cb7216e\"], \"representative_observation_id\": \"obs_6d40a1d46cb7216e\"}, {\"dedup_cluster_id\": \"cluster_ee5b185b36cb3a10\", \"observation_ids\": [\"obs_271186a4a5272ecf\"], \"representative_observation_id\": \"obs_271186a4a5272ecf\"}, {\"dedup_cluster_id\": \"cluster_af46341141c4c9a4\", \"observation_ids\": [\"obs_8b3b6082f3bc62ed\"], \"representative_observation_id\": \"obs_8b3b6082f3bc62ed\"}, {\"dedup_cluster_id\": \"cluster_7a43e7882c985f76\", \"observation_ids\": [\"obs_b168384367e15cd3\"], \"representative_observation_id\": \"obs_b168384367e15cd3\"}], \"warnings\": [], \"provider\": \"research\", \"query\": \"Football Manager 27 skins modding\", \"results\": [{\"title\": \"Football Manager 27 skins and modding guide 0\", \"url\": \"https://example.com/fm27/skins-guide-0\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"medium\", \"reason_codes\": [\"cluster_single_observation\", \"rank_top_3\", \"source_type_general\"]}}, {\"title\": \"Football Manager 27 skins and modding guide 1\", \"url\": \"https://example.com/fm27/skins-guide-1\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"medium\", \"reason_codes\": [\"cluster_single_observation\", \"rank_top_3\", \"source_type_general\"]}}, {\"title\": \"Football Manager 27 skins and modding guide 2\", \"url\": \"https://example.com/fm27/skins-guide-2\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"medium\", \"reason_codes\": [\"cluster_single_observation\", \"rank_top_3\", \"source_type_general\"]}}, {\"title\": \"Football Manager 27 skins and modding guide 3\", \"url\": \"https://example.com/fm27/skins-guide-3\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"low\", \"reason_codes\": [\"cluster_single_observation\", \"rank_beyond_top_3\", \"source_type_general\"]}}, {\"title\": \"Football Manager 27 skins and modding guide 4\", \"url\": \"https://example.com/fm27/skins-guide-4\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"low\", \"reason_codes\": [\"cluster_single_observation\", \"rank_beyond_top_3\", \"source_type_general\"]}}, {\"title\": \"Football Manager 27 skins and modding guide 5\", \"url\": \"https://example.com/fm27/skins-guide-5\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"low\", \"reason_codes\": [\"cluster_single_observation\", \"rank_beyond_top_3\", \"source_type_general\"]}}, {\"title\": \"Football Manager 27 skins and modding guide 6\", \"url\": \"https://example.com/fm27/skins-guide-6\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"low\", \"reason_codes\": [\"cluster_single_observation\", \"rank_beyond_top_3\", \"source_type_general\"]}}, {\"title\": \"Football Manager 27 skins and modding guide 7\", \"url\": \"https://example.com/fm27/skins-guide-7\", \"snippet\": \"Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. Community skin installation instructions, compatible interface changes and modding tools. \", \"source_type\": {\"value\": \"other\", \"method\": \"url_heuristic\", \"method_version\": \"1\", \"confidence\": \"low\"}, \"fetch_priority\": {\"tier\": \"low\", \"reason_codes\": [\"cluster_single_observation\", \"rank_beyond_top_3\", \"source_type_general\"]}}]}"
+  },
+  {
+    "name": "failure",
+    "canonical": {
+      "contract_version": "3.0",
+      "request_id": "req_test",
+      "execution_id": "exec_test",
+      "capability": "search",
+      "status": "failed",
+      "results": [],
+      "observations": [],
+      "policy_actions": [],
+      "source_diversity": {
+        "method": "provider_host_family_clusters",
+        "method_version": "1",
+        "method_degraded": false,
+        "provider_count": 1,
+        "host_count": 1,
+        "source_family_count": 1,
+        "unique_cluster_count": 1
+      },
+      "provider_attempts": [
+        {
+          "provider": "linkup",
+          "outcome": "skipped",
+          "skip_reason": "missing_credentials"
+        }
+      ],
+      "routing_receipt": {
+        "selected_provider": "linkup",
+        "candidate_order": [
+          "linkup"
+        ]
+      },
+      "cache_status": {
+        "disposition": "miss"
+      },
+      "limits_applied": {},
+      "stored_content": [],
+      "dedup_clusters": [],
+      "warnings": [],
+      "error": {
+        "message": "No configured source provider is available.",
+        "code": "wsp.config.provider_invalid",
+        "details": {
+          "env_var": "LINKUP_API_KEY",
+          "setup_required": true,
+          "how_to_fix": [
+            "web-search-plus-mcp setup linkup",
+            "Put LINKUP_API_KEY in the MCP client env block or .env file."
+          ]
+        }
+      }
+    },
+    "options": {
+      "capability": "search",
+      "query": "Football Manager 27 skins modding"
+    },
+    "full_json": "{\"contract_version\": \"3.0\", \"request_id\": \"req_test\", \"execution_id\": \"exec_test\", \"capability\": \"search\", \"status\": \"failed\", \"observations\": [], \"policy_actions\": [], \"source_diversity\": {\"method\": \"provider_host_family_clusters\", \"method_version\": \"1\", \"method_degraded\": false, \"provider_count\": 1, \"host_count\": 1, \"source_family_count\": 1, \"unique_cluster_count\": 1}, \"provider_attempts\": [{\"provider\": \"linkup\", \"outcome\": \"skipped\", \"skip_reason\": \"missing_credentials\"}], \"routing_receipt\": {\"selected_provider\": \"linkup\", \"candidate_order\": [\"linkup\"]}, \"cache_status\": {\"disposition\": \"miss\"}, \"limits_applied\": {}, \"stored_content\": [], \"dedup_clusters\": [], \"warnings\": [], \"provider\": \"linkup\", \"query\": \"Football Manager 27 skins modding\", \"results\": [], \"error\": \"No configured source provider is available.\", \"error_v3\": {\"message\": \"No configured source provider is available.\", \"code\": \"wsp.config.provider_invalid\", \"details\": {\"env_var\": \"LINKUP_API_KEY\", \"setup_required\": true, \"how_to_fix\": [\"web-search-plus-mcp setup linkup\", \"Put LINKUP_API_KEY in the MCP client env block or .env file.\"]}}}"
+  }
+]

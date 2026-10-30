@@ -13,14 +13,24 @@ def _call(name, args):
 
 @pytest.mark.parametrize("field", ["include_domains", "exclude_domains"])
 @pytest.mark.parametrize("bad", ["--clear-cache", "-x", ""])
-def test_search_rejects_option_like_domains(field, bad):
-    payload = _call("web_search", {"query": "q", field: [bad]})
+@pytest.mark.parametrize("detail", ["compact", "full"])
+def test_search_rejects_option_like_domains(field, bad, detail):
+    payload = _call("web_search", {"query": "q", field: [bad], "detail": detail})
     assert payload["status"] == "failed"
-    assert payload["error_v3"]["error_class"] == "invalid_request"
+    if detail == "full":
+        assert payload["error_v3"]["error_class"] == "invalid_request"
+    else:
+        assert payload["detail"] == "compact"
+        assert "Invalid" in payload["error"]
 
 
 @pytest.mark.parametrize("bad", [["--clear-cache"], ["-h"], [""], []])
-def test_extract_rejects_option_like_or_empty_urls(bad):
-    payload = _call("web_extract", {"urls": bad})
+@pytest.mark.parametrize("detail", ["compact", "full"])
+def test_extract_rejects_option_like_or_empty_urls(bad, detail):
+    payload = _call("web_extract", {"urls": bad, "detail": detail})
     assert payload["status"] == "failed"
-    assert payload["error_v3"]["error_class"] == "invalid_request"
+    if detail == "full":
+        assert payload["error_v3"]["error_class"] == "invalid_request"
+    else:
+        assert payload["detail"] == "compact"
+        assert "Invalid" in payload["error"]

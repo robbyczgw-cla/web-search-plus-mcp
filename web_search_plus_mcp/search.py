@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 5.1.2
+Version: 5.1.3
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
 Brave Search, SerpBase, Querit, Parallel, SearXNG, Keenable.
 Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com, Keenable, Serper.
 
 Automatic routing (provider "auto") labels the query with an intent and picks
 the first provider from a measured table: Exa for academic and documentation
-queries, Serper for shopping, Brave otherwise; the fallback chain follows
+queries, Brave for security, shopping and other queries; the fallback chain follows
 auto_routing.provider_priority. See docs/ROUTING.md.
 
 Usage:
@@ -17,7 +17,7 @@ Usage:
 
 Examples:
     python3 search.py -q "arXiv paper LLM scaling laws"            # → Exa (academic)
-    python3 search.py -q "iPhone 16 Pro Max price"                 # → Serper (shopping)
+    python3 search.py -q "iPhone 16 Pro Max price"                 # → Brave (shopping)
     python3 search.py -q "latest OpenSSH CVE mitigation"           # → Brave (security)
 """
 
@@ -80,6 +80,8 @@ from .quality import (
 from .diversity_v3 import DEFAULT_NEAR_DUPLICATE_THRESHOLD
 from .provider_adapter_protocol import validate_adapter_result
 from .provider_dispatch import SEARCH_DISPATCH
+from .result_redirects import CACHE_POLICY, clean_result_redirects, combined_redirect_counts
+from .urls import clean_result_urls
 from .provider_registry import (
     PROVIDER_STARTUP_DIAGNOSTICS,
     PROVIDER_SPECS,
@@ -291,7 +293,7 @@ Automatic routing (provider "auto"):
 Examples:
   python3 search.py -q "arXiv paper LLM scaling laws"            # → Exa (academic)
   python3 search.py -q "python asyncio TaskGroup documentation"  # → Exa (docs)
-  python3 search.py -q "iPhone 16 Pro Max price"                 # → Serper (shopping)
+  python3 search.py -q "iPhone 16 Pro Max price"                 # → Brave (shopping)
   python3 search.py -q "reddit best budget mechanical keyboard"  # → Brave (community)
   python3 search.py --explain-routing -q "your query"            # Show the decision
 
@@ -964,6 +966,9 @@ def _legacy_search_cache_context(
         cli_language=args.language,
     )
     return {
+        "result_url_policy": CACHE_POLICY,
+        "resolve_redirects": (config.get("serper") or {}).get("resolve_redirects", False) is True,
+        "serpbase_device": (config.get("serpbase") or {}).get("device", "mobile") if provider == "serpbase" else None,
         "locale": f"{locale_country}:{locale_language or ''}",
         "freshness": args.freshness,
         "time_range": getattr(args, "time_range", None),
@@ -1250,6 +1255,9 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             "search",
             adapter(_providers, prov, args, key, config, routing_info),
         )
+        clean_result_urls(provider_result)
+        clean_result_redirects(provider_result, config)
+        clean_result_urls(provider_result)
         if engine_owned_attempt:
             provider_result["_v3_raw_results"] = [
                 dict(item)
@@ -1477,6 +1485,7 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             primary.setdefault("metadata", {})
             primary["metadata"]["dedup_count"] = dedup_count
             primary["metadata"]["providers_merged"] = [p for p, _ in successful_results]
+            primary["metadata"].update(combined_redirect_counts(successful_results))
             result = primary
 
     if result is not None:
@@ -2190,6 +2199,13 @@ def _race_providers(engine, candidates, contexts, operation_for, hedge_delay, de
             reason = SkipReason.DEADLINE_EXCEEDED if deadline_hit else SkipReason.POLICY_EXCLUDED
             receipts.append(engine.skip(contexts[provider], reason).receipt)
     payload = finished[winner].payload if winner is not None else None
+    if payload is not None:
+        counts = combined_redirect_counts([
+            (provider, execution.payload) for provider, execution in finished.items()
+            if execution is not None and execution.payload is not None
+        ])
+        if counts:
+            payload.setdefault("metadata", {}).update(counts)
     return _Race(winner, payload, receipts, empty_providers, superseded)
 
 
@@ -2207,6 +2223,10 @@ def _search_cache_vary(
     locale = (config.get("defaults") or {}).get("locale") or {}
     vary: Dict[str, Any] = {"language": AUTO_LANGUAGE} if is_auto_language(locale.get("language")) else {}
     vary["credential_scope"] = search_credential_context(plan.candidate_order, config)
+    vary["result_url_policy"] = CACHE_POLICY
+    vary["resolve_redirects"] = (config.get("serper") or {}).get("resolve_redirects", False) is True
+    if "serpbase" in plan.candidate_order:
+        vary["serpbase_device"] = (config.get("serpbase") or {}).get("device", "mobile")
     return vary
 
 

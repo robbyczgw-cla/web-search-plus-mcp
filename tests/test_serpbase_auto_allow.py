@@ -62,7 +62,7 @@ def test_serpbase_can_be_called_explicitly(monkeypatch):
 
     assert captured["api_url"] == "https://api.serpbase.dev/google/search"
     assert captured["headers"]["X-API-Key"] == "serpbase-test-key"
-    assert captured["body"] == {"q": "example", "hl": "de", "gl": "at", "page": 2}
+    assert captured["body"] == {"q": "example", "hl": "de", "gl": "at", "page": 2, "device": "mobile"}
     assert captured["timeout"] == 12
     assert result["provider"] == "serpbase"
     assert "answer" not in result
