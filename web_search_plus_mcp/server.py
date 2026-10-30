@@ -886,6 +886,13 @@ def _project_v3_payload(
                 if isinstance(item.get(field), dict):
                     result[field] = deepcopy(item[field])
         results.append(result)
+    if capability == "extract" and not results and payload.get("status") == "failed" and failed_url_errors:
+        # No URL could be read: one row per URL with its reason (page not
+        # found, site refused, ...) instead of an empty list.
+        results = [
+            {"url": failed_url, "requested_url": failed_url, "content": "", "error": error_text}
+            for failed_url, error_text in failed_url_errors.items()
+        ]
     if capability == "extract":
         omitted = extract_limits.get("omitted_urls")
         if isinstance(omitted, list):
