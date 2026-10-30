@@ -13,11 +13,13 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 5.1.3` is planned for 2026-10-30, with compact MCP responses by default and the unchanged 5.1.2 engine.
+`web-search-plus-mcp 5.1.3` is planned for 2026-10-30, with compact MCP responses by default; it also carries the Hermes 5.1.6 engine fixes.
 
 ### What's new in 5.1.3
 
 Search and page reading now return compact JSON by default, saving context by removing repeated evidence and execution diagnostics. Source titles, URLs, snippets and bounded page text stay intact. Clients that parse the full v3 contract (including observations and routing receipts) must pass `detail: "full"` or set the server default below. See [docs/RELEASE_5_1_3.md](docs/RELEASE_5_1_3.md).
+
+Google `/goto` source wrappers are dropped without contacting Google by default; classic `/url?q=` links decode locally. Opt in to the bounded resolver with `{"serper": {"resolve_redirects": true}}` in config.json. SerpBase defaults to `device: "mobile"` (configurable as `mobile` or `desktop` under `serpbase`) and prefers canonical URLs. Every search provider shares a conservative corrupt-URL filter. Compact output includes positive `redirects_wrapped`, `redirects_resolved`, `redirects_dropped` and `invalid_urls_dropped` counts; full output retains their complete receipts. DonSeTch 4.10.3 is the tested version.
 
 ### Earlier: 5.1.2
 
@@ -29,7 +31,7 @@ Bug fixes for 5.0.0: everyday words like "synthesizer" no longer trip the source
 
 ### Earlier: 5.0.0
 
-Automatic routing picks providers by query type (Brave for most queries, Exa for docs and academic, Serper for security and shopping), clearly detected query languages reach the provider, research mode fuses provider results, and automatic search falls back faster on errors, empty answers and slow providers. This changes which API quota is used; see [CHANGELOG.md](CHANGELOG.md) for breaking changes.
+Automatic routing picks providers by query type (Brave for most queries including security and shopping, Exa for docs and academic; Serper remains a later fallback), clearly detected query languages reach the provider, research mode fuses provider results, and automatic search falls back faster on errors, empty answers and slow providers. This changes which API quota is used; see [CHANGELOG.md](CHANGELOG.md) for breaking changes.
 
 ### Earlier: 4.3.5
 
@@ -385,8 +387,8 @@ Result shape: `results` holds one entry per requested URL, in request order. Eac
 
 - `東京 AI ニュース 今日` → You.com multilingual/current search
 - `arXiv 2024 LLM scaling laws` → Exa academic discovery
-- `CVE-2025 openssl advisory` → Serper security/current search
-- `best bookshelf speakers under 1000 EUR Austria` → Serper/Firecrawl shopping/local search
+- `CVE-2025 openssl advisory` → Brave security/current search
+- `best bookshelf speakers under 1000 EUR Austria` → Brave shopping/local search, with Serper as a later fallback
 - `open source alternatives to Linear` → Exa/Firecrawl OSS discovery
 - `recent RAG vs fine-tuning benchmark sources` → source-result discovery; the MCP host may synthesize from returned sources
 

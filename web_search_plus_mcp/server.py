@@ -703,6 +703,20 @@ def _compact_payload(
     ))
     if warnings:
         compact["warnings"] = warnings
+    if capability == "search":
+        counts = dict(projected.get("metadata") or {})
+        for warning in projected.get("warnings") or []:
+            if isinstance(warning, dict) and warning.get("code") in {
+                "wsp.search.redirects", "wsp.search.invalid_urls",
+            }:
+                counts.update(warning.get("details") or {})
+        for key in (
+            "redirects_wrapped", "redirects_resolved", "redirects_dropped",
+            "invalid_urls_dropped",
+        ):
+            value = counts.get(key)
+            if isinstance(value, int) and value > 0:
+                compact[key] = value
     freshness = _freshness_from_v3_payload(projected)
     if freshness:
         compact["freshness"] = deepcopy(freshness)

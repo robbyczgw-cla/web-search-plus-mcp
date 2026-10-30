@@ -68,6 +68,44 @@ def test_eight_search_results_fit_token_budget():
     assert len(compact) <= 6000
 
 
+@pytest.mark.parametrize("location", ["warnings", "metadata"])
+def test_source_quality_counts_fit_compact_budget_and_survive_full(location):
+    case = deepcopy(CASES[0])
+    counts = {
+        "redirects_wrapped": 7, "redirects_resolved": 2,
+        "redirects_dropped": 5, "invalid_urls_dropped": 3,
+    }
+    warnings = [
+        {"code": "wsp.search.redirects", "message": "Google source redirects were resolved or dropped.",
+         "details": {key: value for key, value in counts.items() if key.startswith("redirects_")}},
+        {"code": "wsp.search.invalid_urls", "message": "Corrupt source URLs were dropped.",
+         "details": {"invalid_urls_dropped": 3}},
+    ]
+    case["canonical"][location] = warnings if location == "warnings" else counts
+    compact, full = project(case, "compact"), project(case, "full")
+    assert {key: compact[key] for key in counts} == counts
+    assert full[location] == case["canonical"][location]
+    assert compact["results"] == project(CASES[0], "compact")["results"]
+    size = len(json.dumps(compact, ensure_ascii=False).encode())
+    assert size <= len(json.dumps(full, ensure_ascii=False).encode()) * 0.30
+    assert size < 6000
+
+
+def test_zero_source_quality_counts_are_omitted_only_from_compact():
+    case = deepcopy(CASES[0])
+    counts = {"redirects_wrapped": 1, "redirects_resolved": 1, "redirects_dropped": 0,
+              "invalid_urls_dropped": 0}
+    case["canonical"]["warnings"] = [{
+        "code": "wsp.search.redirects", "message": "Google source redirects were resolved or dropped.",
+        "details": counts,
+    }]
+    compact = project(case, "compact")
+    assert compact["redirects_wrapped"] == compact["redirects_resolved"] == 1
+    assert "redirects_dropped" not in compact
+    assert "invalid_urls_dropped" not in compact
+    assert project(case, "full")["warnings"][0]["details"] == counts
+
+
 def test_compact_search_shape_dates_and_small_enrichment():
     payload = project(CASES[0], "compact")
     assert payload["provider"] == "linkup"

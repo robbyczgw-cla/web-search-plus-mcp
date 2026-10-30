@@ -6,7 +6,21 @@ Planned release 2026-10-30; not tagged or published yet.
 
 `web_search` and `web_extract` now return compact JSON by default, as one `TextContent`. Search no longer repeats its sources in observations, policy actions and dedup clusters or sends the complete execution diagnostics on every call. Source titles, URLs, snippets and bounded extracted text are unchanged between modes.
 
-Both tools accept `detail: "compact" | "full"`. **Clients parsing the full v3 contract, including observations or routing receipts, must pass `detail: "full"` or configure that server default.** Full mode preserves the 5.1.2 projection, including the requested quality report. The default change affects the MCP response only; it does not change engine behavior, routing, provider calls, caching, tool names, existing argument names or extraction limits.
+Both tools accept `detail: "compact" | "full"`. **Clients parsing the full v3 contract, including observations or routing receipts, must pass `detail: "full"` or configure that server default.** Full mode preserves the 5.1.2 projection, including the requested quality report. The compact default affects the MCP response only. This release also carries the Hermes 5.1.6 engine fixes described below; tool names, existing argument names and extraction limits remain unchanged.
+
+## Engine fixes from Hermes 5.1.6
+
+Ported from upstream commits `faa0110`, `2b7e544` and `1eb9b8c`:
+
+- Google `/goto` wrappers are dropped without Google requests by default. Classic `/url?q=` wrappers decode locally. Set `{"serper": {"resolve_redirects": true}}` in config.json to opt into bounded, one-hop resolution with request deadlines and URL safety checks.
+- SerpBase uses `device=mobile` by default; `serpbase.device` accepts `mobile` or `desktop`. Canonical `url` takes precedence over `link`; `source_url` is provenance only. Requests use the WSP user agent.
+- A shared URL sanity filter removes control characters, replacement characters and narrowly identified encoding damage before ranking, observations and caches, retaining legitimate Unicode URLs.
+- Security and shopping now start with Brave, with Serper later in the fallback order, matching Hermes routing tables.
+- DonSeTch 4.10.3 is the tested version; see [DONSETCH.md](DONSETCH.md).
+
+Redirect and invalid-URL counts survive fallback, Research and cache hits. Compact output includes `redirects_wrapped`, `redirects_resolved`, `redirects_dropped` and `invalid_urls_dropped` only when positive. Full mode keeps all receipt details, including zero redirect counts. Cache identities separate the URL-cleaning policy, resolver setting and SerpBase device from older entries.
+
+Hermes text-header formatting and Hermes-only size tests are not applicable to this stdio MCP server. An MCP projection test covers the new metadata under the existing ≤30% / <6 KB budget (4,032 compact bytes versus 15,418 full bytes, 26.15%, for the eight-source fixture).
 
 ## Server default
 
@@ -33,3 +47,13 @@ Live stdio check on 2026-10-30, with the environment loaded via `uv run --env-fi
 | Extract, 1 URL | 493 | 2,852 | 123 / 713 |
 
 Token estimates use UTF-8 bytes / 4, not a tokenizer. These are separate live requests: the search result sets varied (three shared URLs, with identical titles/snippets on those URLs), so the size reduction is indicative. Reprojecting the same full search response offline yields 3,600 compact bytes. Extract content matched exactly. Offline fixtures and in-process boundary tests establish source-text equality for identical engine responses; no additional live calls were made.
+
+
+Engine-port live check on 2026-10-30: one stdio server process, two uncached compact calls, environment loaded with `uv run --no-sync --env-file` and no credentials printed or saved. An isolated config allowed only Brave and Serper and capped provider calls at one per request.
+
+| Query / requested provider | Serving provider | Sources | Compact bytes | redirects_dropped |
+| --- | --- | ---: | ---: | ---: |
+| Football Manager 27 skins modding / serper | serper | 3 | 1,502 | 7 |
+| openssl CVE-2026 vulnerability / auto | brave | 8 | 6,301 | 0 (omitted) |
+
+Serper returned Passion4FM, Reddit and Instagram URLs; no `google.com/goto` URL remained. The automatic security search returned OpenSSL's vulnerability page and seven other sources. Seven wrappers were counted, zero resolved and seven dropped on Serper; Brave returned no wrappers. Byte sizes measure the UTF-8 MCP `TextContent.text` JSON. The Brave response exceeds the fixed fixture's 6-KB regression budget because its live snippets are longer; that budget is not an output truncation limit. Hermes-only text headers and output-size tests were deliberately omitted; the MCP metadata size regression covers this package's output boundary.

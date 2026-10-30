@@ -209,6 +209,12 @@ def legacy_payload_from_cache_material(material: Dict[str, Any]) -> Dict[str, An
     routing_hint = material.get("legacy_routing_hint")
     if isinstance(routing_hint, dict):
         legacy["routing"] = dict(routing_hint)
+    # Counts are source-quality evidence stored in the native receipt, not a
+    # second copy of the full legacy payload. Preserve counts on cache hits.
+    if capability == "search":
+        for warning in material.get("warnings") or []:
+            if warning.get("code") in {"wsp.search.redirects", "wsp.search.invalid_urls"}:
+                legacy.setdefault("metadata", {}).update(warning.get("details") or {})
     return legacy
 
 

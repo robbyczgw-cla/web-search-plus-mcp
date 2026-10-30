@@ -1,7 +1,7 @@
 # DonSeTch local provider
 
-Web Search Plus 4.2 can use [DonSeTch](https://github.com/dondai44423/donsetch)
-4.2.9 as a separately installed local provider for source-only Search and
+Web Search Plus can use [DonSeTch](https://github.com/dondai44423/donsetch)
+4.10.3 (and 4.7.0 and newer) as a separately installed local provider for source-only Search and
 Extract. DonSeTch is an independent AGPL-3.0-only project. Web Search Plus
 does not bundle, copy, or redistribute its binary.
 
@@ -16,13 +16,13 @@ routing or fallback.
 The upstream project distributes a platform binary through npm:
 
 ```bash
-npm install -g donsetch@4.2.9
+npm install -g donsetch@4.10.3
 command -v donsetch
 donsetch --version
 donsetch doctor
 ```
 
-The executable must be available to the Hermes process, not only to an interactive shell.
+The executable must be available to the MCP process, not only to an interactive shell.
 
 For Linux browser escalation, DonSeTch may require a usable Chromium/Chrome
 installation and Xvfb. The WSP integration has not been declared browser-
@@ -44,13 +44,13 @@ network URL or API credential.
 ## Use DonSeTch explicitly
 
 ```python
-web_search_plus(
+web_search(
     query="Hermes Agent documentation",
     provider="donsetch",
     count=5,
 )
 
-web_extract_plus(
+web_extract(
     urls=["https://example.com"],
     provider="donsetch",
 )
@@ -87,6 +87,10 @@ export DONSETCH_BIN="$(command -v donsetch)"
 Change `provider="hound"` to `provider="donsetch"`. A Hound HTTP sidecar is no
 longer read by WSP, and `HOUND_MCP_URL` has no effect in version 4.0.
 
+## Tested version
+
+DonSeTch 4.10.3 is the tested version; status reports `tested` for it and `compatible_unverified` for other parsed versions. The 4.7.0+ result shape remains supported. DonSeTch is installed separately and is not bundled in this package.
+
 ## Boundaries and attribution
 
 - DonSeTch is installed and operated separately from Web Search Plus.
@@ -100,6 +104,6 @@ longer read by WSP, and `HOUND_MCP_URL` has no effect in version 4.0.
   subprocess budget per URL, covering the adapter's 180-second stdio timeout;
   this also applies when `auto_allow` explicitly enables DonSeTch. Other
   provider budgets remain unchanged.
-- This integration was tested against DonSeTch 4.2.9 for stdio MCP
+- This integration was tested against DonSeTch 4.10.3 for stdio MCP
   initialization, Search, Fetch, and structured error handling. Successful
   browser/anti-bot execution remains an environment-dependent open gate.
