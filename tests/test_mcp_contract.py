@@ -91,15 +91,15 @@ def canonical_response(*, capability="search", status="ok", results=None, error=
 
 def test_release_version_is_consistent_across_public_surfaces():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert project["project"]["version"] == "5.1.2"
+    assert project["project"]["version"] == "5.1.3"
     assert project["project"]["scripts"]["web-search-plus-mcp"] == (
         "web_search_plus_mcp.server:cli_main"
     )
-    assert web_search_plus_mcp.__version__ == "5.1.2"
-    assert server.__version__ == "5.1.2"
+    assert web_search_plus_mcp.__version__ == "5.1.3"
+    assert server.__version__ == "5.1.3"
     initialization = server.app.create_initialization_options()
     assert initialization.server_name == "web-search-plus"
-    assert initialization.server_version == "5.1.2"
+    assert initialization.server_version == "5.1.3"
 
 
 def test_ci_ruff_policy_is_repo_local_and_pinned():
@@ -155,7 +155,7 @@ def test_source_only_provider_surface_is_15_search_and_9_extract():
 def test_readme_describes_current_source_only_release_surface():
     readme = (ROOT / "README.md").read_text()
     release = (ROOT / "docs/RELEASE_4_1_0.md").read_text()
-    assert "`web-search-plus-mcp 5.1.2`" in readme
+    assert "`web-search-plus-mcp 5.1.3`" in readme
     assert "DonSeTch 4.2.9" in readme
     assert "**15 search providers" in readme
     assert "not ported" in readme.lower() or "not ported" in release.lower()
@@ -247,6 +247,7 @@ def test_retired_answer_provider_returns_typed_error_without_subprocess(monkeypa
 
     monkeypatch.setattr(server.subprocess, "run", forbidden)
     content = run(server.call_tool("web_search", {
+        "detail": "full",
         "query": "answer this",
         "provider": "perplexity",
     }))
@@ -281,6 +282,7 @@ def test_search_projects_canonical_v3_to_additive_legacy_shape(monkeypatch):
 
     monkeypatch.setattr(server.subprocess, "run", fake_run)
     content = run(server.call_tool("web_search", {
+        "detail": "full",
         "query": "example query",
         "provider": "linkup",
     }))
@@ -345,6 +347,7 @@ def test_research_projection_preserves_aggregate_identity_and_v3_evidence(monkey
 
     monkeypatch.setattr(server.subprocess, "run", fake_run)
     content = run(server.call_tool("web_search", {
+        "detail": "full",
         "query": "compare alpha beta",
         "provider": "auto",
         "mode": "research",
@@ -405,6 +408,7 @@ def test_extract_cache_hit_projection_preserves_body_and_cache_provenance(monkey
 
     monkeypatch.setattr(server.subprocess, "run", fake_run)
     content = run(server.call_tool("web_extract", {
+        "detail": "full",
         "urls": ["https://example.com/cached"],
         "provider": "linkup",
     }))
@@ -469,6 +473,7 @@ def test_extract_projection_preserves_bounds_and_page_on_demand_reference(monkey
 
     monkeypatch.setattr(server.subprocess, "run", fake_run)
     content = run(server.call_tool("web_extract", {
+        "detail": "full",
         "urls": ["https://example.com/a"],
         "provider": "linkup",
     }))
@@ -504,6 +509,7 @@ def test_subprocess_nonzero_canonical_error_remains_typed(monkeypatch):
 
     monkeypatch.setattr(server.subprocess, "run", fake_run)
     content = run(server.call_tool("web_search", {
+        "detail": "full",
         "query": "example",
         "provider": "linkup",
     }))
@@ -529,6 +535,7 @@ def test_subprocess_non_json_failure_is_typed_legacy_compatible_and_secret_free(
 
     monkeypatch.setattr(server.subprocess, "run", fake_run)
     content = run(server.call_tool("web_search", {
+        "detail": "full",
         "query": "example",
         "provider": "linkup",
     }))
@@ -552,6 +559,7 @@ def test_subprocess_non_json_success_is_typed_and_secret_free(monkeypatch):
 
     monkeypatch.setattr(server.subprocess, "run", fake_run)
     content = run(server.call_tool("web_search", {
+        "detail": "full",
         "query": "example",
         "provider": "linkup",
     }))
@@ -576,6 +584,7 @@ def test_subprocess_timeout_is_typed_retryable_and_secret_free(monkeypatch):
 
     monkeypatch.setattr(server.subprocess, "run", fake_run)
     content = run(server.call_tool("web_search", {
+        "detail": "full",
         "query": "maximum budget",
         "mode": "research",
         "research_time_budget": 75,
@@ -604,21 +613,25 @@ def test_donsetch_subprocess_budget_covers_inner_stdio_timeout(monkeypatch):
 
     monkeypatch.setattr(server, "_run_cmd", capture_run)
     run(server.call_tool("web_search", {
+        "detail": "full",
         "query": "donsetch budget",
         "provider": "donsetch",
         "mode": "research",
         "research_time_budget": 75,
     }))
     run(server.call_tool("web_extract", {
+        "detail": "full",
         "urls": ["https://example.com"],
         "provider": "donsetch",
     }))
     run(server.call_tool("web_extract", {
+        "detail": "full",
         "urls": ["https://example.com", "https://example.org"],
         "provider": "donsetch",
     }))
     monkeypatch.setenv("DONSETCH_BIN", "/bin/true")
     run(server.call_tool("web_search", {
+        "detail": "full",
         "query": "donsetch auto budget",
         "provider": "auto",
     }))

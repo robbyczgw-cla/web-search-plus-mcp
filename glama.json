@@ -25,10 +25,18 @@
   "tools": [
     {
       "name": "web_search",
-      "description": "Source-only web search through the Web Search Plus v3 runtime. Routes across configured source-result providers and returns additive v3 evidence, routing receipts, provider attempts, cache provenance, and typed errors.",
+      "description": "Source-only web search through the Web Search Plus v3 runtime. Routes across configured source-result providers. Returns compact sources by default; detail='full' includes the complete v3 evidence and routing contract.",
       "inputSchema": {
         "type": "object",
         "properties": {
+          "detail": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "full"
+            ],
+            "description": "Response detail: compact by default; full returns the complete v3 contract. Overrides the server default."
+          },
           "query": {
             "type": "string",
             "description": "Search query"
@@ -165,10 +173,18 @@
     },
     {
       "name": "web_extract",
-      "description": "Source-only URL extraction through 9 Web Search Plus v3 providers. Responses preserve bounded-context limits, truncation warnings, evidence, and page-on-demand stored-content references.",
+      "description": "Source-only URL extraction through 9 Web Search Plus v3 providers. Returns bounded page text, truncation warnings and stored-content references. Compact by default; detail='full' includes the complete v3 contract.",
       "inputSchema": {
         "type": "object",
         "properties": {
+          "detail": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "full"
+            ],
+            "description": "Response detail: compact by default; full returns the complete v3 contract. Overrides the server default."
+          },
           "urls": {
             "type": "array",
             "items": {

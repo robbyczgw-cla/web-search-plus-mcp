@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [5.1.3] - 2026-10-30
+
+Planned release date; not tagged or published yet.
+
+### Changed
+
+- **MCP responses are compact by default.** `web_search` and `web_extract` accept the optional `detail: "compact" | "full"` argument. Compact JSON removes repeated observations and execution diagnostics while preserving source text, short routing/cache/warning summaries, per-URL extraction errors, bounded content and full-text storage references. Failures retain setup guidance and MCP `isError: true`.
+- **Clients parsing the full v3 contract must opt in:** pass `detail: "full"`, set `WEB_SEARCH_PLUS_MCP_DETAIL=full` in the server environment, or add `{"mcp": {"detail": "full"}}` to the existing config file. Precedence: argument > environment > config > compact. Full output preserves the 5.1.2 projection, including routing receipts, observations and requested quality reports. Tool names, existing arguments, engine behavior, routing, caching and content limits are unchanged.
+
 ## [5.1.2] - 2026-10-18
 
 Planned release date; not tagged or published yet. 5.1.1 was never released, so this section covers everything since 5.0.1. Synced with the Hermes Web Search Plus 5.1.2 engine (5.0.1 → 5.1.2, including the engine parts of 5.1.0 and 5.1.1). Hermes-plugin-only changes are not ported: profile-scoped keys (catalog rule 11), the native backend, `hermes web-search-plus` commands, Hermes Desktop settings and the Jev key-file removal. Tool names, input schemas and the `.env` loading of the MCP server are unchanged.
