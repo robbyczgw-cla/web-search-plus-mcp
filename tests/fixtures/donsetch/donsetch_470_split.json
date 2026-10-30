@@ -1,0 +1,128 @@
+{
+ "search": {
+  "_meta": {
+   "com.donsetch/search-debug": {
+    "cached": false,
+    "elapsed_ms": 8550,
+    "engines": [
+     {
+      "egress": "direct",
+      "engine": "mojeek",
+      "hits": 0,
+      "ms": 0,
+      "status": "blocked:200"
+     },
+     {
+      "egress": "direct",
+      "engine": "stackexchange",
+      "hits": 5,
+      "ms": 501,
+      "status": "ok"
+     }
+    ],
+    "instant": null,
+    "intent": "Code",
+    "provider": null,
+    "rerank": "on",
+    "results": [
+     {
+      "consensus": 1,
+      "engines": [
+       "bing",
+       "ddg"
+      ],
+      "score": 1.814,
+      "snippet": "Summary - Release highlights ¶ Python 3.14 is the latest stable release of the P",
+      "title": "What’s new in Python 3.14 — Python 3.15.0 documentation",
+      "url": "https://docs.python.org/3/whatsnew/3.14.html"
+     },
+     {
+      "consensus": 1,
+      "engines": [
+       "bing"
+      ],
+      "score": 1.614,
+      "snippet": "Editor, Hugo van Kemenade,. This article explains the new features in Python 3.1",
+      "title": "What’s new in Python 3.15 — Python 3.15.0 documentation",
+      "url": "https://docs.python.org/3/whatsnew/3.15.html"
+     },
+     {
+      "consensus": 1,
+      "engines": [
+       "stackexchange"
+      ],
+      "score": 1.325,
+      "snippet": "Stack Overflow: score 1, 1 answers, accepted answer",
+      "title": "python-polars are there any updated release notes for new versions?",
+      "url": "https://stackoverflow.com/questions/73908268/python-polars-are-there-any-updated-release-notes-for-new-versions"
+     }
+    ],
+    "weak": false
+   }
+  },
+  "content": [
+   {
+    "text": "# Search results\n1. S3GM75i4K · What’s new in Python 3.14 — Python 3.15.0 documentation : docs.python.org · official · 1 index family\n   Summary - Release highlights ¶ Python 3.14 is the latest stable release of the Python programming language, with a mix of changes to the language, the implementation, and the…\n2. SlmThDM1i · What’s new in Python 3.15 — Python 3.15.0 documentation : docs.python.org · official · 1 index family\n   Editor, Hugo van Kemenade,. This article explains the new features in Python 3.15, compared to 3.14. Python 3.15 was released on 9 October 2026. For full details, see the…\n3. SJ21N4Es0 · python-polars are there any updated release notes for new versions? : stackoverflow.com · community · 1 index family\n   Stack Overflow: score 1, 1 answers, accepted answer\nDegraded retrieval : 6/11 backends available.",
+    "type": "text"
+   }
+  ],
+  "structuredContent": {
+   "degraded": true,
+   "failed_engines": 5,
+   "ok": true,
+   "provider": "keyless",
+   "requested_results": 3,
+   "results": [
+    {
+     "handle": "S3GM75i4K",
+     "rank": 1,
+     "source_type": "official",
+     "url": "https://docs.python.org/3/whatsnew/3.14.html"
+    },
+    {
+     "handle": "SlmThDM1i",
+     "rank": 2,
+     "source_type": "official",
+     "url": "https://docs.python.org/3/whatsnew/3.15.html"
+    },
+    {
+     "handle": "SJ21N4Es0",
+     "rank": 3,
+     "source_type": "community",
+     "url": "https://stackoverflow.com/questions/73908268/python-polars-are-there-any-updated-release-notes-for-new-versions"
+    }
+   ],
+   "returned_results": 3,
+   "weak": false
+  }
+ },
+ "extract": {
+  "_meta": {
+   "com.donsetch/fetch-debug": {
+    "status": 200,
+    "title": "Example Domain",
+    "quality": 0.4333333373069763,
+    "site": null,
+    "verdict": "ContentOk",
+    "tier": "1"
+   }
+  },
+  "content": [
+   {
+    "text": "# Example Domain\nhttps://example.com/\n\nThis domain is for use in documentation examples without needing permission. This is not a service; avoid relying on it for testing and monitoring purposes.",
+    "type": "text"
+   }
+  ],
+  "structuredContent": {
+   "changed": "unchanged",
+   "content_complete": true,
+   "content_kind": "Page",
+   "content_ok": true,
+   "lang": "en",
+   "ok": true,
+   "read_status": "content",
+   "server_modified": "Tue, 13 Oct 2026 22:05:48 GMT",
+   "url": "https://example.com/"
+  }
+ }
+}

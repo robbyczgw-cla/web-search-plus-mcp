@@ -224,7 +224,8 @@ def _normalize_behavior_config(
         drop_retired=migrate_retired,
     )
     auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
-    extract_priority = _normalize_extract_provider_list(auto.get("extract_provider_priority", EXTRACT_PROVIDERS))
+    # Same rule as the engine (config.py): an empty list means the default order.
+    extract_priority = _normalize_extract_provider_list(auto.get("extract_provider_priority") or EXTRACT_PROVIDERS)
     auto["extract_provider_priority"] = _append_missing_extract_providers(extract_priority)
     auto["disabled_providers"] = _normalize_provider_list(
         auto.get("disabled_providers", []),
@@ -254,7 +255,17 @@ def _normalize_behavior_config(
     return normalized
 
 
-def _load_behavior_config(path: Optional[Path] = None) -> tuple[dict[str, Any], Optional[str]]:
+def _load_behavior_config(
+    path: Optional[Path] = None, *, quarantine: bool = False
+) -> tuple[dict[str, Any], Optional[str]]:
+    """Read the behaviour config; an invalid file falls back to defaults.
+
+    Read paths (every tool call resolves ``detail`` here, and ``status``) leave
+    the file alone: the engine is the authority on what the runtime uses, and a
+    stricter check here once moved a config the engine accepted, silently
+    dropping its disabled providers. Only the ``config`` command, which writes
+    the file next, sets ``quarantine`` so the user's file is kept as a backup.
+    """
     path = path or _default_config_path()
     if not path.exists():
         return _default_behavior_config(), None
@@ -270,6 +281,8 @@ def _load_behavior_config(path: Optional[Path] = None) -> tuple[dict[str, Any], 
         )
         return normalized, warning
     except Exception as exc:
+        if not quarantine:
+            return _default_behavior_config(), f"Invalid config ignored by the MCP server settings: {exc}"
         broken = path.with_name(path.name + f".broken-{int(__import__('time').time())}")
         try:
             path.replace(broken)
@@ -1017,14 +1030,31 @@ async def _run_in_process(engine: Any, cmd: list[str], timeout: int) -> Optional
         return _subprocess_failed_payload(invalid_response=True)
 
 
+def _subprocess_invocation(cmd: list[str]) -> tuple[list[str], dict[str, str]]:
+    """Run search.py as a module of this package, not as a file path.
+
+    search.py uses package-relative imports, so ``python search.py`` fails with
+    "attempted relative import with no known parent package". The package's
+    parent directory goes first on PYTHONPATH so an uninstalled checkout runs
+    the same code as this server.
+    """
+    env = os.environ.copy()
+    if len(cmd) < 2 or cmd[1] != str(SEARCH_SCRIPT):
+        return cmd, env
+    package_parent = str(SEARCH_SCRIPT.parent.parent)
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [package_parent, env.get("PYTHONPATH")]))
+    return [cmd[0], "-m", f"{__package__ or SEARCH_SCRIPT.parent.name}.search", *cmd[2:]], env
+
+
 async def _run_subprocess(cmd: list[str], timeout: int) -> dict[str, Any]:
+    argv, env = _subprocess_invocation(cmd)
     try:
         result = await asyncio.to_thread(
             subprocess.run,
-            cmd,
+            argv,
             capture_output=True,
             text=True,
-            env=os.environ.copy(),
+            env=env,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -1475,7 +1505,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
                 extra_values=extra_values,
             )
             if want_jev:
-                config, _warning = _load_behavior_config()
+                config, _warning = _load_behavior_config(quarantine=True)
                 jev_setup.apply_jev_config(config, enabled=True, decisions=jev_decisions)
                 written = _write_behavior_config(config)
                 payload["config_path"] = str(written)
@@ -1496,7 +1526,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         if args.config_path:
             os.environ[CONFIG_ENV_VAR] = args.config_path
         path = _default_config_path()
-        config, warning = _load_behavior_config(path)
+        config, warning = _load_behavior_config(path, quarantine=args.config_command != "show")
         if args.config_command == "show":
             payload = {"config_path": str(path), "default_provider": config.get("defaults", {}).get("provider"), "routing_preferences": config.get("auto_routing", {})}
             if warning:

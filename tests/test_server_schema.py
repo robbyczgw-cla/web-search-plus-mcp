@@ -414,13 +414,17 @@ def test_status_json_includes_routing_preferences_without_secrets(tmp_path, monk
     assert "brv-super-secret" not in payload_text
 
 
-def test_invalid_config_is_quarantined_by_server_loader(tmp_path, monkeypatch):
+def test_invalid_config_is_quarantined_only_before_a_write(tmp_path, monkeypatch):
     config_path = tmp_path / "config.json"
     config_path.write_text('{"auto_routing":{"confidence_threshold": 4}}')
     monkeypatch.setenv(server.CONFIG_ENV_VAR, str(config_path))
 
     config, warning = server._load_behavior_config()
     assert config["auto_routing"]["confidence_threshold"] == 0.3
+    assert warning and "Invalid config ignored" in warning
+    assert config_path.exists()
+
+    config, warning = server._load_behavior_config(quarantine=True)
     assert warning and "Invalid config moved" in warning
     assert not config_path.exists()
     assert list(tmp_path.glob("config.json.broken-*"))

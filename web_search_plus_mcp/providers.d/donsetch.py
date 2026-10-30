@@ -12,6 +12,11 @@ on ``structuredContent``. Transport diagnostics live under namespaced
 ``_meta`` keys (``com.donsetch/search-debug``, ``com.donsetch/fetch-debug``).
 This adapter whitelists those diagnostic fields and still accepts the older
 pre-compact structured shape so 3.2.x binaries keep working.
+
+DonSeTch >= 4.7.1 folds unrecognized clients' results into ``content`` with a
+leading ``[meta] {json}`` line and omits ``structuredContent``. The child
+environment opts back into the split shape (``DONSETCH_MCP__TEXT_ONLY=false``);
+if the fold arrives anyway, the strict ``[meta]`` fallback recovers the payload.
 """
 
 from __future__ import annotations
@@ -19,8 +24,8 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import queue
 import re
-import select
 import shutil
 import subprocess
 import threading
@@ -45,15 +50,36 @@ _ALLOWED_INTENTS = {"auto", "web", "code", "paper", "news", "entity"}
 TESTED_VERSION = "4.10.3"
 
 
-def _engine_credentials():
-    """The credentials module of the engine that loaded this provider.
+def _wsp_version() -> str:
+    """This Web Search Plus release, for the MCP handshake's clientInfo.version.
 
-    ``wsp_sdk`` re-exports the engine's HTTP helpers, so the package those come
-    from (``web_search_plus_mcp``, or the flat test layout) also holds the
-    sibling ``credentials`` module with the active secret resolver.
+    Read from the loading engine's user agent (one of the release-version
+    surfaces), so there is no second place to bump. DonSeTch only reads the
+    client name; a failure here must never break a session.
+    """
+    try:
+        agent = _engine_module("http_client").DEFAULT_USER_AGENT
+        version = str(agent).rpartition("/")[2]
+        return version if re.fullmatch(r"\d+\.\d+\.\d+", version) else "unknown"
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def _engine_module(name: str):
+    """A sibling module of the engine that loaded this provider.
+
+    The engine package differs per host: ``hermes_plugins.<slug>.wsp_core`` in
+    Hermes, ``web_search_plus_mcp`` in the MCP server, nothing in the flat test
+    layout. ``wsp_sdk`` re-exports the engine's HTTP helpers in every host, so
+    their module names the package. Hermes and the MCP ship this file unchanged.
     """
     engine = wsp_sdk.dispatch_timeout.__module__.rpartition(".")[0]
-    return importlib.import_module(f"{engine}.credentials" if engine else "credentials")
+    return importlib.import_module(f"{engine}.{name}" if engine else name)
+
+
+def _engine_credentials():
+    """The credentials module of the engine that loaded this provider (active secret resolver)."""
+    return _engine_module("credentials")
 
 
 def file_credentials_allowed() -> bool:
@@ -294,6 +320,11 @@ def _child_env() -> dict[str, str]:
         if value is not None:
             env[name] = value
     env["DONSETCH_TRANSPORT"] = "stdio"
+    # DonSeTch >= 4.7.1 folds results into `content` (leading `[meta] {json}`)
+    # for unrecognized clients and drops structuredContent. Opt back into the
+    # split shape ("[mcp] text_only = false" upstream). Set last so a profile or
+    # process DONSETCH_MCP__TEXT_ONLY cannot override it: the adapter depends on it.
+    env["DONSETCH_MCP__TEXT_ONLY"] = "false"
     return env
 
 
@@ -302,6 +333,29 @@ def _namespaced_meta(meta: Any, key: str) -> dict[str, Any]:
         return {}
     value = meta.get(key)
     return value if isinstance(value, dict) else {}
+
+
+_META_PREFIX = "[meta] "
+
+
+def _split_folded_meta(text: str) -> tuple[dict[str, Any], str]:
+    """Split DonSeTch's folded ``[meta] {json}`` first line from the result text.
+
+    Strict: only a leading line that parses as a JSON object carrying a boolean
+    ``ok`` counts. Anything else returns ({}, text) so the callers keep their
+    contract errors instead of guessing.
+    """
+    stripped = text.lstrip()
+    if not stripped.startswith(_META_PREFIX):
+        return {}, text
+    first, _, rest = stripped.partition("\n")
+    try:
+        meta = json.loads(first[len(_META_PREFIX):])
+    except (TypeError, ValueError):
+        return {}, text
+    if not isinstance(meta, dict) or not isinstance(meta.get("ok"), bool):
+        return {}, text
+    return meta, rest.lstrip("\n")
 
 
 def _payload_from_tool_result(result: dict[str, Any]) -> dict[str, Any]:
@@ -316,9 +370,12 @@ def _payload_from_tool_result(result: dict[str, Any]) -> dict[str, Any]:
     meta = result.get("_meta")
     if not isinstance(meta, dict):
         meta = {}
+    text = _text_content(result.get("content"))
+    if not structured:
+        structured, text = _split_folded_meta(text)
     return {
         "structured": structured,
-        "text": _text_content(result.get("content")),
+        "text": text,
         "meta": meta,
     }
 
@@ -340,18 +397,20 @@ def _mcp_response_from_stdout(stdout: str, request_id: int) -> dict[str, Any]:
     raise RuntimeError("donsetch_mcp_contract_failed")
 
 
-def _read_mcp_message(process: subprocess.Popen[str], request_id: int, deadline: float) -> dict[str, Any]:
-    if process.stdout is None:
+def _read_mcp_message(lines: queue.Queue[str], request_id: int, deadline: float) -> dict[str, Any]:
+    """Read the next matching JSON-RPC message from the session's queue."""
+    if lines is None:
         raise RuntimeError("donsetch_process_failed")
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError
-        ready, _, _ = select.select([process.stdout], [], [], remaining)
-        if not ready:
+        try:
+            line = lines.get(timeout=remaining)
+        except queue.Empty:
             raise TimeoutError
-        line = process.stdout.readline()
         if not line:
+            lines.put("")  # Keep the end-of-stream marker for later readers.
             raise RuntimeError("donsetch_mcp_failed")
         try:
             message = json.loads(line)
@@ -548,6 +607,8 @@ class DonsetchSession:
         self._deadline = 0.0
         self._stderr = ""
         self._stderr_thread: threading.Thread | None = None
+        self._stdout_lines: queue.Queue[str] | None = None
+        self._stdout_thread: threading.Thread | None = None
         self._closed = False
 
     def __enter__(self) -> DonsetchSession:
@@ -576,6 +637,9 @@ class DonsetchSession:
             bufsize=1,
             env=_child_env(),
         )
+        self._stdout_lines = queue.Queue()
+        self._stdout_thread = threading.Thread(target=self._collect_stdout, daemon=True)
+        self._stdout_thread.start()
         self._stderr_thread = threading.Thread(target=self._collect_stderr, daemon=True)
         self._stderr_thread.start()
         if self._process.stdin is None or self._process.stdout is None:
@@ -602,6 +666,23 @@ class DonsetchSession:
         self._stderr = "".join(chunks)[:STDERR_LIMIT]
         _remember_stderr(self._stderr)
 
+    def _collect_stdout(self) -> None:
+        # select() cannot wait on a stdio pipe on Windows (WinError 10038),
+        # so one reader thread per process feeds every response line to the
+        # queue that _read_mcp_message waits on.
+        process = self._process
+        lines = self._stdout_lines
+        if process is None or process.stdout is None or lines is None:
+            return
+        try:
+            for raw in process.stdout:
+                lines.put(raw)
+        except (OSError, ValueError):
+            # ValueError: close() shut the pipe while a read was in flight.
+            pass
+        finally:
+            lines.put("")  # End-of-stream marker, like readline() returning "".
+
     def _write(self, payload: dict[str, Any]) -> None:
         process = self._process
         if process is None or process.stdin is None:
@@ -623,12 +704,13 @@ class DonsetchSession:
                 "params": {
                     "protocolVersion": "2025-11-25",
                     "capabilities": {},
-                    "clientInfo": {"name": "web-search-plus", "version": TESTED_VERSION},
+                    "clientInfo": {"name": "web-search-plus", "version": _wsp_version()},
                 },
             }
         )
         assert self._process is not None
-        _mcp_result(_read_mcp_message(self._process, request_id, self._deadline), request_id)
+        assert self._stdout_lines is not None
+        _mcp_result(_read_mcp_message(self._stdout_lines, request_id, self._deadline), request_id)
         self._write({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
 
     def call(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -643,7 +725,8 @@ class DonsetchSession:
             }
         )
         assert self._process is not None
-        result = _mcp_result(_read_mcp_message(self._process, request_id, self._deadline), request_id)
+        assert self._stdout_lines is not None
+        result = _mcp_result(_read_mcp_message(self._stdout_lines, request_id, self._deadline), request_id)
         return _payload_from_tool_result(result)
 
     def close(self) -> None:
@@ -1000,7 +1083,7 @@ PROVIDER = ProviderSpec(
     env_var="DONSETCH_BIN",
     display_name="DonSeTch (local MCP)",
     description=(
-        "Local DonSeTch 3.x stdio MCP provider for metasearch, direct extraction, "
+        "Local DonSeTch (4.7.0 and newer) stdio MCP provider for metasearch, direct extraction, "
         "PDF/OCR-aware fetching, and optional browser escalation."
     ),
     config_section="donsetch",
