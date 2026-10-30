@@ -1,6 +1,6 @@
 # web-search-plus-mcp 5.1.3
 
-Planned release 2026-10-30; not tagged or published yet.
+Released 2026-10-30.
 
 ## Changed
 

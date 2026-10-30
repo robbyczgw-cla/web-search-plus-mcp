@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 5.1.3` is planned for 2026-10-30, with compact MCP responses by default; it also carries the Hermes 5.1.6 engine fixes.
+`web-search-plus-mcp 5.1.3` (released 2026-10-30) returns compact MCP responses by default and carries the Hermes Web Search Plus 5.1.6 engine fixes.
 
 ### What's new in 5.1.3
 
