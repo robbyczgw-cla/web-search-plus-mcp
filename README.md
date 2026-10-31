@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 5.1.5` (released 2026-10-30) fixes explicit DonSeTch searches with DonSeTch 4.7.1 and newer, the `WSP_FORCE_SUBPROCESS` mode, and a config that a tool call could move aside. 5.1.4 brought compact MCP responses by default and 1,200-character snippet caps; see the [changelog](CHANGELOG.md).
+`web-search-plus-mcp 5.1.6` (released 2026-10-30) says why a page could not be extracted (page not found, site refused, unreachable, provider does not support the site), stops paying for fallbacks when a page does not exist, and no longer blocks Firecrawl after a site it does not support. 5.1.5 fixed DonSeTch with DonSeTch 4.7.1 and newer; 5.1.4 brought compact responses by default; see the [changelog](CHANGELOG.md).
 
 ### What's new in 5.1.3
 
