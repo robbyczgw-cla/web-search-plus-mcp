@@ -37,6 +37,7 @@ from mcp.types import (
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 from . import jev_setup
+from .env_loader import clean_env_value
 from .daemon_tasks import DaemonTask
 
 from . import __version__
@@ -306,17 +307,43 @@ def _write_behavior_config(config: dict[str, Any], path: Optional[Path] = None, 
 
 
 def _resolve_detail(arguments: dict[str, Any]) -> str:
-    """An explicit argument wins over environment, config, and compact."""
+    """An explicit argument wins over environment, config, and compact.
+
+    The environment value is the operator's, not the caller's: an empty value
+    counts as unset, case is ignored, and anything else is reported once on
+    stderr and skipped. It used to raise on every tool call ("Web Search Plus
+    tool execution failed.") with no hint that the env var was the cause.
+    """
     if "detail" in arguments:
         detail = arguments["detail"]
     else:
-        detail = os.environ.get(DETAIL_ENV_VAR)
+        detail = _env_detail()
         if detail is None:
             config, _warning = _load_behavior_config()
             detail = config["mcp"]["detail"]
     if detail not in ("compact", "full"):
         raise ValueError("detail must be compact or full")
     return detail
+
+
+_DETAIL_ENV_WARNED = False
+
+
+def _env_detail() -> Optional[str]:
+    global _DETAIL_ENV_WARNED
+    raw = os.environ.get(DETAIL_ENV_VAR)
+    value = (raw or "").strip().lower()
+    if not value:
+        return None
+    if value in ("compact", "full"):
+        return value
+    if not _DETAIL_ENV_WARNED:
+        _DETAIL_ENV_WARNED = True
+        print(
+            json.dumps({"warning": f"{DETAIL_ENV_VAR} must be compact or full; ignoring it"}),
+            file=sys.stderr,
+        )
+    return None
 
 
 def _truthy(value: Any) -> bool:
@@ -327,20 +354,41 @@ def _configured_env(env_name: str) -> bool:
     return bool((os.environ.get(env_name) or "").strip())
 
 
-def _configured_providers() -> dict[str, bool]:
-    return {name: _configured_env(meta["env"]) for name, meta in SEARCH_PROVIDERS.items()}
+def _readiness_report() -> dict[str, Any]:
+    """The engine's own readiness for every provider (one answer for status and tools).
+
+    Status used to count an env var as configured when it was merely present:
+    placeholders and private SearXNG URLs showed as configured, while keys in
+    config.json, keyless opt-ins and $HERMES_HOME/.env keys showed as missing.
+    """
+    from . import readiness
+
+    config, _warning = _load_behavior_config()
+    return readiness.evaluate(config, list(SEARCH_PROVIDERS))
 
 
-def _has_search_provider() -> bool:
-    return any(_configured_env(meta["env"]) for meta in SEARCH_PROVIDERS.values())
+def _configured_providers(report: Optional[dict[str, Any]] = None) -> dict[str, bool]:
+    report = report if report is not None else _readiness_report()
+    return {name: bool(report[name].accepted) for name in SEARCH_PROVIDERS}
 
 
-def _has_extract_provider() -> bool:
-    return any(_configured_env(SEARCH_PROVIDERS[p]["env"]) for p in EXTRACT_PROVIDERS)
+def _has_search_provider(report: Optional[dict[str, Any]] = None) -> bool:
+    configured = _configured_providers(report)
+    return any(ok for name, ok in configured.items() if "search" in SEARCH_PROVIDERS[name]["capabilities"])
+
+
+def _has_extract_provider(report: Optional[dict[str, Any]] = None) -> bool:
+    configured = _configured_providers(report)
+    return any(configured.get(p) for p in EXTRACT_PROVIDERS)
 
 
 def _load_env_file() -> None:
-    """Load .env from package dir or project root without overwriting existing env."""
+    """Load .env from package dir or project root without overwriting existing env.
+
+    Empty values and template placeholders (``your_brave_key``) are skipped: set
+    first, they blocked the real key from ``$HERMES_HOME/.env``, which the
+    engine's own loader reads later and also never overwrites.
+    """
     for env_file in (Path(__file__).parent / ".env", Path(__file__).parent.parent / ".env"):
         if not env_file.exists():
             continue
@@ -351,7 +399,9 @@ def _load_env_file() -> None:
             if line.startswith("export "):
                 line = line[7:]
             key, _, val = line.partition("=")
-            os.environ.setdefault(key.strip(), val.strip().strip("'\""))
+            value = clean_env_value(val)
+            if value is not None:
+                os.environ.setdefault(key.strip(), value)
 
 
 _load_env_file()
@@ -1307,19 +1357,23 @@ async def main():
 
 
 def _status_payload() -> dict[str, Any]:
-    configured = _configured_providers()
+    report = _readiness_report()
+    configured = _configured_providers(report)
     behavior_config, config_warning = _load_behavior_config()
     payload = {
         "version": __version__,
         "server": "web-search-plus-mcp",
-        "search_configured": _has_search_provider(),
-        "extract_configured": _has_extract_provider(),
+        "search_configured": _has_search_provider(report),
+        "extract_configured": _has_extract_provider(report),
         "tools_if_started_now": ["web_search", "web_extract"],
         "config_path": str(_default_config_path()),
         "routing_preferences": behavior_config.get("auto_routing", {}),
         "default_provider": behavior_config.get("defaults", {}).get("provider"),
         "providers": {
-            name: {"env": SEARCH_PROVIDERS[name]["env"], "configured": ok, "capabilities": SEARCH_PROVIDERS[name]["capabilities"]}
+            name: {
+                "env": SEARCH_PROVIDERS[name]["env"], "configured": ok, "capabilities": SEARCH_PROVIDERS[name]["capabilities"],
+                **{key: value for key, value in report[name].to_public().items() if key != "provider"},
+            }
             for name, ok in configured.items()
         },
     }

@@ -1055,7 +1055,16 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
     spec = PROVIDER_SPECS.get(provider)
     if spec is None:
         return None
-    return _clean_env_value(get_secret(spec.env_var) or "")
+    value = _clean_env_value(get_secret(spec.env_var) or "")
+    if not value and provider == "donsetch" and config:
+        # A binary path, not a secret: config.json `donsetch.binary` counts on
+        # every host. The adapter always used it; readiness refused it, so the
+        # setting never worked.
+        section = config.get("donsetch")
+        binary = section.get("binary") if isinstance(section, dict) else None
+        if isinstance(binary, str) and binary.strip():
+            return binary.strip()
+    return value
 
 
 def keyless_public_allowed(provider: str, config: Dict[str, Any] = None) -> bool:
@@ -1074,21 +1083,15 @@ def keyless_public_allowed(provider: str, config: Dict[str, Any] = None) -> bool
 
 
 def provider_configured(provider: str, config: Dict[str, Any] = None) -> bool:
-    """Whether a provider can run: it has a key, or its keyless public endpoint is opted in.
+    """Whether a provider can run: the engine accepts its key, URL, binary or keyless opt-in.
 
-    Distinct from ``get_api_key`` truthiness so key-status logic never treats a
-    keyless provider as keyed.
+    One answer for every caller, from ``readiness``. A host refusal to read the
+    credential is re-raised, so it reaches the tool output instead of reading as
+    "no keys configured".
     """
-    try:
-        if get_api_key(provider, config):
-            return True
-    except ValueError:
-        # An invalid or blocked SearXNG URL (see _validate_searxng_url) counts as
-        # "not configured" so it cannot break eligibility for other providers.
-        # validate_api_key still raises the clear error for provider="searxng".
-        return False
-    return keyless_public_allowed(provider, config)
+    from .readiness import evaluate_provider
 
+    return evaluate_provider(provider, config, raise_scope_errors=True).accepted
 
 def add_provider_setup_guidance(
     payload: Dict[str, Any], capability: str, providers: List[str], config: Dict[str, Any],
@@ -1103,6 +1106,24 @@ def add_provider_setup_guidance(
     if not candidates or any(provider_configured(p, config) for p in candidates):
         return
     explicit = requested_provider in candidates
+    # The user set something up that cannot work (a placeholder key, a blocked
+    # SearXNG URL, a disabled provider): name it and its fix instead of
+    # "nothing is configured".
+    from .readiness import evaluate, most_relevant_problem
+
+    pool = [requested_provider] if explicit else [
+        name for name, spec in PROVIDER_SPECS.items() if getattr(spec, f"supports_{capability}", False)
+    ]
+    problem = most_relevant_problem(evaluate(config, pool), pool)
+    if problem is not None and problem.state.value != "explicit_only":
+        fix_command = problem.fix[0] if problem.fix else ""
+        payload.update({
+            "error": f"{problem.reason}" + (f" Run: {fix_command}" if fix_command else ""),
+            "error_type": "requested_provider_not_configured" if explicit else "provider_setup_required",
+            "how_to_fix": list(problem.fix),
+            "readiness": [problem.to_public()],
+        })
+        return
     preset = "self-hosted" if is_self_hosted_profile(config) else ("extract" if capability == "extract" else "starter")
     target = requested_provider if explicit else f"--preset {preset}"
     command = f"web-search-plus-mcp setup {target}"
