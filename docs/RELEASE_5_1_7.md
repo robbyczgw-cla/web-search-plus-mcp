@@ -9,6 +9,9 @@ Released 2026-11-08. `status`, setup guidance and tool errors agree with the eng
 - **Errors name the setup problem** (placeholder key, private SearXNG URL, disabled provider) with the fix, instead of "Missing API key for serper" and Serper signup steps.
 - **`WEB_SEARCH_PLUS_MCP_DETAIL`** empty or in another case no longer breaks every tool call.
 - **DonSeTch:** config.json `donsetch.binary` works.
+- **Config CLI** validates edits with the engine's rules and never leaves a file the engine will move aside; `set-default` changes the provider actually used.
+- **Research returns the pages it read** (full: bounded text; compact: short excerpts) and names failed reads.
+- **Research status is stable** and `fallback_reason` is consistent; **state store** no longer shows healthy providers as open and reclaims reservations of crashed processes; **DonSeTch** errors keep their class.
 
 ## Checked before release
 
