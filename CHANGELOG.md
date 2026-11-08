@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [5.1.7] - 2026-11-08
+
+### Fixed
+
+- **One readiness answer.** `status` used to count a provider as configured when its env var was merely present: template placeholders (`your_brave_key`) and private SearXNG URLs showed as configured while the engine refused them, and keys in config.json, keyless opt-ins (`keenable.allow_public`) and `$HERMES_HOME/.env` keys showed as missing although they worked. Status now reads the engine's own readiness (new `readiness.py`) and adds `state`, `reason_code`, `reason`, `fix` and `source` per provider; existing keys stay.
+- **A placeholder no longer hides the real key.** The `.env` next to the package was loaded first, raw: `BRAVE_API_KEY=your_brave_key` (or an empty `KEY=`) blocked the real key in `$HERMES_HOME/.env`. Empty values and placeholders are now skipped.
+- **Errors name the setup problem.** With nothing usable, the tools answered "Missing API key for serper" with Serper signup steps, even when the user's Brave key was just a placeholder. Compact and full output now carry the actual problem and its fix, `retryable: false`, with `details.readiness` in the v3 error.
+- **`WEB_SEARCH_PLUS_MCP_DETAIL`:** an empty value counts as unset and case is ignored (`FULL`); any other value is reported once on stderr and skipped. It used to make every tool call fail with a generic error.
+- config.json `donsetch.binary` counts as the DonSeTch binary; a path that does not exist is reported as such.
+
+Same engine changes as the Hermes plugin 5.1.8.
+
 ## [5.1.6] - 2026-10-30
 
 ### Fixed

@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 5.1.6` (released 2026-10-30) says why a page could not be extracted (page not found, site refused, unreachable, provider does not support the site), stops paying for fallbacks when a page does not exist, and no longer blocks Firecrawl after a site it does not support. 5.1.5 fixed DonSeTch with DonSeTch 4.7.1 and newer; 5.1.4 brought compact responses by default; see the [changelog](CHANGELOG.md).
+`web-search-plus-mcp 5.1.7` (released 2026-11-08) makes `status`, setup guidance and tool errors agree with the engine on whether a provider can run, and say why not: template placeholder keys, private SearXNG URLs and disabled providers are named with the fix, a placeholder in a `.env` next to the package no longer hides the real key, and an empty `WEB_SEARCH_PLUS_MCP_DETAIL` no longer breaks the tools. 5.1.6 made extraction failures name their reason; see the [changelog](CHANGELOG.md).
 
 ### What's new in 5.1.3
 
