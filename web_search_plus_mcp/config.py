@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 import logging
 import os
 import re
@@ -422,6 +423,8 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
             config["default_provider"] = _normalize_routing_provider_config(str(config["default_provider"]))
     # MCP: config.json "defaults.provider" is the MCP default-provider surface.
     defaults = config.setdefault("defaults", {})
+    if not isinstance(defaults, dict):
+        raise ValueError("defaults must be an object")
     if defaults.get("provider"):
         if _is_removed_provider_id(defaults["provider"]):
             defaults["provider"] = DEFAULT_CONFIG["defaults"]["provider"]
@@ -969,23 +972,39 @@ def _apply_desktop_settings(config: Dict[str, Any], settings: Dict[str, Any]) ->
     return config
 
 
+def runtime_config_path() -> Path:
+    """Resolve the one config path shared by the engine and MCP CLI."""
+    return Path(os.environ.get("WEB_SEARCH_PLUS_CONFIG") or (HOST_DIR.parent / "config.json")).expanduser()
+
+
+def validate_config_candidate(user_config: Any) -> Dict[str, Any]:
+    """Validate a detached candidate with exactly the persisted runtime rules.
+
+    Do not read, quarantine, overlay host settings, or mutate the caller's draft.
+    Keep this merge identical for CLI writes and runtime reads.
+    """
+    if not isinstance(user_config, dict):
+        raise ValueError("config must be a JSON object")
+    config = _deepcopy_default_config()
+    for key, value in deepcopy(user_config).items():
+        if key in REMOVED_PROVIDER_IDS:
+            continue
+        if isinstance(value, dict) and isinstance(config.get(key), dict):
+            config[key] = {**config[key], **value}
+        else:
+            config[key] = value
+    return _validate_runtime_config(config)
+
+
 def load_config() -> Dict[str, Any]:
     """Load configuration from config.json if it exists, with defaults."""
     config = _deepcopy_default_config()
-    config_path = Path(os.environ.get("WEB_SEARCH_PLUS_CONFIG") or (HOST_DIR.parent / "config.json"))
+    config_path = runtime_config_path()
 
     if config_path.exists():
         try:
             with open(config_path, encoding="utf-8") as f:
-                user_config = json.load(f)
-                for key, value in user_config.items():
-                    if key in REMOVED_PROVIDER_IDS:
-                        continue
-                    if isinstance(value, dict) and key in config:
-                        config[key] = {**config.get(key, {}), **value}
-                    else:
-                        config[key] = value
-            config = _validate_runtime_config(config)
+                config = validate_config_candidate(json.load(f))
         except (json.JSONDecodeError, IOError, ValueError, TypeError) as e:
             _quarantine_runtime_config(config_path, str(e))
             config = _deepcopy_default_config()
@@ -1055,7 +1074,16 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
     spec = PROVIDER_SPECS.get(provider)
     if spec is None:
         return None
-    return _clean_env_value(get_secret(spec.env_var) or "")
+    value = _clean_env_value(get_secret(spec.env_var) or "")
+    if not value and provider == "donsetch" and config:
+        # A binary path, not a secret: config.json `donsetch.binary` counts on
+        # every host. The adapter always used it; readiness refused it, so the
+        # setting never worked.
+        section = config.get("donsetch")
+        binary = section.get("binary") if isinstance(section, dict) else None
+        if isinstance(binary, str) and binary.strip():
+            return binary.strip()
+    return value
 
 
 def keyless_public_allowed(provider: str, config: Dict[str, Any] = None) -> bool:
@@ -1074,21 +1102,15 @@ def keyless_public_allowed(provider: str, config: Dict[str, Any] = None) -> bool
 
 
 def provider_configured(provider: str, config: Dict[str, Any] = None) -> bool:
-    """Whether a provider can run: it has a key, or its keyless public endpoint is opted in.
+    """Whether a provider can run: the engine accepts its key, URL, binary or keyless opt-in.
 
-    Distinct from ``get_api_key`` truthiness so key-status logic never treats a
-    keyless provider as keyed.
+    One answer for every caller, from ``readiness``. A host refusal to read the
+    credential is re-raised, so it reaches the tool output instead of reading as
+    "no keys configured".
     """
-    try:
-        if get_api_key(provider, config):
-            return True
-    except ValueError:
-        # An invalid or blocked SearXNG URL (see _validate_searxng_url) counts as
-        # "not configured" so it cannot break eligibility for other providers.
-        # validate_api_key still raises the clear error for provider="searxng".
-        return False
-    return keyless_public_allowed(provider, config)
+    from .readiness import evaluate_provider
 
+    return evaluate_provider(provider, config, raise_scope_errors=True).accepted
 
 def add_provider_setup_guidance(
     payload: Dict[str, Any], capability: str, providers: List[str], config: Dict[str, Any],
@@ -1103,6 +1125,24 @@ def add_provider_setup_guidance(
     if not candidates or any(provider_configured(p, config) for p in candidates):
         return
     explicit = requested_provider in candidates
+    # The user set something up that cannot work (a placeholder key, a blocked
+    # SearXNG URL, a disabled provider): name it and its fix instead of
+    # "nothing is configured".
+    from .readiness import evaluate, most_relevant_problem
+
+    pool = [requested_provider] if explicit else [
+        name for name, spec in PROVIDER_SPECS.items() if getattr(spec, f"supports_{capability}", False)
+    ]
+    problem = most_relevant_problem(evaluate(config, pool), pool)
+    if problem is not None and problem.state.value != "explicit_only":
+        fix_command = problem.fix[0] if problem.fix else ""
+        payload.update({
+            "error": f"{problem.reason}" + (f" To fix: {fix_command}" if fix_command else ""),
+            "error_type": "requested_provider_not_configured" if explicit else "provider_setup_required",
+            "how_to_fix": list(problem.fix),
+            "readiness": [problem.to_public()],
+        })
+        return
     preset = "self-hosted" if is_self_hosted_profile(config) else ("extract" if capability == "extract" else "starter")
     target = requested_provider if explicit else f"--preset {preset}"
     command = f"web-search-plus-mcp setup {target}"
@@ -1115,7 +1155,7 @@ def add_provider_setup_guidance(
                      else preset_env_vars(preset)),
         "how_to_fix": [
             command,
-            "Store API keys in the env block of your MCP client config or a .env file, not inline in config.json. Keyless public endpoints require explicit opt-in.",
+            "Store API keys in the env block of your MCP client config or a .env file. Keyless public endpoints require explicit opt-in.",
         ],
     })
 

@@ -37,6 +37,8 @@ from mcp.types import (
 
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 from . import jev_setup
+from .env_loader import candidate_env_paths, clean_env_value
+from .config import runtime_config_path, validate_config_candidate, _unique_timestamped_path
 from .daemon_tasks import DaemonTask
 
 from . import __version__
@@ -104,7 +106,7 @@ def _valid_provider(provider: str) -> bool:
 
 
 def _default_config_path() -> Path:
-    return Path(os.environ.get(CONFIG_ENV_VAR, Path(__file__).parent.parent / "config.json")).expanduser()
+    return runtime_config_path()
 
 
 def _default_behavior_config() -> dict[str, Any]:
@@ -199,11 +201,19 @@ def _append_missing_extract_providers(providers: list[str]) -> list[str]:
 def _normalize_behavior_config(
     config: dict[str, Any], *, migrate_retired: bool = False
 ) -> dict[str, Any]:
-    normalized = _merge_dict(_default_behavior_config(), config or {})
+    if not isinstance(config, dict):
+        raise ValueError("config must be a JSON object")
+    normalized = _merge_dict(_default_behavior_config(), config)
     mcp = normalized.get("mcp")
     if not isinstance(mcp, dict) or mcp.get("detail") not in {"compact", "full"}:
         raise ValueError("mcp.detail must be compact or full")
     defaults = normalized.setdefault("defaults", {})
+    if not isinstance(defaults, dict):
+        raise ValueError("defaults must be an object")
+    # Existing top-level values retain the engine's precedence. New explicit
+    # set-default writes synchronize both keys, so old readers keep working.
+    if normalized.get("default_provider"):
+        defaults["provider"] = normalized["default_provider"]
     default_provider = _canonical_provider(str(defaults.get("provider", "serper")))
     if default_provider in RETIRED_ANSWER_PROVIDERS and migrate_retired:
         default_provider = "serper"
@@ -211,6 +221,8 @@ def _normalize_behavior_config(
         raise ValueError(f"unknown default provider: {defaults.get('provider')}")
     defaults["provider"] = default_provider
     auto = normalized.setdefault("auto_routing", {})
+    if not isinstance(auto, dict):
+        raise ValueError("auto_routing must be an object")
     auto["enabled"] = bool(auto.get("enabled", True))
     fallback = _canonical_provider(str(auto.get("fallback_provider", "serper")))
     if fallback in RETIRED_ANSWER_PROVIDERS and migrate_retired:
@@ -219,7 +231,7 @@ def _normalize_behavior_config(
         raise ValueError(f"unknown fallback provider: {auto.get('fallback_provider')}")
     auto["fallback_provider"] = fallback
     priority = _normalize_provider_list(
-        auto.get("provider_priority", ROUTING_PROVIDER_ORDER),
+        auto.get("provider_priority") or ROUTING_PROVIDER_ORDER,
         allow_empty=False,
         drop_retired=migrate_retired,
     )
@@ -263,8 +275,9 @@ def _load_behavior_config(
     Read paths (every tool call resolves ``detail`` here, and ``status``) leave
     the file alone: the engine is the authority on what the runtime uses, and a
     stricter check here once moved a config the engine accepted, silently
-    dropping its disabled providers. Only the ``config`` command, which writes
-    the file next, sets ``quarantine`` so the user's file is kept as a backup.
+    dropping its disabled providers. Explicit recovery callers can request
+    ``quarantine`` to keep a backup. CLI edits use a strict reader instead and
+    reject invalid drafts without moving the original file.
     """
     path = path or _default_config_path()
     if not path.exists():
@@ -283,7 +296,7 @@ def _load_behavior_config(
     except Exception as exc:
         if not quarantine:
             return _default_behavior_config(), f"Invalid config ignored by the MCP server settings: {exc}"
-        broken = path.with_name(path.name + f".broken-{int(__import__('time').time())}")
+        broken = _unique_timestamped_path(path, "broken")
         try:
             path.replace(broken)
             detail = f"Invalid config moved to {broken}: {exc}"
@@ -294,10 +307,11 @@ def _load_behavior_config(
 
 def _write_behavior_config(config: dict[str, Any], path: Optional[Path] = None, *, backup: bool = False) -> Path:
     path = path or _default_config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
     normalized = _normalize_behavior_config(config)
+    validate_config_candidate(normalized)
+    path.parent.mkdir(parents=True, exist_ok=True)
     if backup and path.exists():
-        backup_path = path.with_name(path.name + f".bak-{int(__import__('time').time())}")
+        backup_path = _unique_timestamped_path(path, "bak")
         backup_path.write_text(path.read_text())
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(normalized, indent=2, ensure_ascii=False) + "\n")
@@ -305,18 +319,64 @@ def _write_behavior_config(config: dict[str, Any], path: Optional[Path] = None, 
     return path
 
 
+def _read_config_for_edit(path: Path) -> dict[str, Any]:
+    """Read the actual draft; never replace unreadable policy with defaults."""
+    if not path.exists():
+        return _default_behavior_config()
+    try:
+        data = json.loads(path.read_text())
+        if not isinstance(data, dict):
+            raise ValueError("config must be a JSON object")
+        return _normalize_behavior_config(data, migrate_retired=True)
+    except (OSError, ValueError, TypeError) as exc:
+        raise SystemExit(f"Config unchanged at {path}: {exc}") from exc
+
+
+def _write_cli_config(config: dict[str, Any], path: Path, *, backup: bool = False) -> Path:
+    try:
+        return _write_behavior_config(config, path, backup=backup)
+    except (OSError, ValueError, TypeError) as exc:
+        raise SystemExit(f"Config unchanged at {path}: {exc}") from exc
+
+
 def _resolve_detail(arguments: dict[str, Any]) -> str:
-    """An explicit argument wins over environment, config, and compact."""
+    """An explicit argument wins over environment, config, and compact.
+
+    The environment value is the operator's, not the caller's: an empty value
+    counts as unset, case is ignored, and anything else is reported once on
+    stderr and skipped. It used to raise on every tool call ("Web Search Plus
+    tool execution failed.") with no hint that the env var was the cause.
+    """
     if "detail" in arguments:
         detail = arguments["detail"]
     else:
-        detail = os.environ.get(DETAIL_ENV_VAR)
+        detail = _env_detail()
         if detail is None:
             config, _warning = _load_behavior_config()
             detail = config["mcp"]["detail"]
     if detail not in ("compact", "full"):
         raise ValueError("detail must be compact or full")
     return detail
+
+
+_DETAIL_ENV_WARNED = False
+
+
+def _env_detail() -> Optional[str]:
+    global _DETAIL_ENV_WARNED
+    raw = os.environ.get(DETAIL_ENV_VAR)
+    value = (raw or "").strip().lower()
+    if not value:
+        return None
+    if value in ("compact", "full"):
+        return value
+    if not _DETAIL_ENV_WARNED:
+        _DETAIL_ENV_WARNED = True
+        print(
+            json.dumps({"warning": f"{DETAIL_ENV_VAR} must be compact or full; ignoring it"}),
+            file=sys.stderr,
+        )
+    return None
 
 
 def _truthy(value: Any) -> bool:
@@ -327,20 +387,41 @@ def _configured_env(env_name: str) -> bool:
     return bool((os.environ.get(env_name) or "").strip())
 
 
-def _configured_providers() -> dict[str, bool]:
-    return {name: _configured_env(meta["env"]) for name, meta in SEARCH_PROVIDERS.items()}
+def _readiness_report() -> dict[str, Any]:
+    """The engine's own readiness for every provider (one answer for status and tools).
+
+    Status used to count an env var as configured when it was merely present:
+    placeholders and private SearXNG URLs showed as configured, while keys in
+    config.json, keyless opt-ins and $HERMES_HOME/.env keys showed as missing.
+    """
+    from . import readiness
+
+    config, _warning = _load_behavior_config()
+    return readiness.evaluate(config, list(SEARCH_PROVIDERS))
 
 
-def _has_search_provider() -> bool:
-    return any(_configured_env(meta["env"]) for meta in SEARCH_PROVIDERS.values())
+def _configured_providers(report: Optional[dict[str, Any]] = None) -> dict[str, bool]:
+    report = report if report is not None else _readiness_report()
+    return {name: bool(report[name].accepted) for name in SEARCH_PROVIDERS}
 
 
-def _has_extract_provider() -> bool:
-    return any(_configured_env(SEARCH_PROVIDERS[p]["env"]) for p in EXTRACT_PROVIDERS)
+def _has_search_provider(report: Optional[dict[str, Any]] = None) -> bool:
+    configured = _configured_providers(report)
+    return any(ok for name, ok in configured.items() if "search" in SEARCH_PROVIDERS[name]["capabilities"])
+
+
+def _has_extract_provider(report: Optional[dict[str, Any]] = None) -> bool:
+    configured = _configured_providers(report)
+    return any(configured.get(p) for p in EXTRACT_PROVIDERS)
 
 
 def _load_env_file() -> None:
-    """Load .env from package dir or project root without overwriting existing env."""
+    """Load .env from package dir or project root without overwriting existing env.
+
+    Empty values and template placeholders (``your_brave_key``) are skipped: set
+    first, they blocked the real key from ``$HERMES_HOME/.env``, which the
+    engine's own loader reads later and also never overwrites.
+    """
     for env_file in (Path(__file__).parent / ".env", Path(__file__).parent.parent / ".env"):
         if not env_file.exists():
             continue
@@ -351,7 +432,9 @@ def _load_env_file() -> None:
             if line.startswith("export "):
                 line = line[7:]
             key, _, val = line.partition("=")
-            os.environ.setdefault(key.strip(), val.strip().strip("'\""))
+            value = clean_env_value(val)
+            if value is not None:
+                os.environ.setdefault(key.strip(), value)
 
 
 _load_env_file()
@@ -715,9 +798,39 @@ def _compact_payload(
                 item.get("result_count", 0) for item in extraction_attempts
                 if item.get("outcome") in {"success", "partial"}
             )
+        evidence = next((
+            warning.get("details") for warning in projected.get("warnings") or []
+            if isinstance(warning, dict) and warning.get("code") == "wsp.research.evidence"
+        ), None)
+        if isinstance(evidence, dict):
+            # Share a small excerpt allowance across all pages; never duplicate
+            # child observations or full text in the compact response.
+            sources = evidence.get("sources") or []
+            text_sources = sum(1 for source in sources if source.get("content"))
+            allowance = 1200 // max(1, text_sources)  # UTF-8 bytes, across the batch
+            excerpts = []
+            truncated = bool(evidence.get("truncated"))
+            for source in sources:
+                excerpt = {key: source[key] for key in ("url", "error") if key in source}
+                if source.get("content"):
+                    encoded = source["content"].encode("utf-8")
+                    excerpt["content"] = encoded[:allowance].decode("utf-8", errors="ignore")
+                    truncated |= len(encoded) > allowance
+                excerpts.append(excerpt)
+            compact["research"].update({
+                "pages_count": evidence.get("pages_count", 0),
+                "failed_count": evidence.get("failed_count", 0),
+                "sources": excerpts,
+                "truncated": truncated,
+                "content_trust": "untrusted_source_text",
+            })
+            if evidence.get("extraction_error"):
+                compact["research"]["extraction_error"] = _short_message(evidence["extraction_error"])
     warnings = list(dict.fromkeys(
         message for item in projected.get("warnings") or []
-        if (message := _short_message(item))
+        # The research evidence entry is the sources under "research", not a warning.
+        if not (isinstance(item, dict) and item.get("code") == "wsp.research.evidence")
+        and (message := _short_message(item))
     ))
     if warnings:
         compact["warnings"] = warnings
@@ -1307,19 +1420,23 @@ async def main():
 
 
 def _status_payload() -> dict[str, Any]:
-    configured = _configured_providers()
+    report = _readiness_report()
+    configured = _configured_providers(report)
     behavior_config, config_warning = _load_behavior_config()
     payload = {
         "version": __version__,
         "server": "web-search-plus-mcp",
-        "search_configured": _has_search_provider(),
-        "extract_configured": _has_extract_provider(),
+        "search_configured": _has_search_provider(report),
+        "extract_configured": _has_extract_provider(report),
         "tools_if_started_now": ["web_search", "web_extract"],
         "config_path": str(_default_config_path()),
         "routing_preferences": behavior_config.get("auto_routing", {}),
         "default_provider": behavior_config.get("defaults", {}).get("provider"),
         "providers": {
-            name: {"env": SEARCH_PROVIDERS[name]["env"], "configured": ok, "capabilities": SEARCH_PROVIDERS[name]["capabilities"]}
+            name: {
+                "env": SEARCH_PROVIDERS[name]["env"], "configured": ok, "capabilities": SEARCH_PROVIDERS[name]["capabilities"],
+                **{key: value for key, value in report[name].to_public().items() if key != "provider"},
+            }
             for name, ok in configured.items()
         },
     }
@@ -1339,6 +1456,15 @@ def _status_payload() -> dict[str, Any]:
 
 
 def _canonical_snippet(env_file: str = ".env", *, include_jev: bool = False, jev_key_file: str | None = None) -> dict[str, Any]:
+    env_path = Path(env_file).expanduser().resolve()
+    candidates = [path.expanduser().resolve() for path in candidate_env_paths(__file__)]
+    note = (
+        f"The server reads {env_path} at startup."
+        if env_path in candidates else
+        f"{env_path} is a template only and is not automatically read by this server. "
+        "Copy its keys into the MCP client's env block or a server env file."
+    )
+    note += " Server env files, in precedence order: " + ", ".join(map(str, candidates)) + ". Existing process environment wins. Restart after changes."
     env = {
         "LINKUP_API_KEY": "your_linkup_key",
         "TAVILY_API_KEY": "your_tavily_key",
@@ -1357,7 +1483,7 @@ def _canonical_snippet(env_file: str = ".env", *, include_jev: bool = False, jev
                 "env": env,
             }
         },
-        "note": f"You can also put provider keys in {env_file} next to the project/package.",
+        "note": note,
     }
 
 
@@ -1413,7 +1539,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     set_default.add_argument("provider")
     set_routing = config_sub.add_parser("set-routing", help="Turn auto-routing on or off")
     set_routing.add_argument("state", choices=["on", "off"])
-    set_priority = config_sub.add_parser("set-priority", help="Set comma-separated search provider priority")
+    set_priority = config_sub.add_parser("set-priority", help="Set comma-separated search provider priority and use custom order")
     set_priority.add_argument("providers")
     set_extract_priority = config_sub.add_parser("set-extract-priority", help="Set comma-separated extraction provider priority")
     set_extract_priority.add_argument("providers")
@@ -1429,7 +1555,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     )
     set_auto_allow.add_argument("provider")
     set_auto_allow.add_argument("state", choices=["on", "off"])
-    set_threshold = config_sub.add_parser("set-threshold", help="Set confidence threshold from 0 to 1")
+    set_threshold = config_sub.add_parser("set-threshold", help="Store legacy confidence threshold from 0 to 1 (no effect since 5.0)")
     set_threshold.add_argument("threshold", type=float)
     reset = config_sub.add_parser("reset", help="Reset routing preferences to defaults")
     reset.add_argument("--yes", action="store_true", help="Confirm reset")
@@ -1474,7 +1600,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
                 print(f"{name}: {', '.join(keys)}")
         return 0
     if args.command == "setup":
-        path = Path(args.env_file).expanduser()
+        path = Path(args.env_file).expanduser().resolve()
         if getattr(args, "config_path", None):
             os.environ[CONFIG_ENV_VAR] = args.config_path
         want_jev = True if getattr(args, "jev", False) else False
@@ -1495,6 +1621,8 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         payload = {
             "preset": args.preset,
             "env_file": str(path),
+            "server_env_files": [str(p.expanduser().resolve()) for p in candidate_env_paths(__file__)],
+            "env_file_auto_loaded": path in [p.expanduser().resolve() for p in candidate_env_paths(__file__)],
             "keys": keys,
             "snippet": _canonical_snippet(str(path), include_jev=want_jev, jev_key_file=jev_key_file),
             "jev": {
@@ -1512,9 +1640,9 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
                 extra_values=extra_values,
             )
             if want_jev:
-                config, _warning = _load_behavior_config(quarantine=True)
+                config = _read_config_for_edit(_default_config_path())
                 jev_setup.apply_jev_config(config, enabled=True, decisions=jev_decisions)
-                written = _write_behavior_config(config)
+                written = _write_cli_config(config, _default_config_path())
                 payload["config_path"] = str(written)
         if args.json:
             print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -1533,8 +1661,8 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         if args.config_path:
             os.environ[CONFIG_ENV_VAR] = args.config_path
         path = _default_config_path()
-        config, warning = _load_behavior_config(path, quarantine=args.config_command != "show")
         if args.config_command == "show":
+            config, warning = _load_behavior_config(path)
             payload = {"config_path": str(path), "default_provider": config.get("defaults", {}).get("provider"), "routing_preferences": config.get("auto_routing", {})}
             if warning:
                 payload["warning"] = warning
@@ -1543,19 +1671,22 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         if args.config_command == "reset":
             if not args.yes:
                 raise SystemExit("Refusing to reset without --yes")
-            _write_behavior_config(_default_behavior_config(), path, backup=True)
+            _write_cli_config(_default_behavior_config(), path, backup=True)
             print(f"Reset routing preferences in {path}")
             return 0
+        config = _read_config_for_edit(path)
         if args.config_command == "set-default":
             provider = _canonical_provider(args.provider)
             if provider not in SEARCH_PROVIDERS:
                 raise SystemExit(f"Unknown provider: {args.provider}")
             config.setdefault("defaults", {})["provider"] = provider
+            config["default_provider"] = provider
             config.setdefault("auto_routing", {})["enabled"] = False
         elif args.config_command == "set-routing":
             config.setdefault("auto_routing", {})["enabled"] = args.state == "on"
         elif args.config_command == "set-priority":
             config.setdefault("auto_routing", {})["provider_priority"] = _normalize_provider_list(args.providers, allow_empty=False)
+            config["auto_routing"]["order"] = "custom"
         elif args.config_command == "set-extract-priority":
             config.setdefault("auto_routing", {})["extract_provider_priority"] = _normalize_extract_provider_list(args.providers)
         elif args.config_command == "set-fallback":
@@ -1586,7 +1717,9 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             ] = args.state == "on"
         elif args.config_command == "set-threshold":
             config.setdefault("auto_routing", {})["confidence_threshold"] = args.threshold
-        _write_behavior_config(config, path)
+        _write_cli_config(config, path)
+        if args.config_command == "set-threshold":
+            print("confidence_threshold is stored for compatibility; no effect since 5.0.", file=sys.stderr)
         updated, _ = _load_behavior_config(path)
         print(json.dumps({"config_path": str(path), "default_provider": updated.get("defaults", {}).get("provider"), "routing_preferences": updated.get("auto_routing", {})}, indent=2, ensure_ascii=False))
         return 0

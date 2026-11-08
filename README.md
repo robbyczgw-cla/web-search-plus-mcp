@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 5.1.6` (released 2026-10-30) says why a page could not be extracted (page not found, site refused, unreachable, provider does not support the site), stops paying for fallbacks when a page does not exist, and no longer blocks Firecrawl after a site it does not support. 5.1.5 fixed DonSeTch with DonSeTch 4.7.1 and newer; 5.1.4 brought compact responses by default; see the [changelog](CHANGELOG.md).
+`web-search-plus-mcp 5.1.7` (released 2026-11-08) makes `status`, setup guidance and tool errors agree with the engine on whether a provider can run, and say why not: template placeholder keys, private SearXNG URLs and disabled providers are named with the fix, a placeholder in a `.env` next to the package no longer hides the real key, and an empty `WEB_SEARCH_PLUS_MCP_DETAIL` no longer breaks the tools. 5.1.6 made extraction failures name their reason; see the [changelog](CHANGELOG.md).
 
 ### What's new in 5.1.3
 
@@ -116,6 +116,8 @@ web-search-plus-mcp setup --preset starter
 
 The recommended starter preset is **You.com + Serper + Linkup**. It gives a practical source-only baseline for fast current search, Google-style discovery, and extraction workflows without wiring every provider on day one.
 
+`setup` prints the absolute template path and the exact `.env` files this installation reads at startup (also available as `server_env_files` and `env_file_auto_loaded` with `--json`). An arbitrary current-directory `.env` is a template only: copy its keys into the MCP client's `env` block or one of those server files, then restart the server. A separate `uvx` installation can have different package paths; the client `env` block works across installations.
+
 ## 🧩 Agent Plugins package
 
 This repository also contains a portable [Agent Plugins 1.0](https://agent-plugins.org/) package for clients that support the standard. The root [`plugin.json`](plugin.json) describes the plugin and [`mcp.json`](mcp.json) connects the MCP server through the published PyPI package.
@@ -143,6 +145,8 @@ web-search-plus-mcp config reset --yes
 ```
 
 Use `--config-path /path/to/config.json` or `WEB_SEARCH_PLUS_CONFIG=/path/to/config.json` for isolated MCP host installs. Provider secrets stay in environment variables; routing behavior stays in `config.json`. Search and extraction priorities are independent. If an extraction priority lists only selected providers, the remaining extract-capable providers are appended in the public registry order.
+
+Config edits validate the whole candidate with the engine before writing. Invalid changes exit nonzero and leave the file intact; `config reset --yes` explicitly resets it and keeps a backup. Both legacy `default_provider` and `defaults.provider` are read, with the top-level key taking precedence; `set-default` synchronizes both. `set-priority` selects custom order; set `auto_routing.order` to `measured` in the file to restore measured ordering. `set-threshold` remains accepted for compatibility but has no effect since 5.0.
 
 Other presets:
 
