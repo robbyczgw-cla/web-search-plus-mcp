@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 import logging
 import os
 import re
@@ -422,6 +423,8 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
             config["default_provider"] = _normalize_routing_provider_config(str(config["default_provider"]))
     # MCP: config.json "defaults.provider" is the MCP default-provider surface.
     defaults = config.setdefault("defaults", {})
+    if not isinstance(defaults, dict):
+        raise ValueError("defaults must be an object")
     if defaults.get("provider"):
         if _is_removed_provider_id(defaults["provider"]):
             defaults["provider"] = DEFAULT_CONFIG["defaults"]["provider"]
@@ -969,23 +972,39 @@ def _apply_desktop_settings(config: Dict[str, Any], settings: Dict[str, Any]) ->
     return config
 
 
+def runtime_config_path() -> Path:
+    """Resolve the one config path shared by the engine and MCP CLI."""
+    return Path(os.environ.get("WEB_SEARCH_PLUS_CONFIG") or (HOST_DIR.parent / "config.json")).expanduser()
+
+
+def validate_config_candidate(user_config: Any) -> Dict[str, Any]:
+    """Validate a detached candidate with exactly the persisted runtime rules.
+
+    Do not read, quarantine, overlay host settings, or mutate the caller's draft.
+    Keep this merge identical for CLI writes and runtime reads.
+    """
+    if not isinstance(user_config, dict):
+        raise ValueError("config must be a JSON object")
+    config = _deepcopy_default_config()
+    for key, value in deepcopy(user_config).items():
+        if key in REMOVED_PROVIDER_IDS:
+            continue
+        if isinstance(value, dict) and isinstance(config.get(key), dict):
+            config[key] = {**config[key], **value}
+        else:
+            config[key] = value
+    return _validate_runtime_config(config)
+
+
 def load_config() -> Dict[str, Any]:
     """Load configuration from config.json if it exists, with defaults."""
     config = _deepcopy_default_config()
-    config_path = Path(os.environ.get("WEB_SEARCH_PLUS_CONFIG") or (HOST_DIR.parent / "config.json"))
+    config_path = runtime_config_path()
 
     if config_path.exists():
         try:
             with open(config_path, encoding="utf-8") as f:
-                user_config = json.load(f)
-                for key, value in user_config.items():
-                    if key in REMOVED_PROVIDER_IDS:
-                        continue
-                    if isinstance(value, dict) and key in config:
-                        config[key] = {**config.get(key, {}), **value}
-                    else:
-                        config[key] = value
-            config = _validate_runtime_config(config)
+                config = validate_config_candidate(json.load(f))
         except (json.JSONDecodeError, IOError, ValueError, TypeError) as e:
             _quarantine_runtime_config(config_path, str(e))
             config = _deepcopy_default_config()
