@@ -458,8 +458,14 @@ def test_started_research_timeout_is_attempted_cancelled_and_snapshot_stable(
     assert slow_attempt.tries[0]["outcome"] == "error"
     assert execution.response.status.value == "degraded"
     assert {warning["code"] for warning in execution.response.warnings} == {
-        "wsp.budget.limited"
+        "wsp.budget.limited", "wsp.research.evidence", "wsp.extract.partial",
     }
+    evidence = next(
+        warning["details"] for warning in execution.response.warnings
+        if warning["code"] == "wsp.research.evidence"
+    )
+    assert evidence["pages_count"] == 0
+    assert "research time budget exhausted" in evidence["extraction_error"]
     slow_decision = next(
         item
         for item in execution.response.routing_receipt["candidate_decisions"]
@@ -511,8 +517,14 @@ def test_research_extraction_timeout_is_budget_limited(tmp_path, monkeypatch):
     )
     assert execution.response.status.value == "degraded"
     assert {warning["code"] for warning in execution.response.warnings} == {
-        "wsp.budget.limited"
+        "wsp.budget.limited", "wsp.research.evidence", "wsp.extract.partial",
     }
+    evidence = next(
+        warning["details"] for warning in execution.response.warnings
+        if warning["code"] == "wsp.research.evidence"
+    )
+    assert evidence["pages_count"] == 0
+    assert "research time budget exhausted" in evidence["extraction_error"]
     assert "research time budget exhausted" in execution.legacy_payload["routing"][
         "extraction_error"
     ]

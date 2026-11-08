@@ -798,6 +798,34 @@ def _compact_payload(
                 item.get("result_count", 0) for item in extraction_attempts
                 if item.get("outcome") in {"success", "partial"}
             )
+        evidence = next((
+            warning.get("details") for warning in projected.get("warnings") or []
+            if isinstance(warning, dict) and warning.get("code") == "wsp.research.evidence"
+        ), None)
+        if isinstance(evidence, dict):
+            # Share a small excerpt allowance across all pages; never duplicate
+            # child observations or full text in the compact response.
+            sources = evidence.get("sources") or []
+            text_sources = sum(1 for source in sources if source.get("content"))
+            allowance = 1200 // max(1, text_sources)  # UTF-8 bytes, across the batch
+            excerpts = []
+            truncated = bool(evidence.get("truncated"))
+            for source in sources:
+                excerpt = {key: source[key] for key in ("url", "error") if key in source}
+                if source.get("content"):
+                    encoded = source["content"].encode("utf-8")
+                    excerpt["content"] = encoded[:allowance].decode("utf-8", errors="ignore")
+                    truncated |= len(encoded) > allowance
+                excerpts.append(excerpt)
+            compact["research"].update({
+                "pages_count": evidence.get("pages_count", 0),
+                "failed_count": evidence.get("failed_count", 0),
+                "sources": excerpts,
+                "truncated": truncated,
+                "content_trust": "untrusted_source_text",
+            })
+            if evidence.get("extraction_error"):
+                compact["research"]["extraction_error"] = _short_message(evidence["extraction_error"])
     warnings = list(dict.fromkeys(
         message for item in projected.get("warnings") or []
         if (message := _short_message(item))
