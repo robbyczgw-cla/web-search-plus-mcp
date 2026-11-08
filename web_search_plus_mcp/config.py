@@ -1118,7 +1118,7 @@ def add_provider_setup_guidance(
     if problem is not None and problem.state.value != "explicit_only":
         fix_command = problem.fix[0] if problem.fix else ""
         payload.update({
-            "error": f"{problem.reason}" + (f" Run: {fix_command}" if fix_command else ""),
+            "error": f"{problem.reason}" + (f" To fix: {fix_command}" if fix_command else ""),
             "error_type": "requested_provider_not_configured" if explicit else "provider_setup_required",
             "how_to_fix": list(problem.fix),
             "readiness": [problem.to_public()],

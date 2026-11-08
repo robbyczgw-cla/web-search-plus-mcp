@@ -100,3 +100,27 @@ def test_detail_env_value_never_breaks_the_tools(monkeypatch, tmp_path, value):
     assert payload["status"] == "failed"
     expected = "full" if value.strip().lower() == "full" else "compact"
     assert (payload.get("detail") or "full") == expected
+
+
+def test_compact_and_v3_name_the_setup_problem_not_the_serper_filler(monkeypatch, tmp_path):
+    # 5.1.6: "Missing API key for serper" plus Serper signup steps for a user
+    # whose Brave key was still the template placeholder.
+    from jsonschema import Draft202012Validator
+    from web_search_plus_mcp import search, server
+
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv("BRAVE_API_KEY", "your_brave_key")
+    for name in ("SERPER_API_KEY", server.DETAIL_ENV_VAR):
+        monkeypatch.delenv(name, raising=False)
+
+    compact = json.loads(asyncio.run(server.call_tool("web_search", {"query": "python release notes"}))[0].text)
+    assert compact["status"] == "failed"
+    assert compact["error"].startswith("BRAVE_API_KEY still holds a template placeholder")
+    assert compact["how_to_fix"] == ["set BRAVE_API_KEY=<real value> in the MCP client's env block or the server's .env"]
+
+    payload, _code = search.run_cli_contract_v3(["--contract-v3", "--query", "python release notes", "--no-cache"])
+    error = payload["error"]
+    assert (error["error_class"], error["retryable"]) == ("config", False)
+    assert error["details"]["readiness"][0]["reason_code"] == "placeholder_value"
+    schema = json.loads((PACKAGE.parent / "schemas/v3/response.schema.json").read_text())
+    assert list(Draft202012Validator(schema).iter_errors(payload)) == []
