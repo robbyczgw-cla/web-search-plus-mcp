@@ -828,7 +828,9 @@ def _compact_payload(
                 compact["research"]["extraction_error"] = _short_message(evidence["extraction_error"])
     warnings = list(dict.fromkeys(
         message for item in projected.get("warnings") or []
-        if (message := _short_message(item))
+        # The research evidence entry is the sources under "research", not a warning.
+        if not (isinstance(item, dict) and item.get("code") == "wsp.research.evidence")
+        and (message := _short_message(item))
     ))
     if warnings:
         compact["warnings"] = warnings
