@@ -1136,7 +1136,7 @@ def add_provider_setup_guidance(
                      else preset_env_vars(preset)),
         "how_to_fix": [
             command,
-            "Store API keys in the env block of your MCP client config or a .env file, not inline in config.json. Keyless public endpoints require explicit opt-in.",
+            "Store API keys in the env block of your MCP client config or a .env file. Keyless public endpoints require explicit opt-in.",
         ],
     })
 
