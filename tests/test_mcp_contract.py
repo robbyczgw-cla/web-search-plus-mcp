@@ -606,7 +606,7 @@ def test_subprocess_timeout_is_typed_retryable_and_secret_free(monkeypatch):
     assert secret not in json.dumps(payload)
 
 
-def test_donsetch_subprocess_budget_covers_inner_stdio_timeout(monkeypatch):
+def test_donsetch_subprocess_budget_covers_inner_stdio_timeout(monkeypatch, tmp_path):
     calls = []
 
     async def capture_run(_cmd, **kwargs):
@@ -631,17 +631,28 @@ def test_donsetch_subprocess_budget_covers_inner_stdio_timeout(monkeypatch):
         "urls": ["https://example.com", "https://example.org"],
         "provider": "donsetch",
     }))
+    auto = {"detail": "full", "query": "donsetch auto budget", "provider": "auto"}
+    config_path = tmp_path / "config.json"
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
+    allowed = {"auto_routing": {"auto_allow": {"donsetch": True}, "provider_priority": ["donsetch"]}}
+    # DONSETCH_BIN alone: DonSeTch is explicit-only, auto search never runs it.
     monkeypatch.setenv("DONSETCH_BIN", "/bin/true")
-    run(server.call_tool("web_search", {
-        "detail": "full",
-        "query": "donsetch auto budget",
-        "provider": "auto",
-    }))
+    config_path.write_text("{}")
+    run(server.call_tool("web_search", auto))
+    config_path.write_text(json.dumps(allowed))
+    run(server.call_tool("web_search", auto))
+    # 5.1.7 gave a binary from config.json the 75 s search budget, killing a
+    # DonSeTch session that may run 180 s.
+    monkeypatch.delenv("DONSETCH_BIN")
+    config_path.write_text(json.dumps({**allowed, "donsetch": {"binary": "/bin/true"}}))
+    run(server.call_tool("web_search", auto))
 
     assert calls == [
         server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS,
         server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS,
         server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS * 2,
+        server.DEFAULT_SEARCH_SUBPROCESS_TIMEOUT_SECONDS,
+        server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS,
         server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS,
     ]
     assert calls[0] > 180

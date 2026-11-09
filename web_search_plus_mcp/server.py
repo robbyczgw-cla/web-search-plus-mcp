@@ -84,9 +84,15 @@ def _canonical_provider(provider: str) -> str:
 
 
 def _donsetch_outer_budget_applies(provider: str) -> bool:
-    return provider == "donsetch" or (
-        provider == "auto" and bool(os.environ.get("DONSETCH_BIN"))
-    )
+    if provider != "auto":
+        return provider == "donsetch"
+    # Auto search runs DonSeTch only when readiness says it may: binary from
+    # DONSETCH_BIN or donsetch.binary, auto-allowed and not disabled.
+    from .config import read_runtime_config
+    from .readiness import Readiness, evaluate_provider
+
+    config, _error = read_runtime_config(runtime_config_path())
+    return evaluate_provider("donsetch", config).state is Readiness.READY
 
 
 def _default_behavior_config() -> dict[str, Any]:
