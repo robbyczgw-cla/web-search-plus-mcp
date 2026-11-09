@@ -414,3 +414,23 @@ def test_long_snippet_projection_keeps_historical_cut_and_marker(snippet, expect
     full = project(case, "full")
     assert all(row["snippet"] == expected for row in compact["results"])
     assert all(row["snippet"] == snippet for row in full["results"])
+
+
+def test_failure_reasons_name_a_provider_cut_off_by_the_deadline():
+    # A failed search whose only provider ran out of time reported no
+    # provider_errors at all; one that lost to a winner did not fail.
+    case = deepcopy(CASES[3])
+    case["canonical"]["provider_attempts"] = [
+        {
+            "provider": "serper",
+            "outcome": "cancelled",
+            "error": {"message": "request deadline exceeded", "details": {"end_reason": "deadline"}},
+        },
+        {
+            "provider": "brave",
+            "outcome": "cancelled",
+            "error": {"message": "another provider answered first", "details": {"end_reason": "superseded_by_winner"}},
+        },
+    ]
+    payload = project(case, "compact")
+    assert payload["provider_errors"] == ["serper: request deadline exceeded"]

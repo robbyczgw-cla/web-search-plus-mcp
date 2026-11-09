@@ -793,7 +793,12 @@ def _compact_payload(
         reasons = []
         for attempt in [] if setup_error else attempts:
             empty = attempt.get("outcome") == "success" and attempt.get("result_count") == 0
-            if attempt.get("outcome") in {"failed", "empty", "skipped"} or empty:
+            # A call cut off by the deadline (or lost by the engine) failed; one
+            # cancelled because another provider or the research quorum won did not.
+            end_reason = ((attempt.get("error") or {}).get("details") or {}).get("end_reason")
+            cut_off = attempt.get("outcome") == "cancelled" and end_reason not in (
+                "superseded_by_winner", "preempted_after_quorum")
+            if attempt.get("outcome") in {"failed", "empty", "skipped"} or empty or cut_off:
                 reason = _short_message(
                     attempt.get("error") or attempt.get("skip_reason")
                     or ("empty results" if empty else attempt.get("outcome"))
