@@ -180,3 +180,18 @@ def test_status_reports_invalid_config_without_moving_or_rewriting_it(tmp_path, 
     assert payload["tools_if_started_now"] == ["web_search", "web_extract"]
     assert path.read_text() == raw_config
     assert list(tmp_path.glob("config.json.*")) == []
+
+
+@pytest.mark.parametrize("raw_config", [
+    '{"auto_routing": {"confidence_threshold": ' + "9" * 1000 + "}}",
+    "[" * 100_000 + "]" * 100_000,
+], ids=["number-too-large", "nesting-too-deep"])
+def test_engine_moves_a_config_it_cannot_read_instead_of_failing_every_search(tmp_path, monkeypatch, raw_config):
+    # 5.1.7: OverflowError escaped load_config; every web_search answered
+    # "Web Search Plus subprocess failed." and the file stayed in place.
+    path = tmp_path / "config.json"
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(path))
+    path.write_text(raw_config)
+    engine.load_config()
+    assert not path.exists()
+    assert len(list(tmp_path.glob("*.broken-*"))) == 1
