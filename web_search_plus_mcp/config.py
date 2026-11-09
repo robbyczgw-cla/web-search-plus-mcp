@@ -1110,7 +1110,8 @@ def provider_configured(provider: str, config: Dict[str, Any] = None) -> bool:
     """
     from .readiness import evaluate_provider
 
-    return evaluate_provider(provider, config, raise_scope_errors=True).accepted
+    # Callers pass arbitrary names (config values, removed ids such as "monid").
+    return provider in PROVIDER_SPECS and evaluate_provider(provider, config).accepted
 
 def add_provider_setup_guidance(
     payload: Dict[str, Any], capability: str, providers: List[str], config: Dict[str, Any],
