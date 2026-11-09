@@ -95,12 +95,16 @@ def test_stdio_client_sees_guidance_and_is_error_without_keys(tmp_path, detail):
         ("web_search", {"query": "python asyncio taskgroup", "provider": "tinyfish", "detail": detail}),
         ("web_extract", {"urls": ["https://example.com"], "detail": detail}),
     ])
-    for result in (search, explicit, extract):
+    # Only commands the MCP CLI accepts: it has no per-provider setup and no
+    # extract preset, so those name the env var instead.
+    for result, fix in ((search, "web-search-plus-mcp setup --preset starter"),
+                        (explicit, "set TINYFISH_API_KEY in the MCP client's env block"),
+                        (extract, "in the MCP client's env block")):
         assert result["isError"] is True
         text = result["content"][0]["text"]
         payload = json.loads(text)
         assert payload["status"] == "failed"
-        assert "web-search-plus-mcp setup" in text
+        assert fix in text
         assert "config.json" not in text
     explicit_payload = json.loads(explicit["content"][0]["text"])
     guidance = explicit_payload["error_v3"]["details"] if detail == "full" else explicit_payload

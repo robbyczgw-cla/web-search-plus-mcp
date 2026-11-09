@@ -1148,15 +1148,17 @@ def add_provider_setup_guidance(
         })
         return
     preset = "self-hosted" if is_self_hosted_profile(config) else ("extract" if capability == "extract" else "starter")
-    target = requested_provider if explicit else f"--preset {preset}"
-    command = f"web-search-plus-mcp setup {target}"
+    env_vars = [PROVIDER_SPECS[requested_provider].env_var] if explicit else preset_env_vars(preset)
+    # The MCP CLI has no per-provider setup and only the starter preset of
+    # these three; anything else is set in the environment.
+    command = ("web-search-plus-mcp setup --preset starter" if not explicit and preset == "starter"
+               else f"set {' or '.join(env_vars)} in the MCP client's env block or the server's .env")
     message = (f"Requested provider '{requested_provider}' is not configured." if explicit
                else f"No configured {capability} provider is available for this request.")
     payload.update({
-        "error": f"{message} Run: {command}",
+        "error": f"{message} {'Run' if command.startswith('web-search-plus-mcp') else 'To fix'}: {command}",
         "error_type": "requested_provider_not_configured" if explicit else "provider_setup_required",
-        "env_vars": ([PROVIDER_SPECS[requested_provider].env_var] if explicit
-                     else preset_env_vars(preset)),
+        "env_vars": env_vars,
         "how_to_fix": [
             command,
             "Store API keys in the env block of your MCP client config or a .env file. Keyless public endpoints require explicit opt-in.",

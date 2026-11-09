@@ -155,3 +155,42 @@ def test_invalid_detail_environment_warns_once_and_keeps_argument_precedence(tmp
     assert capsys.readouterr().err == json.dumps({
         "warning": "WEB_SEARCH_PLUS_MCP_DETAIL must be compact or full; ignoring it",
     }) + "\n"
+
+
+@pytest.mark.parametrize("config,call", [
+    ({}, "status"),
+    ({}, ("web_search", {"query": "q"})),
+    ({}, ("web_search", {"query": "q", "provider": "brave"})),
+    ({}, ("web_search", {"query": "q", "provider": "searxng"})),
+    ({}, ("web_extract", {"urls": ["https://example.com"]})),
+    ({"profile": "self_hosted"}, ("web_search", {"query": "q"})),
+], ids=["status", "auto", "explicit-brave", "explicit-searxng", "extract", "self-hosted"])
+def test_every_recommended_cli_command_is_one_the_mcp_cli_accepts(config, call, monkeypatch, tmp_path, capsys):
+    # 5.1.7 recommended "web-search-plus-mcp setup brave" and
+    # "setup --preset extract"; the MCP CLI rejected both with exit 2.
+    import shlex
+    from web_search_plus_mcp import server
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.json").write_text(json.dumps(config))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(tmp_path / "config.json"))
+    for meta in server.SEARCH_PROVIDERS.values():
+        monkeypatch.delenv(meta["env"], raising=False)
+    monkeypatch.delenv("SEARXNG_INSTANCE_URL", raising=False)
+    if call == "status":
+        out = server._status_payload()
+    else:
+        out = json.loads(asyncio.run(server.call_tool(call[0], {**call[1], "detail": "full"}))[0].text)
+
+    def strings(obj):
+        if isinstance(obj, dict):
+            return [s for value in obj.values() for s in strings(value)]
+        if isinstance(obj, list):
+            return [s for value in obj for s in strings(value)]
+        return [obj] if isinstance(obj, str) else []
+
+    commands = {s for s in strings(out) if s.startswith("web-search-plus-mcp ")}
+    for command in commands:
+        argv = shlex.split(command)[1:]
+        assert server.cli_main(argv + (["--dry-run"] if argv[0] == "setup" else [])) == 0, command
+    capsys.readouterr()
