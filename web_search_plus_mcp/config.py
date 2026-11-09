@@ -1129,6 +1129,37 @@ def add_provider_setup_guidance(
     if not candidates or any(provider_configured(p, config) for p in candidates):
         return
     explicit = requested_provider in candidates
+    if not explicit:
+        # Set up, but kept out of automatic routing (auto_allow off): saying
+        # "nothing is configured" made users and the model think it was missing.
+        from .routing import _provider_auto_allowed
+
+        auto = (config or {}).get("auto_routing") or {}
+        explicit_only = [
+            name for name, spec in PROVIDER_SPECS.items()
+            if name not in candidates and getattr(spec, f"supports_{capability}", False)
+            and not _provider_auto_allowed(name, auto) and provider_configured(name, config)
+        ]
+        if explicit_only:
+            first = explicit_only[0]
+            names = ", ".join(PROVIDER_SPECS[p].display_name for p in explicit_only)
+            allow = [f"web-search-plus-mcp config set-auto-allow {first} on"]
+            extract = capability == "extract"
+            key = "extract_provider_priority" if extract else "provider_priority"
+            if first not in auto.get(key, DEFAULT_CONFIG["auto_routing"][key]):
+                # Auto routing only tries providers in the priority list; one
+                # that is explicit-only by default (donsetch) is not in it.
+                allow.append(f"web-search-plus-mcp config set-{'extract-' if extract else ''}priority {first}")
+            payload.update({
+                "error": (
+                    f"No provider for automatic {'extraction' if capability == 'extract' else capability} is configured. {names} is set up but only runs "
+                    f"when asked for: call again with provider=\"{first}\", or let it join automatic routing: {' then '.join(allow)}"
+                ),
+                "error_type": "explicit_only_provider_configured",
+                "explicit_only_providers": explicit_only,
+                "how_to_fix": [f'provider="{first}"', *allow],
+            })
+            return
     # The user set something up that cannot work (a placeholder key, a blocked
     # SearXNG URL, a disabled provider): name it and its fix instead of
     # "nothing is configured".

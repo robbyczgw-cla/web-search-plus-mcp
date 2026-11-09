@@ -194,3 +194,42 @@ def test_every_recommended_cli_command_is_one_the_mcp_cli_accepts(config, call, 
         argv = shlex.split(command)[1:]
         assert server.cli_main(argv + (["--dry-run"] if argv[0] == "setup" else [])) == 0, command
     capsys.readouterr()
+
+
+@pytest.mark.parametrize("auto_allow,env,fix", [
+    ({"brave": False}, {"BRAVE_API_KEY": "brave-real-key-123456"},
+     ['provider="brave"', "web-search-plus-mcp config set-auto-allow brave on"]),
+    ({}, {"DONSETCH_BIN": "donsetch"},
+     ['provider="donsetch"', "web-search-plus-mcp config set-auto-allow donsetch on",
+      "web-search-plus-mcp config set-priority donsetch"]),
+], ids=["brave-auto-allow-off", "donsetch-default"])
+def test_auto_search_names_the_provider_that_only_runs_when_asked_for(auto_allow, env, fix, monkeypatch, tmp_path, capsys):
+    # 5.1.7 said "No configured search provider" and sent the user to setup,
+    # although status showed the provider as set up (explicit_only).
+    from web_search_plus_mcp import server
+
+    (tmp_path / "config.json").write_text(json.dumps({"auto_routing": {"auto_allow": auto_allow}}))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(tmp_path / "config.json"))
+    for meta in server.SEARCH_PROVIDERS.values():
+        monkeypatch.delenv(meta["env"], raising=False)
+    if "DONSETCH_BIN" in env:
+        binary = tmp_path / "donsetch"
+        binary.write_text("#!/bin/sh\n")
+        binary.chmod(0o755)
+        env = {"DONSETCH_BIN": str(binary)}
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+
+    def search():
+        return json.loads(asyncio.run(server.call_tool("web_search", {"query": "q", "detail": "full"}))[0].text)
+
+    details = search()["error_v3"]["details"]
+    assert details["error_type"] == "explicit_only_provider_configured"
+    assert details["how_to_fix"] == fix
+    # Following the advice puts the provider into automatic routing.
+    for command in fix[1:]:
+        assert server.cli_main(command.split()[1:]) == 0
+    from web_search_plus_mcp import config, routing
+
+    assert routing.route_query("q", config.load_config())["provider"] == fix[0].split('"')[1]
+    capsys.readouterr()
