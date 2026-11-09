@@ -98,3 +98,45 @@ def test_self_hosted_auto_without_searxng_or_keenable_returns_typed_error(tmp_pa
         config=runtime_config,
     )
     assert native.error.code == "wsp.config.self_hosted_profile_unavailable"
+
+@pytest.mark.parametrize("host", ["hermes_profile", "environment"])
+def test_self_hosted_auto_uses_a_searxng_url_from_the_profile_or_environment(monkeypatch, host) -> None:
+    """The profile check read only config.json, so a URL set the documented
+    MCP way (SEARXNG_INSTANCE_URL in the environment or the client's env block)
+    failed every auto search with "self_hosted profile requires searxng.base_url"."""
+    from web_search_plus_mcp import credentials, readiness, routing
+
+    monkeypatch.delenv("SEARXNG_INSTANCE_URL", raising=False)
+    monkeypatch.delenv("KEENABLE_API_KEY", raising=False)
+    monkeypatch.delenv("KEENABLE_ALLOW_PUBLIC", raising=False)
+    url = "https://8.8.8.8"  # a public address literal: accepted without DNS
+    if host == "hermes_profile":
+        credentials.set_secret_resolver(
+            lambda name, default=None: {"SEARXNG_INSTANCE_URL": url}.get(name, default)
+        )
+    else:
+        monkeypatch.setenv("SEARXNG_INSTANCE_URL", url)
+    runtime_config = _self_hosted_config()
+
+    assert readiness.evaluate_provider("searxng", runtime_config).state is readiness.Readiness.READY
+    assert config_module.self_hosted_profile_error(runtime_config) is None
+    routed = routing.auto_route_provider("python asyncio docs", runtime_config)
+    assert routed.get("error_type") is None
+    assert routed["provider"] == "searxng"
+
+
+def test_self_hosted_profile_error_leaves_a_set_but_unusable_url_to_setup_guidance(monkeypatch) -> None:
+    """A URL that is set but ignored (config.json under Hermes) is named by the
+    setup guidance, not reported as "no SearXNG URL"."""
+    from web_search_plus_mcp import credentials, readiness
+
+    monkeypatch.delenv("KEENABLE_API_KEY", raising=False)
+    monkeypatch.delenv("KEENABLE_ALLOW_PUBLIC", raising=False)
+    credentials.set_secret_resolver(lambda name, default=None: default)
+    runtime_config = _self_hosted_config()
+    runtime_config["searxng"]["base_url"] = "https://8.8.8.8"
+
+    assert readiness.evaluate_provider("searxng", runtime_config).state is readiness.Readiness.IGNORED_SOURCE
+    assert config_module.self_hosted_profile_error(runtime_config) is None
+
+
