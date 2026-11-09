@@ -617,6 +617,10 @@ def _compact_payload(
             compact[key] = deepcopy(projected[key])
     error_v3 = projected.get("error_v3") or {}
     guidance = error_v3.get("details") or {}
+    # An auto-routed setup error has no provider failures: every candidate was
+    # unconfigured and their attempts are the fallback filler ("serper: Missing
+    # API key"). An explicit request's attempt is the user's own provider.
+    setup_error = guidance.get("error_type") in {"provider_setup_required", "explicit_only_provider_configured"}
     for key in ("how_to_fix", "env_var", "env_vars", "setup_required"):
         if key in guidance:
             compact.setdefault(key, deepcopy(guidance[key]))
@@ -688,7 +692,7 @@ def _compact_payload(
         # The receipt's fallback_reason is "none" without a fallback; only a real
         # fallback is worth a field, and it is named for what it is.
         fallback_reason = receipt.get("fallback_reason")
-        if fallback_reason and str(fallback_reason).lower() != "none":
+        if fallback_reason and str(fallback_reason).lower() != "none" and not setup_error:
             routing["fallback_reason"] = _short_message(fallback_reason)
         fallback = []
         for attempt in attempts:
@@ -703,7 +707,7 @@ def _compact_payload(
             )
             if failed_or_empty and attempt.get("provider") not in fallback:
                 fallback.append(attempt.get("provider"))
-        if fallback and projected.get("provider") != "research":
+        if fallback and projected.get("provider") != "research" and not setup_error:
             routing["fallback_from"] = fallback
         if routing:
             compact["routing"] = routing
@@ -787,7 +791,7 @@ def _compact_payload(
     if projected.get("status") == "failed":
         compact.setdefault("error", _short_message(projected.get("error_v3")) or "Web Search Plus request failed")
         reasons = []
-        for attempt in attempts:
+        for attempt in [] if setup_error else attempts:
             empty = attempt.get("outcome") == "success" and attempt.get("result_count") == 0
             if attempt.get("outcome") in {"failed", "empty", "skipped"} or empty:
                 reason = _short_message(

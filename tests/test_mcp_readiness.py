@@ -117,11 +117,16 @@ def test_compact_and_v3_name_the_setup_problem_not_the_serper_filler(monkeypatch
     assert compact["status"] == "failed"
     assert compact["error"].startswith("BRAVE_API_KEY still holds a template placeholder")
     assert compact["how_to_fix"] == ["set BRAVE_API_KEY=<real value> in the MCP client's env block or the server's .env"]
+    # Nothing from the serper filler attempt the user never chose.
+    assert compact.get("env_var") != "SERPER_API_KEY"
+    assert "provider_errors" not in compact
+    assert "fallback_from" not in compact.get("routing", {})
 
     payload, _code = search.run_cli_contract_v3(["--contract-v3", "--query", "python release notes", "--no-cache"])
     error = payload["error"]
     assert (error["error_class"], error["retryable"]) == ("config", False)
     assert error["details"]["readiness"][0]["reason_code"] == "placeholder_value"
+    assert "provider" not in error and "env_var" not in error["details"]
     schema = json.loads((PACKAGE.parent / "schemas/v3/response.schema.json").read_text())
     assert list(Draft202012Validator(schema).iter_errors(payload)) == []
 
