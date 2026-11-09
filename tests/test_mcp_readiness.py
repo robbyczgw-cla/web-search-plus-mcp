@@ -279,3 +279,34 @@ def test_status_says_when_no_provider_runs_automatically(auto_routing, auto_read
     assert ("  ✓ brave:" in text) is auto_ready
     assert ("  ~ brave:" in text) is not auto_ready
     assert server._status_payload()["search_auto_ready"] is auto_ready
+
+
+@pytest.mark.parametrize("file,priority,warned", [
+    ({"profile": "self_hosted"}, ["searxng", "keenable"], False),
+    ({"auto_routing": {"provider_priority": []}}, [], False),
+    ({"profile": "cloud"}, None, True),
+], ids=["self-hosted", "empty-priority", "engine-rejects"])
+def test_status_and_config_show_are_what_the_engine_runs_with(file, priority, warned, monkeypatch, tmp_path, capsys):
+    # 5.1.7 showed brave/serper for profile=self_hosted (the engine used
+    # searxng/keenable), the full default list for provider_priority=[], and no
+    # warning for a file the first search then moved aside.
+    from web_search_plus_mcp import config, server
+
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(file))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(path))
+
+    status = server._status_payload()
+    assert server.cli_main(["config", "show"]) == 0
+    show = json.loads(capsys.readouterr().out)
+    assert server.cli_main(["status"]) in (0, 1)
+    text = capsys.readouterr().out
+    assert path.exists(), "status must not move the file"
+    engine = config.load_config()
+    assert status["routing_preferences"] == show["routing_preferences"] == engine["auto_routing"]
+    if priority is not None:
+        assert engine["auto_routing"]["provider_priority"] == priority
+    assert ("Invalid config" in status.get("config_warning", "")) is warned
+    assert ("Invalid config" in show.get("warning", "")) is warned
+    assert ("Warning: Invalid config" in text) is warned
+    capsys.readouterr()

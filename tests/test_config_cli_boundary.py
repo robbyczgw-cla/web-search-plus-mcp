@@ -174,7 +174,10 @@ def test_status_reports_invalid_config_without_moving_or_rewriting_it(tmp_path, 
     server.cli_main(["status", "--json"])
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["config_warning"].startswith("Invalid config ignored by the MCP server settings: ")
+    # The MCP server's own reader or the engine's (which names the move the
+    # next search makes); status itself never moves the file.
+    assert payload["config_warning"].startswith(("Invalid config ignored by the MCP server settings: ",
+                                                 "Invalid config: the next search moves "))
     assert payload["default_provider"] == "serper"
     assert payload["routing_preferences"]["disabled_providers"] == []
     assert payload["tools_if_started_now"] == ["web_search", "web_extract"]

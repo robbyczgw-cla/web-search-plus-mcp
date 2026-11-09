@@ -999,11 +999,14 @@ def validate_config_candidate(user_config: Any) -> Dict[str, Any]:
     return _validate_runtime_config(config)
 
 
-def load_config() -> Dict[str, Any]:
-    """Load configuration from config.json if it exists, with defaults."""
-    config = _deepcopy_default_config()
-    config_path = runtime_config_path()
+def read_runtime_config(config_path: Path) -> Tuple[Dict[str, Any], Optional[str]]:
+    """The config the engine runs with, and why the file was rejected (None if not).
 
+    Reads only: :func:`load_config` moves a rejected file aside, status shows
+    the same view without touching the file.
+    """
+    config = _deepcopy_default_config()
+    error = None
     if config_path.exists():
         try:
             with open(config_path, encoding="utf-8") as f:
@@ -1011,13 +1014,21 @@ def load_config() -> Dict[str, Any]:
         # A number too large for a float or nesting too deep for the parser is
         # as invalid as a type error; uncaught, it failed every search.
         except (json.JSONDecodeError, IOError, ValueError, TypeError, OverflowError, RecursionError) as e:
-            _quarantine_runtime_config(config_path, str(e) or type(e).__name__)
-            config = _deepcopy_default_config()
+            error = str(e) or type(e).__name__
 
     config = _apply_desktop_settings(config, _desktop_settings(config_path))
     # Defaults need no migration, but applying this here keeps direct/default
     # loads on the same profile-derived path as persisted configurations.
-    return apply_profile_effects(config)
+    return apply_profile_effects(config), error
+
+
+def load_config() -> Dict[str, Any]:
+    """Load configuration from config.json if it exists, with defaults."""
+    config_path = runtime_config_path()
+    config, error = read_runtime_config(config_path)
+    if error is not None:
+        _quarantine_runtime_config(config_path, error)
+    return config
 
 
 _logger = logging.getLogger(__name__)

@@ -1326,9 +1326,16 @@ async def main():
 
 def _status_payload() -> dict[str, Any]:
     from . import readiness
+    from .config import read_runtime_config
 
     behavior_config, config_warning = _load_behavior_config()
-    report = readiness.evaluate(behavior_config, list(SEARCH_PROVIDERS))
+    # What the engine runs with (profile effects, its own validation) rather
+    # than this server's reading of the file: they differed for self_hosted.
+    path = runtime_config_path()
+    engine_config, engine_error = read_runtime_config(path)
+    if engine_error:
+        config_warning = f"Invalid config: the next search moves {path} aside and uses the defaults: {engine_error}"
+    report = readiness.evaluate(engine_config, list(SEARCH_PROVIDERS))
     configured = {name: bool(report[name].accepted) for name in SEARCH_PROVIDERS}
     payload = {
         "version": __version__,
@@ -1343,8 +1350,9 @@ def _status_payload() -> dict[str, Any]:
         "extract_configured": any(configured.get(provider) for provider in EXTRACT_PROVIDERS),
         "tools_if_started_now": ["web_search", "web_extract"],
         "config_path": str(runtime_config_path()),
-        "routing_preferences": behavior_config["auto_routing"],
-        "default_provider": behavior_config["defaults"]["provider"],
+        "routing_preferences": engine_config["auto_routing"],
+        # The engine pins the top-level key; defaults.provider is its source.
+        "default_provider": engine_config.get("default_provider") or engine_config["defaults"]["provider"],
         "providers": {
             name: {
                 "env": SEARCH_PROVIDERS[name]["env"], "configured": ok, "capabilities": SEARCH_PROVIDERS[name]["capabilities"],
@@ -1432,6 +1440,8 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         else:
             print(f"web-search-plus-mcp {__version__}")
             print("Tools if started now: " + ", ".join(payload["tools_if_started_now"]))
+            if payload.get("config_warning"):
+                print(f"Warning: {payload['config_warning']}")
             print(f"Search configured: {'yes' if payload['search_configured'] else 'no'}")
             if payload["search_configured"] and not payload["search_auto_ready"]:
                 print("Automatic search: no provider may run without provider=\"name\" (marked ~ below)")
@@ -1551,8 +1561,16 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             os.environ[CONFIG_ENV_VAR] = args.config_path
         path = runtime_config_path()
         if args.config_command == "show":
-            config, warning = _load_behavior_config(path)
-            payload = {"config_path": str(path), "default_provider": config["defaults"]["provider"], "routing_preferences": config["auto_routing"]}
+            from .config import read_runtime_config
+
+            _config, warning = _load_behavior_config(path)
+            # The engine's view, as in status.
+            config, engine_error = read_runtime_config(path)
+            if engine_error:
+                warning = f"Invalid config: the next search moves {path} aside and uses the defaults: {engine_error}"
+            payload = {"config_path": str(path),
+                       "default_provider": config.get("default_provider") or config["defaults"]["provider"],
+                       "routing_preferences": config["auto_routing"]}
             if warning:
                 payload["warning"] = warning
             print(json.dumps(payload, indent=2, ensure_ascii=False))
