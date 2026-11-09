@@ -391,5 +391,26 @@ def test_long_provider_snippets_are_capped_in_compact_only():
     assert size <= 8 * 1300 + 2000, size
 
 
-def test_short_snippets_are_untouched():
-    assert server._compact_snippet("short text") == "short text"
+@pytest.mark.parametrize("snippet", ["short text", "  short\n text  ", "", "x" * 1200])
+def test_short_snippets_are_untouched(snippet):
+    case = deepcopy(CASES[0])
+    for row in case["canonical"]["results"]:
+        row["snippet"] = snippet
+    compact = project(case, "compact")
+    assert all(row["snippet"] == snippet for row in compact["results"])
+
+
+@pytest.mark.parametrize("snippet,expected", [
+    ("x" * 1201, "x" * 1201),  # A truncation marker would be longer than the source.
+    ("x" * 2000, "x" * 1200 + " … [TRUNCATED: showing first 1200 of 2000 characters]"),
+    ("x " * 800, "x " * 599 + "x … [TRUNCATED: showing first 1199 of 1600 characters]"),
+    ("short" + " " * 2000 + "text", "short text"),
+])
+def test_long_snippet_projection_keeps_historical_cut_and_marker(snippet, expected):
+    case = deepcopy(CASES[0])
+    for row in case["canonical"]["results"]:
+        row["snippet"] = snippet
+    compact = project(case, "compact")
+    full = project(case, "full")
+    assert all(row["snippet"] == expected for row in compact["results"])
+    assert all(row["snippet"] == snippet for row in full["results"])

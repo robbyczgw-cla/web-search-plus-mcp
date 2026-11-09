@@ -142,3 +142,19 @@ def test_sdk_v2_sanitizes_unexpected_tool_failures(monkeypatch, detail):
     else:
         assert payload["detail"] == "compact"
     assert secret not in result.content[0].text
+
+
+@pytest.mark.parametrize("text", ["plain text", '"JSON string"', "[]", "9" * 10000], ids=["text", "json_string", "json_list", "integer_limit"])
+def test_sdk_v2_accepts_hook_content_that_is_not_a_wsp_response(monkeypatch, text):
+    async def fake_call_tool(_name, _arguments):
+        return [TextContent(type="text", text=text)]
+
+    monkeypatch.setattr(server, "call_tool", fake_call_tool)
+
+    async def scenario():
+        async with Client(server.app, mode="auto") as client:
+            return await client.call_tool("web_search", {"query": "hook response"})
+
+    result = run(scenario())
+    assert result.is_error is False
+    assert result.content[0].text == text

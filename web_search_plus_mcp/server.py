@@ -83,30 +83,10 @@ def _canonical_provider(provider: str) -> str:
     return PROVIDER_ALIASES.get(value, value)
 
 
-def _research_subprocess_timeout(value: Any) -> int:
-    """Keep the outer process alive long enough to emit the inner budget result."""
-    try:
-        budget = float(value)
-    except (TypeError, ValueError):
-        budget = 55.0
-    if not math.isfinite(budget):
-        budget = 55.0
-    budget = min(75.0, max(1.0, budget))
-    return math.ceil(budget) + RESEARCH_SUBPROCESS_GRACE_SECONDS
-
-
 def _donsetch_outer_budget_applies(provider: str) -> bool:
     return provider == "donsetch" or (
         provider == "auto" and bool(os.environ.get("DONSETCH_BIN"))
     )
-
-
-def _valid_provider(provider: str) -> bool:
-    return _canonical_provider(provider) in SEARCH_PROVIDERS
-
-
-def _default_config_path() -> Path:
-    return runtime_config_path()
 
 
 def _default_behavior_config() -> dict[str, Any]:
@@ -162,15 +142,6 @@ def _normalize_provider_list(
     return normalized
 
 
-def _append_missing_default_providers(providers: list[str]) -> list[str]:
-    """Preserve user order while adding newly introduced default providers."""
-    merged = list(providers)
-    for provider in ROUTING_PROVIDER_ORDER:
-        if provider not in merged:
-            merged.append(provider)
-    return merged
-
-
 def _normalize_extract_provider_list(value: Any) -> list[str]:
     if isinstance(value, str):
         raw = [part.strip() for part in value.split(",")]
@@ -194,10 +165,6 @@ def _normalize_extract_provider_list(value: Any) -> list[str]:
     return normalized
 
 
-def _append_missing_extract_providers(providers: list[str]) -> list[str]:
-    return list(providers) + [provider for provider in EXTRACT_PROVIDERS if provider not in providers]
-
-
 def _normalize_behavior_config(
     config: dict[str, Any], *, migrate_retired: bool = False
 ) -> dict[str, Any]:
@@ -207,47 +174,50 @@ def _normalize_behavior_config(
     mcp = normalized.get("mcp")
     if not isinstance(mcp, dict) or mcp.get("detail") not in {"compact", "full"}:
         raise ValueError("mcp.detail must be compact or full")
-    defaults = normalized.setdefault("defaults", {})
+    defaults = normalized["defaults"]
     if not isinstance(defaults, dict):
         raise ValueError("defaults must be an object")
     # Existing top-level values retain the engine's precedence. New explicit
     # set-default writes synchronize both keys, so old readers keep working.
     if normalized.get("default_provider"):
         defaults["provider"] = normalized["default_provider"]
-    default_provider = _canonical_provider(str(defaults.get("provider", "serper")))
+    default_provider = _canonical_provider(str(defaults["provider"]))
     if default_provider in RETIRED_ANSWER_PROVIDERS and migrate_retired:
         default_provider = "serper"
     if default_provider not in SEARCH_PROVIDERS:
         raise ValueError(f"unknown default provider: {defaults.get('provider')}")
     defaults["provider"] = default_provider
-    auto = normalized.setdefault("auto_routing", {})
+    auto = normalized["auto_routing"]
     if not isinstance(auto, dict):
         raise ValueError("auto_routing must be an object")
-    auto["enabled"] = bool(auto.get("enabled", True))
-    fallback = _canonical_provider(str(auto.get("fallback_provider", "serper")))
+    auto["enabled"] = bool(auto["enabled"])
+    fallback = _canonical_provider(str(auto["fallback_provider"]))
     if fallback in RETIRED_ANSWER_PROVIDERS and migrate_retired:
         fallback = "serper"
     if fallback not in SEARCH_PROVIDERS:
         raise ValueError(f"unknown fallback provider: {auto.get('fallback_provider')}")
     auto["fallback_provider"] = fallback
     priority = _normalize_provider_list(
-        auto.get("provider_priority") or ROUTING_PROVIDER_ORDER,
+        auto["provider_priority"] or ROUTING_PROVIDER_ORDER,
         allow_empty=False,
         drop_retired=migrate_retired,
     )
-    auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
+    auto["provider_priority"] = (
+        priority + [provider for provider in ROUTING_PROVIDER_ORDER if provider not in priority]
+        if auto["enabled"] else priority
+    )
     # Same rule as the engine (config.py): an empty list means the default order.
-    extract_priority = _normalize_extract_provider_list(auto.get("extract_provider_priority") or EXTRACT_PROVIDERS)
-    auto["extract_provider_priority"] = _append_missing_extract_providers(extract_priority)
+    extract_priority = _normalize_extract_provider_list(auto["extract_provider_priority"] or EXTRACT_PROVIDERS)
+    auto["extract_provider_priority"] = extract_priority + [provider for provider in EXTRACT_PROVIDERS if provider not in extract_priority]
     auto["disabled_providers"] = _normalize_provider_list(
-        auto.get("disabled_providers", []),
+        auto["disabled_providers"],
         allow_empty=True,
         drop_retired=migrate_retired,
     )
-    raw_auto_allow = auto.get("auto_allow") or {}
+    raw_auto_allow = auto["auto_allow"] or {}
     if not isinstance(raw_auto_allow, dict):
         raise ValueError("auto_allow must be an object mapping provider names to booleans")
-    normalized_auto_allow = dict(_default_behavior_config()["auto_routing"]["auto_allow"])
+    normalized_auto_allow = dict(DEFAULT_AUTO_ALLOW)
     for provider, allowed in raw_auto_allow.items():
         canonical = _canonical_provider(str(provider))
         if canonical in RETIRED_ANSWER_PROVIDERS and migrate_retired:
@@ -256,7 +226,7 @@ def _normalize_behavior_config(
             raise ValueError(f"unknown auto_allow provider: {provider}")
         normalized_auto_allow[canonical] = bool(allowed)
     auto["auto_allow"] = normalized_auto_allow
-    threshold = auto.get("confidence_threshold", 0.3)
+    threshold = auto["confidence_threshold"]
     try:
         threshold = float(threshold)
     except (TypeError, ValueError) as exc:
@@ -279,7 +249,7 @@ def _load_behavior_config(
     ``quarantine`` to keep a backup. CLI edits use a strict reader instead and
     reject invalid drafts without moving the original file.
     """
-    path = path or _default_config_path()
+    path = path or runtime_config_path()
     if not path.exists():
         return _default_behavior_config(), None
     try:
@@ -293,7 +263,9 @@ def _load_behavior_config(
             else None
         )
         return normalized, warning
-    except Exception as exc:
+    except (OSError, ValueError, TypeError, OverflowError, RecursionError) as exc:
+        # File decoding and normalization of untrusted JSON can fail; reads must
+        # still return MCP defaults without changing the operator's file.
         if not quarantine:
             return _default_behavior_config(), f"Invalid config ignored by the MCP server settings: {exc}"
         broken = _unique_timestamped_path(path, "broken")
@@ -306,7 +278,7 @@ def _load_behavior_config(
 
 
 def _write_behavior_config(config: dict[str, Any], path: Optional[Path] = None, *, backup: bool = False) -> Path:
-    path = path or _default_config_path()
+    path = path or runtime_config_path()
     normalized = _normalize_behavior_config(config)
     validate_config_candidate(normalized)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -325,8 +297,6 @@ def _read_config_for_edit(path: Path) -> dict[str, Any]:
         return _default_behavior_config()
     try:
         data = json.loads(path.read_text())
-        if not isinstance(data, dict):
-            raise ValueError("config must be a JSON object")
         return _normalize_behavior_config(data, migrate_retired=True)
     except (OSError, ValueError, TypeError) as exc:
         raise SystemExit(f"Config unchanged at {path}: {exc}") from exc
@@ -339,80 +309,32 @@ def _write_cli_config(config: dict[str, Any], path: Path, *, backup: bool = Fals
         raise SystemExit(f"Config unchanged at {path}: {exc}") from exc
 
 
-def _resolve_detail(arguments: dict[str, Any]) -> str:
-    """An explicit argument wins over environment, config, and compact.
-
-    The environment value is the operator's, not the caller's: an empty value
-    counts as unset, case is ignored, and anything else is reported once on
-    stderr and skipped. It used to raise on every tool call ("Web Search Plus
-    tool execution failed.") with no hint that the env var was the cause.
-    """
-    if "detail" in arguments:
-        detail = arguments["detail"]
-    else:
-        detail = _env_detail()
-        if detail is None:
-            config, _warning = _load_behavior_config()
-            detail = config["mcp"]["detail"]
-    if detail not in ("compact", "full"):
-        raise ValueError("detail must be compact or full")
-    return detail
-
-
 _DETAIL_ENV_WARNED = False
 
 
-def _env_detail() -> Optional[str]:
+def _resolve_detail(arguments: dict[str, Any]) -> str:
+    """Resolve argument > environment > normalized config > compact.
+
+    Invalid operator environment values warn once and fall through to config;
+    invalid explicit tool arguments retain the caller-facing validation error.
+    """
     global _DETAIL_ENV_WARNED
-    raw = os.environ.get(DETAIL_ENV_VAR)
-    value = (raw or "").strip().lower()
-    if not value:
-        return None
+    if "detail" in arguments:
+        detail = arguments["detail"]
+        if detail not in ("compact", "full"):
+            raise ValueError("detail must be compact or full")
+        return detail
+    value = os.environ.get(DETAIL_ENV_VAR, "").strip().lower()
     if value in ("compact", "full"):
         return value
-    if not _DETAIL_ENV_WARNED:
+    if value and not _DETAIL_ENV_WARNED:
         _DETAIL_ENV_WARNED = True
         print(
             json.dumps({"warning": f"{DETAIL_ENV_VAR} must be compact or full; ignoring it"}),
             file=sys.stderr,
         )
-    return None
-
-
-def _truthy(value: Any) -> bool:
-    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _configured_env(env_name: str) -> bool:
-    return bool((os.environ.get(env_name) or "").strip())
-
-
-def _readiness_report() -> dict[str, Any]:
-    """The engine's own readiness for every provider (one answer for status and tools).
-
-    Status used to count an env var as configured when it was merely present:
-    placeholders and private SearXNG URLs showed as configured, while keys in
-    config.json, keyless opt-ins and $HERMES_HOME/.env keys showed as missing.
-    """
-    from . import readiness
-
     config, _warning = _load_behavior_config()
-    return readiness.evaluate(config, list(SEARCH_PROVIDERS))
-
-
-def _configured_providers(report: Optional[dict[str, Any]] = None) -> dict[str, bool]:
-    report = report if report is not None else _readiness_report()
-    return {name: bool(report[name].accepted) for name in SEARCH_PROVIDERS}
-
-
-def _has_search_provider(report: Optional[dict[str, Any]] = None) -> bool:
-    configured = _configured_providers(report)
-    return any(ok for name, ok in configured.items() if "search" in SEARCH_PROVIDERS[name]["capabilities"])
-
-
-def _has_extract_provider(report: Optional[dict[str, Any]] = None) -> bool:
-    configured = _configured_providers(report)
-    return any(configured.get(p) for p in EXTRACT_PROVIDERS)
+    return config["mcp"]["detail"]
 
 
 def _load_env_file() -> None:
@@ -493,7 +415,7 @@ def _as_bool(value: Any) -> bool:
 
 
 async def list_tools() -> list[Tool]:
-    tools = [
+    return [
         Tool(
             name="web_search",
             description=(
@@ -575,7 +497,6 @@ async def list_tools() -> list[Tool]:
             },
         ),
     ]
-    return tools
 
 
 def _field_text(value: Any) -> str:
@@ -595,10 +516,8 @@ def _quality_report_from_v3(
 ) -> dict[str, Any]:
     """Build MCP diagnostics from validated canonical evidence without re-fetching."""
     domains = []
-    for item in projected.get("results") or []:
-        if not isinstance(item, dict):
-            continue
-        domain = urlparse(str(item.get("url") or "")).netloc.lower()
+    for item in projected["results"]:
+        domain = urlparse(item["url"]).netloc.lower()
         if domain.startswith("www."):
             domain = domain[4:]
         if domain:
@@ -620,7 +539,7 @@ def _quality_report_from_v3(
             for item in attempts
             if isinstance(item, dict)
         ],
-        "result_count": len(projected.get("results") or []),
+        "result_count": len(projected["results"]),
         "domain_count": len(unique_domains),
         "domains": unique_domains,
         "domain_diversity": (
@@ -717,10 +636,22 @@ def _compact_payload(
         if capability == "extract"
         else ("title", "url", "snippet", "published", "published_at", "date", "source_type", "fetch_priority")
     )
-    for index, item in enumerate(projected.get("results") or []):
+    for index, item in enumerate(projected["results"]):
         result = {key: deepcopy(item[key]) for key in fields if key in item}
-        if capability != "extract" and isinstance(result.get("snippet"), str):
-            result["snippet"] = _compact_snippet(result["snippet"])
+        if capability != "extract":
+            snippet = result["snippet"]
+            # Preserve short snippets verbatim. Only long snippets collapse
+            # whitespace and prefer a word boundary for the compact limit.
+            if len(snippet) > _COMPACT_SNIPPET_CHARS:
+                flat = " ".join(snippet.split())
+                if len(flat) <= _COMPACT_SNIPPET_CHARS:
+                    result["snippet"] = flat
+                else:
+                    cut = flat[: _COMPACT_SNIPPET_CHARS + 1].rpartition(" ")[0]
+                    if len(cut) < _COMPACT_SNIPPET_CHARS // 2:
+                        cut = flat[:_COMPACT_SNIPPET_CHARS]
+                    shown = f"{cut} … [TRUNCATED: showing first {len(cut)} of {len(snippet)} characters]"
+                    result["snippet"] = shown if len(shown) < len(flat) else flat
         original = originals[index] if index < len(originals) else {}
         observation_id = original.get("representative_observation_id")
         observation = observations.get(observation_id) or {}
@@ -874,26 +805,6 @@ def _compact_payload(
 _COMPACT_SNIPPET_CHARS = 1200
 
 
-def _compact_snippet(snippet: str) -> str:
-    """Cap one search snippet for compact output, like the Hermes plugin's display.
-
-    Some providers (Exa, measured 2026-10-30) return whole page sections as a
-    "snippet", up to ~22,000 characters, which made one compact search ~32 KB.
-    The cut falls on a word boundary when that keeps at least half of the limit;
-    the marker says how much was shown. Full mode keeps the original text.
-    """
-    if len(snippet) <= _COMPACT_SNIPPET_CHARS:
-        return snippet
-    flat = " ".join(snippet.split())
-    if len(flat) <= _COMPACT_SNIPPET_CHARS:
-        return flat
-    cut = flat[: _COMPACT_SNIPPET_CHARS + 1].rpartition(" ")[0]
-    if len(cut) < _COMPACT_SNIPPET_CHARS // 2:
-        cut = flat[:_COMPACT_SNIPPET_CHARS]
-    shown = f"{cut} … [TRUNCATED: showing first {len(cut)} of {len(snippet)} characters]"
-    return shown if len(shown) < len(flat) else flat
-
-
 def _project_v3_payload(
     payload: dict[str, Any],
     *,
@@ -1042,10 +953,7 @@ def _project_v3_payload(
         and isinstance(provider_name, str)
         and provider_name not in {"research", "exa"}
     ):
-        try:
-            from .providers import freshness_metadata
-        except ImportError:
-            from providers import freshness_metadata
+        from .providers import freshness_metadata
 
         projected.setdefault("metadata", {})["freshness"] = freshness_metadata(
             provider_name,
@@ -1064,11 +972,6 @@ _search_engine_failed = False
 _search_engine_lock = threading.Lock()
 
 
-def _force_subprocess() -> bool:
-    """Operators can opt back into one search.py process per call."""
-    return os.environ.get("WSP_FORCE_SUBPROCESS", "").strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _load_search_engine() -> Any:
     """Import the bundled search engine once; None means use the subprocess path."""
     global _search_engine, _search_engine_failed
@@ -1082,7 +985,9 @@ def _load_search_engine() -> Any:
                 if not callable(getattr(engine, "run_cli_contract_v3", None)):
                     raise ImportError("search.run_cli_contract_v3 missing")
                 _search_engine = engine
-            except Exception as exc:  # pragma: no cover - defensive fallback
+            except Exception as exc:  # pragma: no cover - broken installation
+                # Importing the optional engine can execute arbitrary module or
+                # host initialization code; retain the subprocess fallback.
                 _search_engine_failed = True
                 print(
                     json.dumps({"warning": f"in-process search engine unavailable, using subprocess: {exc}"}),
@@ -1091,25 +996,24 @@ def _load_search_engine() -> Any:
     return _search_engine
 
 
-def _subprocess_failed_payload(*, invalid_response: bool = False) -> dict[str, Any]:
-    return _typed_error_payload(
-        code="wsp.subprocess.invalid_response" if invalid_response else "wsp.subprocess.failed",
-        message=(
-            "Web Search Plus subprocess returned an invalid response."
-            if invalid_response
-            else "Web Search Plus subprocess failed."
-        ),
+_SUBPROCESS_ERRORS = {
+    "failed": _typed_error_payload(
+        code="wsp.subprocess.failed",
+        message="Web Search Plus subprocess failed.",
         error_class="internal",
-    )
-
-
-def _subprocess_timeout_payload() -> dict[str, Any]:
-    return _typed_error_payload(
+    ),
+    "invalid_response": _typed_error_payload(
+        code="wsp.subprocess.invalid_response",
+        message="Web Search Plus subprocess returned an invalid response.",
+        error_class="internal",
+    ),
+    "timeout": _typed_error_payload(
         code="wsp.subprocess.timeout",
         message="Web Search Plus subprocess timed out.",
         error_class="timeout",
         retryable=True,
-    )
+    ),
+}
 
 
 async def _run_in_process(engine: Any, cmd: list[str], timeout: int) -> Optional[dict[str, Any]]:
@@ -1129,45 +1033,38 @@ async def _run_in_process(engine: Any, cmd: list[str], timeout: int) -> Optional
         # Before 3.11 these are distinct classes, and asyncio re-raises the
         # future's timeout as asyncio.TimeoutError across to_thread.
         # The worker thread is a daemon bounded by per-provider HTTP timeouts.
-        return _subprocess_timeout_payload()
+        return deepcopy(_SUBPROCESS_ERRORS["timeout"])
     except ValueError as exc:
         if "only supports --contract-v3" in str(exc):
             return None
         print(json.dumps({"error": f"in-process search failed: {type(exc).__name__}"}), file=sys.stderr)
-        return _subprocess_failed_payload()
+        return deepcopy(_SUBPROCESS_ERRORS["failed"])
     except SystemExit:
         # argparse rejected the argv; the CLI would exit 2 with usage on stderr.
-        return _subprocess_failed_payload()
+        return deepcopy(_SUBPROCESS_ERRORS["failed"])
     except Exception as exc:
+        # Engine/host failures have arbitrary exception types. Match the child
+        # process's sanitized failure without disclosing exception text.
         print(json.dumps({"error": f"in-process search failed: {type(exc).__name__}"}), file=sys.stderr)
-        return _subprocess_failed_payload()
+        return deepcopy(_SUBPROCESS_ERRORS["failed"])
     if not isinstance(payload, dict):
-        return _subprocess_failed_payload(invalid_response=True)
+        return deepcopy(_SUBPROCESS_ERRORS["invalid_response"])
     # Round-trip through JSON so the result is exactly what the CLI would print.
     try:
         return json.loads(json.dumps(payload, ensure_ascii=False))
     except (TypeError, ValueError):
-        return _subprocess_failed_payload(invalid_response=True)
-
-
-def _subprocess_invocation(cmd: list[str]) -> tuple[list[str], dict[str, str]]:
-    """Run search.py as a module of this package, not as a file path.
-
-    search.py uses package-relative imports, so ``python search.py`` fails with
-    "attempted relative import with no known parent package". The package's
-    parent directory goes first on PYTHONPATH so an uninstalled checkout runs
-    the same code as this server.
-    """
-    env = os.environ.copy()
-    if len(cmd) < 2 or cmd[1] != str(SEARCH_SCRIPT):
-        return cmd, env
-    package_parent = str(SEARCH_SCRIPT.parent.parent)
-    env["PYTHONPATH"] = os.pathsep.join(filter(None, [package_parent, env.get("PYTHONPATH")]))
-    return [cmd[0], "-m", f"{__package__ or SEARCH_SCRIPT.parent.name}.search", *cmd[2:]], env
+        return deepcopy(_SUBPROCESS_ERRORS["invalid_response"])
 
 
 async def _run_subprocess(cmd: list[str], timeout: int) -> dict[str, Any]:
-    argv, env = _subprocess_invocation(cmd)
+    # search.py has package-relative imports, so run it as a module. Put this
+    # checkout first on PYTHONPATH, including when it has not been installed.
+    argv = cmd
+    env = os.environ.copy()
+    if len(cmd) >= 2 and cmd[1] == str(SEARCH_SCRIPT):
+        package_parent = str(SEARCH_SCRIPT.parent.parent)
+        env["PYTHONPATH"] = os.pathsep.join(filter(None, [package_parent, env.get("PYTHONPATH")]))
+        argv = [cmd[0], "-m", f"{__package__ or SEARCH_SCRIPT.parent.name}.search", *cmd[2:]]
     try:
         result = await asyncio.to_thread(
             subprocess.run,
@@ -1178,12 +1075,12 @@ async def _run_subprocess(cmd: list[str], timeout: int) -> dict[str, Any]:
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        return _subprocess_timeout_payload()
+        return deepcopy(_SUBPROCESS_ERRORS["timeout"])
     raw = (result.stdout if result.returncode == 0 else result.stderr).strip()
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
-        return _subprocess_failed_payload(invalid_response=result.returncode == 0)
+        return deepcopy(_SUBPROCESS_ERRORS["invalid_response" if result.returncode == 0 else "failed"])
 
 
 async def _run_cmd(
@@ -1201,7 +1098,8 @@ async def _run_cmd(
     requested_provider: Optional[str] = None,
 ) -> list[TextContent]:
     payload = None
-    engine = None if _force_subprocess() else _load_search_engine()
+    force_subprocess = os.environ.get("WSP_FORCE_SUBPROCESS", "").strip().lower() in {"1", "true", "yes", "on"}
+    engine = None if force_subprocess else _load_search_engine()
     if engine is not None:
         payload = await _run_in_process(engine, cmd, timeout)
     if payload is None:
@@ -1273,17 +1171,22 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if _as_bool(arguments.get("no_cache", False)):
             cmd.append("--no-cache")
         _append_optional(cmd, "--cache-ttl", arguments.get("cache_ttl"))
+        timeout = DEFAULT_SEARCH_SUBPROCESS_TIMEOUT_SECONDS
+        if _donsetch_outer_budget_applies(provider):
+            timeout = DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS
+        elif mode == "research":
+            # Direct Python callers can bypass the MCP schema; retain the
+            # historical default/clamp for their outer process budget.
+            try:
+                budget = float(research_time_budget)
+            except (TypeError, ValueError):
+                budget = 55.0
+            if not math.isfinite(budget):
+                budget = 55.0
+            timeout = math.ceil(min(75.0, max(1.0, budget))) + RESEARCH_SUBPROCESS_GRACE_SECONDS
         return await _run_cmd(
             cmd,
-            timeout=(
-                DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS
-                if _donsetch_outer_budget_applies(provider)
-                else (
-                    _research_subprocess_timeout(research_time_budget)
-                    if mode == "research"
-                    else DEFAULT_SEARCH_SUBPROCESS_TIMEOUT_SECONDS
-                )
-            ),
+            timeout=timeout,
             capability="search",
             query=query,
             request_mode=mode,
@@ -1344,15 +1247,6 @@ async def _mcp_list_tools(
     return ListToolsResult(tools=await list_tools())
 
 
-def _invalid_arguments_message(tool_name: str, error: Any) -> str:
-    """Describe schema failures without reflecting caller-controlled values."""
-    location = ".".join(str(part) for part in error.absolute_path) or "$"
-    return (
-        f"Invalid arguments for tool '{tool_name}' "
-        f"({error.validator} validation failed at {location})."
-    )
-
-
 async def _mcp_call_tool(
     _ctx: ServerRequestContext[Any], params: CallToolRequestParams
 ) -> CallToolResult:
@@ -1367,43 +1261,45 @@ async def _mcp_call_tool(
         Draft202012Validator(tool.input_schema).iter_errors(arguments), None
     )
     if validation_error is not None:
+        # Describe the schema location without reflecting caller values.
+        location = ".".join(str(part) for part in validation_error.absolute_path) or "$"
         raise MCPError(
             INVALID_PARAMS,
-            _invalid_arguments_message(params.name, validation_error),
+            f"Invalid arguments for tool '{params.name}' "
+            f"({validation_error.validator} validation failed at {location}).",
         )
 
     try:
         content = await call_tool(params.name, arguments)
     except Exception:
+        # A user-facing MCP hook must return the sanitized wire error for any
+        # engine/host failure; no narrower class covers those external hooks.
         payload = _typed_error_payload(
             code="wsp.mcp.tool_execution_failed",
             message="Web Search Plus tool execution failed.",
             error_class="internal",
         )
-        # Invalid server defaults must still produce a compact, typed failure.
-        try:
-            detail = _resolve_detail(arguments)
-        except ValueError:
-            detail = "compact"
+        # Arguments passed schema validation; environment and config defaults
+        # are normalized by _resolve_detail at their own boundaries.
+        detail = _resolve_detail(arguments)
         if detail == "compact":
             payload = _compact_payload(payload, capability="search")
         return CallToolResult(
             content=[TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))],
             is_error=True,
         )
-    return CallToolResult(content=content, is_error=_content_reports_failure(content))
-
-
-def _content_reports_failure(content: list[TextContent]) -> bool:
-    """True when the tool payload is a failed WSP response (MCP ``isError``)."""
+    is_error = False
     for item in content:
         try:
             payload = json.loads(getattr(item, "text", "") or "")
         except (TypeError, ValueError):
+            # Hooks may return non-JSON content. ValueError also covers the
+            # decoder's integer-length limit, not only JSONDecodeError.
             continue
         if isinstance(payload, dict) and payload.get("status") == "failed":
-            return True
-    return False
+            is_error = True
+            break
+    return CallToolResult(content=content, is_error=is_error)
 
 
 app = Server(
@@ -1420,18 +1316,20 @@ async def main():
 
 
 def _status_payload() -> dict[str, Any]:
-    report = _readiness_report()
-    configured = _configured_providers(report)
+    from . import readiness
+
     behavior_config, config_warning = _load_behavior_config()
+    report = readiness.evaluate(behavior_config, list(SEARCH_PROVIDERS))
+    configured = {name: bool(report[name].accepted) for name in SEARCH_PROVIDERS}
     payload = {
         "version": __version__,
         "server": "web-search-plus-mcp",
-        "search_configured": _has_search_provider(report),
-        "extract_configured": _has_extract_provider(report),
+        "search_configured": any(ok for name, ok in configured.items() if "search" in SEARCH_PROVIDERS[name]["capabilities"]),
+        "extract_configured": any(configured.get(provider) for provider in EXTRACT_PROVIDERS),
         "tools_if_started_now": ["web_search", "web_extract"],
-        "config_path": str(_default_config_path()),
-        "routing_preferences": behavior_config.get("auto_routing", {}),
-        "default_provider": behavior_config.get("defaults", {}).get("provider"),
+        "config_path": str(runtime_config_path()),
+        "routing_preferences": behavior_config["auto_routing"],
+        "default_provider": behavior_config["defaults"]["provider"],
         "providers": {
             name: {
                 "env": SEARCH_PROVIDERS[name]["env"], "configured": ok, "capabilities": SEARCH_PROVIDERS[name]["capabilities"],
@@ -1453,58 +1351,6 @@ def _status_payload() -> dict[str, Any]:
         )
     payload["jev"] = jev_setup.status_payload(os.environ, behavior_config)
     return payload
-
-
-def _canonical_snippet(env_file: str = ".env", *, include_jev: bool = False, jev_key_file: str | None = None) -> dict[str, Any]:
-    env_path = Path(env_file).expanduser().resolve()
-    candidates = [path.expanduser().resolve() for path in candidate_env_paths(__file__)]
-    note = (
-        f"The server reads {env_path} at startup."
-        if env_path in candidates else
-        f"{env_path} is a template only and is not automatically read by this server. "
-        "Copy its keys into the MCP client's env block or a server env file."
-    )
-    note += " Server env files, in precedence order: " + ", ".join(map(str, candidates)) + ". Existing process environment wins. Restart after changes."
-    env = {
-        "LINKUP_API_KEY": "your_linkup_key",
-        "TAVILY_API_KEY": "your_tavily_key",
-        "BRAVE_API_KEY": "your_brave_key",
-    }
-    if include_jev:
-        if jev_key_file:
-            env["TYPESAFE_API_KEY_FILE"] = jev_key_file
-        else:
-            env["TYPESAFE_API_KEY"] = "your_typesafe_key"
-    return {
-        "mcpServers": {
-            "web-search-plus": {
-                "command": "uvx",
-                "args": ["web-search-plus-mcp"],
-                "env": env,
-            }
-        },
-        "note": note,
-    }
-
-
-def _write_env_template(
-    path: Path,
-    preset: str,
-    overwrite: bool,
-    extra_keys: Optional[list[str]] = None,
-    extra_values: Optional[dict[str, str]] = None,
-) -> None:
-    keys = list(PRESETS[preset])
-    extra_values = extra_values or {}
-    for key in extra_keys or []:
-        if key not in keys:
-            keys.append(key)
-    if path.exists() and not overwrite:
-        raise SystemExit(f"Refusing to overwrite existing {path}. Pass --force to replace it.")
-    lines = ["# web-search-plus-mcp provider config"]
-    for key in keys:
-        lines.append(f"{key}={extra_values.get(key, '')}")
-    path.write_text("\n".join(lines) + "\n")
 
 
 def cli_main(argv: Optional[list[str]] = None) -> int:
@@ -1601,14 +1447,14 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         return 0
     if args.command == "setup":
         path = Path(args.env_file).expanduser().resolve()
-        if getattr(args, "config_path", None):
+        if args.config_path:
             os.environ[CONFIG_ENV_VAR] = args.config_path
-        want_jev = True if getattr(args, "jev", False) else False
+        want_jev = args.jev
         try:
-            jev_decisions = jev_setup.parse_decisions(getattr(args, "jev_decisions", None))
+            jev_decisions = jev_setup.parse_decisions(args.jev_decisions)
         except ValueError as exc:
             raise SystemExit(str(exc))
-        jev_key_file = getattr(args, "jev_key_file", None)
+        jev_key_file = args.jev_key_file
         extra_keys: list[str] = []
         extra_values: dict[str, str] = {}
         if want_jev:
@@ -1618,13 +1464,40 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             else:
                 extra_keys.append(jev_setup.JEV_ENV)
         keys = list(PRESETS[args.preset]) + extra_keys
+        candidates = [p.expanduser().resolve() for p in candidate_env_paths(__file__)]
+        note = (
+            f"The server reads {path} at startup."
+            if path in candidates else
+            f"{path} is a template only and is not automatically read by this server. "
+            "Copy its keys into the MCP client's env block or a server env file."
+        )
+        note += " Server env files, in precedence order: " + ", ".join(map(str, candidates)) + ". Existing process environment wins. Restart after changes."
+        snippet_env = {
+            "LINKUP_API_KEY": "your_linkup_key",
+            "TAVILY_API_KEY": "your_tavily_key",
+            "BRAVE_API_KEY": "your_brave_key",
+        }
+        if want_jev:
+            if jev_key_file:
+                snippet_env["TYPESAFE_API_KEY_FILE"] = jev_key_file
+            else:
+                snippet_env["TYPESAFE_API_KEY"] = "your_typesafe_key"
         payload = {
             "preset": args.preset,
             "env_file": str(path),
-            "server_env_files": [str(p.expanduser().resolve()) for p in candidate_env_paths(__file__)],
-            "env_file_auto_loaded": path in [p.expanduser().resolve() for p in candidate_env_paths(__file__)],
+            "server_env_files": list(map(str, candidates)),
+            "env_file_auto_loaded": path in candidates,
             "keys": keys,
-            "snippet": _canonical_snippet(str(path), include_jev=want_jev, jev_key_file=jev_key_file),
+            "snippet": {
+                "mcpServers": {
+                    "web-search-plus": {
+                        "command": "uvx",
+                        "args": ["web-search-plus-mcp"],
+                        "env": snippet_env,
+                    }
+                },
+                "note": note,
+            },
             "jev": {
                 "enabled": want_jev,
                 "decisions": list(jev_decisions) if want_jev else [],
@@ -1632,17 +1505,15 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             },
         }
         if not args.dry_run:
-            _write_env_template(
-                path,
-                args.preset,
-                args.force,
-                extra_keys=extra_keys,
-                extra_values=extra_values,
-            )
+            if path.exists() and not args.force:
+                raise SystemExit(f"Refusing to overwrite existing {path}. Pass --force to replace it.")
+            lines = ["# web-search-plus-mcp provider config"]
+            lines.extend(f"{key}={extra_values.get(key, '')}" for key in keys)
+            path.write_text("\n".join(lines) + "\n")
             if want_jev:
-                config = _read_config_for_edit(_default_config_path())
+                config = _read_config_for_edit(runtime_config_path())
                 jev_setup.apply_jev_config(config, enabled=True, decisions=jev_decisions)
-                written = _write_cli_config(config, _default_config_path())
+                written = _write_cli_config(config, runtime_config_path())
                 payload["config_path"] = str(written)
         if args.json:
             print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -1650,7 +1521,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             action = "Would write" if args.dry_run else "Wrote"
             print(f"{action} {path} with preset {args.preset}: {', '.join(keys)}")
             print("\n".join(jev_setup.plan_lines(
-                want_enable=want_jev or False,
+                want_enable=want_jev,
                 decisions=jev_decisions,
                 has_key=bool(jev_key_file) or jev_setup.key_present(os.environ),
             )))
@@ -1660,10 +1531,10 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     if args.command == "config":
         if args.config_path:
             os.environ[CONFIG_ENV_VAR] = args.config_path
-        path = _default_config_path()
+        path = runtime_config_path()
         if args.config_command == "show":
             config, warning = _load_behavior_config(path)
-            payload = {"config_path": str(path), "default_provider": config.get("defaults", {}).get("provider"), "routing_preferences": config.get("auto_routing", {})}
+            payload = {"config_path": str(path), "default_provider": config["defaults"]["provider"], "routing_preferences": config["auto_routing"]}
             if warning:
                 payload["warning"] = warning
             print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -1679,26 +1550,26 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             provider = _canonical_provider(args.provider)
             if provider not in SEARCH_PROVIDERS:
                 raise SystemExit(f"Unknown provider: {args.provider}")
-            config.setdefault("defaults", {})["provider"] = provider
+            config["defaults"]["provider"] = provider
             config["default_provider"] = provider
-            config.setdefault("auto_routing", {})["enabled"] = False
+            config["auto_routing"]["enabled"] = False
         elif args.config_command == "set-routing":
-            config.setdefault("auto_routing", {})["enabled"] = args.state == "on"
+            config["auto_routing"]["enabled"] = args.state == "on"
         elif args.config_command == "set-priority":
-            config.setdefault("auto_routing", {})["provider_priority"] = _normalize_provider_list(args.providers, allow_empty=False)
+            config["auto_routing"]["provider_priority"] = _normalize_provider_list(args.providers, allow_empty=False)
             config["auto_routing"]["order"] = "custom"
         elif args.config_command == "set-extract-priority":
-            config.setdefault("auto_routing", {})["extract_provider_priority"] = _normalize_extract_provider_list(args.providers)
+            config["auto_routing"]["extract_provider_priority"] = _normalize_extract_provider_list(args.providers)
         elif args.config_command == "set-fallback":
             provider = _canonical_provider(args.provider)
             if provider not in SEARCH_PROVIDERS:
                 raise SystemExit(f"Unknown provider: {args.provider}")
-            config.setdefault("auto_routing", {})["fallback_provider"] = provider
+            config["auto_routing"]["fallback_provider"] = provider
         elif args.config_command in {"disable", "disable-provider"}:
             provider = _canonical_provider(args.provider)
             if provider not in SEARCH_PROVIDERS:
                 raise SystemExit(f"Unknown provider: {args.provider}")
-            disabled = _normalize_provider_list(config.setdefault("auto_routing", {}).get("disabled_providers", []))
+            disabled = config["auto_routing"]["disabled_providers"]
             if provider not in disabled:
                 disabled.append(provider)
             config["auto_routing"]["disabled_providers"] = disabled
@@ -1706,22 +1577,22 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             provider = _canonical_provider(args.provider)
             if provider not in SEARCH_PROVIDERS:
                 raise SystemExit(f"Unknown provider: {args.provider}")
-            disabled = _normalize_provider_list(config.setdefault("auto_routing", {}).get("disabled_providers", []))
+            disabled = config["auto_routing"]["disabled_providers"]
             config["auto_routing"]["disabled_providers"] = [p for p in disabled if p != provider]
         elif args.config_command == "set-auto-allow":
             provider = _canonical_provider(args.provider)
             if provider not in SEARCH_PROVIDERS:
                 raise SystemExit(f"Unknown provider: {args.provider}")
-            config.setdefault("auto_routing", {}).setdefault("auto_allow", {})[
+            config["auto_routing"]["auto_allow"][
                 provider
             ] = args.state == "on"
         elif args.config_command == "set-threshold":
-            config.setdefault("auto_routing", {})["confidence_threshold"] = args.threshold
+            config["auto_routing"]["confidence_threshold"] = args.threshold
         _write_cli_config(config, path)
         if args.config_command == "set-threshold":
             print("confidence_threshold is stored for compatibility; no effect since 5.0.", file=sys.stderr)
         updated, _ = _load_behavior_config(path)
-        print(json.dumps({"config_path": str(path), "default_provider": updated.get("defaults", {}).get("provider"), "routing_preferences": updated.get("auto_routing", {})}, indent=2, ensure_ascii=False))
+        print(json.dumps({"config_path": str(path), "default_provider": updated["defaults"]["provider"], "routing_preferences": updated["auto_routing"]}, indent=2, ensure_ascii=False))
         return 0
     parser.error("unknown command")
     return 2

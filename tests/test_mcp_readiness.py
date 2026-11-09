@@ -124,3 +124,29 @@ def test_compact_and_v3_name_the_setup_problem_not_the_serper_filler(monkeypatch
     assert error["details"]["readiness"][0]["reason_code"] == "placeholder_value"
     schema = json.loads((PACKAGE.parent / "schemas/v3/response.schema.json").read_text())
     assert list(Draft202012Validator(schema).iter_errors(payload)) == []
+
+
+
+def test_invalid_detail_environment_warns_once_and_keeps_argument_precedence(tmp_path, monkeypatch, capsys):
+    from web_search_plus_mcp import server
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"mcp": {"detail": "full"}}))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_MCP_DETAIL", " verbose ")
+    monkeypatch.setattr(server, "_DETAIL_ENV_WARNED", False)
+
+    async def fake_run(*args, **kwargs):
+        return {"contract_version": "3.0", "status": "ok", "results": []}
+
+    monkeypatch.setattr(server, "_run_subprocess", fake_run)
+    explicit = json.loads(asyncio.run(server.call_tool("web_search", {"query": "q", "detail": "compact"}))[0].text)
+    assert explicit["detail"] == "compact"
+    assert capsys.readouterr().err == ""
+    for _ in range(2):
+        configured = json.loads(asyncio.run(server.call_tool("web_search", {"query": "q"}))[0].text)
+        assert configured["contract_version"] == "3.0"
+        assert "detail" not in configured
+    assert capsys.readouterr().err == json.dumps({
+        "warning": "WEB_SEARCH_PLUS_MCP_DETAIL must be compact or full; ignoring it",
+    }) + "\n"

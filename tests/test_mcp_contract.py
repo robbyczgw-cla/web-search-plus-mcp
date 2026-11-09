@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
@@ -643,3 +645,21 @@ def test_donsetch_subprocess_budget_covers_inner_stdio_timeout(monkeypatch):
         server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS,
     ]
     assert calls[0] > 180
+
+
+@pytest.mark.parametrize("budget,expected_timeout", [
+    (None, 65), ("invalid", 65), (float("nan"), 65), (float("inf"), 65),
+    (-1, 11), (100, 85), (1.2, 12), (55, 65),
+])
+def test_direct_research_calls_keep_the_outer_budget_fallback_and_clamp(monkeypatch, budget, expected_timeout):
+    seen = {}
+
+    async def capture_run(_cmd, **kwargs):
+        seen.update(kwargs)
+        return []
+
+    monkeypatch.setattr(server, "_run_cmd", capture_run)
+    run(server.call_tool("web_search", {
+        "query": "research budget", "mode": "research", "research_time_budget": budget,
+    }))
+    assert seen["timeout"] == expected_timeout

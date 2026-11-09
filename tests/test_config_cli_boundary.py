@@ -156,3 +156,27 @@ def test_engine_recovers_wrong_json_shape(tmp_path, monkeypatch, value):
     engine.load_config()
     assert not path.exists()
     assert len(list(tmp_path.glob("*.broken-*"))) == 1
+
+
+@pytest.mark.parametrize("raw_config", [
+    "[]",
+    '{"mcp": {"detail": []}}',
+    '{"defaults": []}',
+    '{"auto_routing": {"confidence_threshold": {}}}',
+    '{"auto_routing": {"confidence_threshold": ' + "9" * 1000 + "}}",
+    "[" * 1100 + "0" + "]" * 1100,
+])
+def test_status_reports_invalid_config_without_moving_or_rewriting_it(tmp_path, monkeypatch, capsys, raw_config):
+    path = tmp_path / "config.json"
+    path.write_text(raw_config)
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(path))
+
+    server.cli_main(["status", "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["config_warning"].startswith("Invalid config ignored by the MCP server settings: ")
+    assert payload["default_provider"] == "serper"
+    assert payload["routing_preferences"]["disabled_providers"] == []
+    assert payload["tools_if_started_now"] == ["web_search", "web_extract"]
+    assert path.read_text() == raw_config
+    assert list(tmp_path.glob("config.json.*")) == []
