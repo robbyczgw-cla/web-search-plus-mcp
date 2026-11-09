@@ -255,3 +255,27 @@ def test_status_fix_for_donsetch_puts_it_into_auto_search(monkeypatch, tmp_path,
         assert server.cli_main(command.split()[1:]) == 0
     assert routing.route_query("q", config.load_config())["provider"] == "donsetch"
     capsys.readouterr()
+
+
+@pytest.mark.parametrize("auto_routing,auto_ready", [
+    ({"auto_allow": {"brave": False}}, False),
+    ({"disabled_providers": ["brave"]}, False),
+    ({}, True),
+], ids=["explicit-only", "disabled", "ready"])
+def test_status_says_when_no_provider_runs_automatically(auto_routing, auto_ready, monkeypatch, tmp_path, capsys):
+    # 5.1.7 printed "✓ brave" and "Search configured: yes" for a Brave that auto
+    # search never used; the first search then failed.
+    from web_search_plus_mcp import server
+
+    (tmp_path / "config.json").write_text(json.dumps({"auto_routing": auto_routing}))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(tmp_path / "config.json"))
+    for meta in server.SEARCH_PROVIDERS.values():
+        monkeypatch.delenv(meta["env"], raising=False)
+    monkeypatch.setenv("BRAVE_API_KEY", "brave-real-key-123456")
+
+    assert server.cli_main(["status"]) == 0
+    text = capsys.readouterr().out
+    assert ("Automatic search: no" in text) is not auto_ready
+    assert ("  ✓ brave:" in text) is auto_ready
+    assert ("  ~ brave:" in text) is not auto_ready
+    assert server._status_payload()["search_auto_ready"] is auto_ready

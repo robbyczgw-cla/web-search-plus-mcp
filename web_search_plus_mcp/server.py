@@ -1334,6 +1334,12 @@ def _status_payload() -> dict[str, Any]:
         "version": __version__,
         "server": "web-search-plus-mcp",
         "search_configured": any(ok for name, ok in configured.items() if "search" in SEARCH_PROVIDERS[name]["capabilities"]),
+        # Set up is not enough for a search without provider="X": an
+        # explicit-only or disabled provider never runs automatically.
+        "search_auto_ready": any(
+            report[name].state is readiness.Readiness.READY
+            for name in SEARCH_PROVIDERS if "search" in SEARCH_PROVIDERS[name]["capabilities"]
+        ),
         "extract_configured": any(configured.get(provider) for provider in EXTRACT_PROVIDERS),
         "tools_if_started_now": ["web_search", "web_extract"],
         "config_path": str(runtime_config_path()),
@@ -1427,10 +1433,13 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             print(f"web-search-plus-mcp {__version__}")
             print("Tools if started now: " + ", ".join(payload["tools_if_started_now"]))
             print(f"Search configured: {'yes' if payload['search_configured'] else 'no'}")
+            if payload["search_configured"] and not payload["search_auto_ready"]:
+                print("Automatic search: no provider may run without provider=\"name\" (marked ~ below)")
             print(f"Extraction configured: {'yes' if payload['extract_configured'] else 'no'}")
             for name, meta in payload["providers"].items():
-                mark = "✓" if meta["configured"] else "·"
-                print(f"  {mark} {name}: {meta['env']} ({', '.join(meta['capabilities'])})")
+                mark = "✓" if meta["state"] == "ready" else "~" if meta["configured"] else "·"
+                note = f" — {meta['reason']} Fix: {'; '.join(meta.get('fix', []))}" if mark == "~" else ""
+                print(f"  {mark} {name}: {meta['env']} ({', '.join(meta['capabilities'])}){note}")
             donsetch = payload.get("donsetch") or {}
             if donsetch.get("binary_configured") or donsetch.get("state") not in {None, "missing"}:
                 print(
