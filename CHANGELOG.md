@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Self-hosted profile with SearXNG set in the environment.** With `profile: self_hosted` and `SEARXNG_INSTANCE_URL` set in the environment or the MCP client's `env` block, `status` reported SearXNG as ready, but every automatic search failed with "self_hosted profile requires searxng.base_url": the profile check read the URL from config.json only. It now uses the same readiness answer as `status`; the profile is unavailable only when no SearXNG URL is set anywhere the server reads one and Keenable cannot run.
+- **A damaged search-cache file no longer breaks the command line.** In the standalone `search.py` command line, a cache file holding a JSON list, a non-numeric timestamp or bytes that are not UTF-8 raised an error on every run of the same query and was never removed. Such a file now counts as a miss and is removed.
+
 ## [5.1.7] - 2026-11-08
 
 ### Fixed
