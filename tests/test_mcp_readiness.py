@@ -233,3 +233,25 @@ def test_auto_search_names_the_provider_that_only_runs_when_asked_for(auto_allow
 
     assert routing.route_query("q", config.load_config())["provider"] == fix[0].split('"')[1]
     capsys.readouterr()
+
+
+def test_status_fix_for_donsetch_puts_it_into_auto_search(monkeypatch, tmp_path, capsys):
+    # 5.1.7 status advised only "config set-auto-allow donsetch on", after
+    # which auto search still left DonSeTch out (it is not in the priority list).
+    from web_search_plus_mcp import config, routing, server
+
+    (tmp_path / "config.json").write_text("{}")
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(tmp_path / "config.json"))
+    for meta in server.SEARCH_PROVIDERS.values():
+        monkeypatch.delenv(meta["env"], raising=False)
+    binary = tmp_path / "donsetch"
+    binary.write_text("#!/bin/sh\n")
+    binary.chmod(0o755)
+    monkeypatch.setenv("DONSETCH_BIN", str(binary))
+
+    status = server._status_payload()["providers"]["donsetch"]
+    assert status["state"] == "explicit_only"
+    for command in status["fix"][1:]:
+        assert server.cli_main(command.split()[1:]) == 0
+    assert routing.route_query("q", config.load_config())["provider"] == "donsetch"
+    capsys.readouterr()
