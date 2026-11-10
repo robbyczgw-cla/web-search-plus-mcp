@@ -606,8 +606,13 @@ def test_subprocess_timeout_is_typed_retryable_and_secret_free(monkeypatch):
     assert secret not in json.dumps(payload)
 
 
-def test_donsetch_subprocess_budget_covers_inner_stdio_timeout(monkeypatch, tmp_path):
+@pytest.mark.parametrize("inner_timeout,outer_timeout", [(180, 195), (300, 315)])
+def test_donsetch_subprocess_budget_covers_inner_stdio_timeout(monkeypatch, tmp_path, inner_timeout, outer_timeout):
     calls = []
+    config_path = tmp_path / "config.json"
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
+    donsetch = {"timeout": inner_timeout}
+    config_path.write_text(json.dumps({"donsetch": donsetch}))
 
     async def capture_run(_cmd, **kwargs):
         calls.append(kwargs["timeout"])
@@ -632,30 +637,47 @@ def test_donsetch_subprocess_budget_covers_inner_stdio_timeout(monkeypatch, tmp_
         "provider": "donsetch",
     }))
     auto = {"detail": "full", "query": "donsetch auto budget", "provider": "auto"}
-    config_path = tmp_path / "config.json"
-    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
-    allowed = {"auto_routing": {"auto_allow": {"donsetch": True}, "provider_priority": ["donsetch"]}}
+    allowed = {"donsetch": donsetch, "auto_routing": {"auto_allow": {"donsetch": True}, "provider_priority": ["donsetch"]}}
     # DONSETCH_BIN alone: DonSeTch is explicit-only, auto search never runs it.
     monkeypatch.setenv("DONSETCH_BIN", "/bin/true")
-    config_path.write_text("{}")
+    config_path.write_text(json.dumps({"donsetch": donsetch}))
     run(server.call_tool("web_search", auto))
     config_path.write_text(json.dumps(allowed))
     run(server.call_tool("web_search", auto))
     # 5.1.7 gave a binary from config.json the 75 s search budget, killing a
     # DonSeTch session that may run 180 s.
     monkeypatch.delenv("DONSETCH_BIN")
-    config_path.write_text(json.dumps({**allowed, "donsetch": {"binary": "/bin/true"}}))
+    config_path.write_text(json.dumps({**allowed, "donsetch": {**donsetch, "binary": "/bin/true"}}))
     run(server.call_tool("web_search", auto))
+    run(server.call_tool("web_extract", {"urls": ["https://example.com", "https://example.org"]}))
 
     assert calls == [
-        server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS,
-        server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS,
-        server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS * 2,
+        outer_timeout,
+        outer_timeout,
+        outer_timeout * 2,
         server.DEFAULT_SEARCH_SUBPROCESS_TIMEOUT_SECONDS,
-        server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS,
-        server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS,
+        outer_timeout,
+        outer_timeout,
+        outer_timeout * 2,
     ]
     assert calls[0] > 180
+
+
+@pytest.mark.parametrize("value", [None, 0, 5, 180, 300, 600, 601, "300", "invalid", 5.9, True, float("inf"), float("nan"), 10**400])
+def test_donsetch_outer_budget_matches_adapter_bounds_and_reads_config_once(monkeypatch, value):
+    from web_search_plus_mcp.provider_registry import PROVIDER_SPECS
+
+    reads = []
+
+    def read_config(path):
+        reads.append(path)
+        return {"donsetch": {"timeout": value}}, None
+
+    monkeypatch.setattr(runtime_config, "read_runtime_config", read_config)
+    adapter = PROVIDER_SPECS["donsetch"].execute_search.__globals__
+    expected = adapter["_bounded_int"](value, 180, 5, 600) + 15
+    assert server._donsetch_outer_budget_seconds("donsetch") == expected
+    assert len(reads) == 1
 
 
 @pytest.mark.parametrize("budget,expected_timeout", [

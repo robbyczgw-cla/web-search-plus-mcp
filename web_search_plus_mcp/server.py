@@ -71,7 +71,7 @@ PROVIDER_ALIASES = {"kilo_perplexity": "kilo-perplexity"}
 RETIRED_ANSWER_PROVIDERS = {"perplexity", "kilo-perplexity"}
 ROUTING_PROVIDER_ORDER = list(DEFAULT_PROVIDER_PRIORITY)
 DEFAULT_SEARCH_SUBPROCESS_TIMEOUT_SECONDS = 75
-DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS = 195
+DONSETCH_SUBPROCESS_GRACE_SECONDS = 15
 RESEARCH_SUBPROCESS_GRACE_SECONDS = 10
 
 
@@ -80,16 +80,22 @@ def _canonical_provider(provider: str) -> str:
     return PROVIDER_ALIASES.get(value, value)
 
 
-def _donsetch_outer_budget_applies(provider: str) -> bool:
-    if provider != "auto":
-        return provider == "donsetch"
+def _donsetch_outer_budget_seconds(provider: str) -> Optional[int]:
+    if provider not in {"auto", "donsetch"}:
+        return None
     # Auto search runs DonSeTch only when readiness says it may: binary from
     # DONSETCH_BIN or donsetch.binary, auto-allowed and not disabled.
     from .config import read_runtime_config
     from .readiness import Readiness, evaluate_provider
 
     config, _error = read_runtime_config(runtime_config_path())
-    return evaluate_provider("donsetch", config).state is Readiness.READY
+    if provider == "auto" and evaluate_provider("donsetch", config).state is not Readiness.READY:
+        return None
+    # The session deadline exactly as the adapter reads it (donsetch.timeout,
+    # default 180, 5..600), so the two deadlines cannot drift apart.
+    adapter = PROVIDER_SPECS["donsetch"].execute_search.__globals__
+    inner_timeout = adapter["_bounded_int"](adapter["_section"](config).get("timeout"), 180, 5, 600)
+    return inner_timeout + DONSETCH_SUBPROCESS_GRACE_SECONDS
 
 
 def _default_behavior_config() -> dict[str, Any]:
@@ -1188,8 +1194,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             cmd.append("--no-cache")
         _append_optional(cmd, "--cache-ttl", arguments.get("cache_ttl"))
         timeout = DEFAULT_SEARCH_SUBPROCESS_TIMEOUT_SECONDS
-        if _donsetch_outer_budget_applies(provider):
-            timeout = DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS
+        donsetch_budget = _donsetch_outer_budget_seconds(provider)
+        if donsetch_budget is not None:
+            timeout = donsetch_budget
         elif mode == "research":
             # Direct Python callers can bypass the MCP schema; retain the
             # historical default/clamp for their outer process budget.
@@ -1243,9 +1250,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if arguments.get("spans_query") is not None:
             cmd.append(f"--spans-query={arguments['spans_query']}")
         provider = _canonical_provider(arguments.get("provider", "auto"))
+        donsetch_budget = _donsetch_outer_budget_seconds(provider)
         timeout = (
-            DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS * max(1, len(urls))
-            if _donsetch_outer_budget_applies(provider)
+            donsetch_budget * max(1, len(urls))
+            if donsetch_budget is not None
             else 90
         )
         return await _run_cmd(
