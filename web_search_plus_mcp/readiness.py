@@ -112,7 +112,7 @@ def evaluate_provider(provider: str, config: Optional[Mapping[str, Any]] = None)
     A host refusal to read a credential propagates (the engine reports it as
     such); :func:`evaluate` turns it into ``scope_error`` for status views.
     """
-    from .routing import DEFAULT_PROVIDER_PRIORITY, _provider_auto_allowed
+    from .routing import _provider_auto_allowed
 
     cfg = dict(config or {})
     spec = PROVIDER_SPECS[provider]
@@ -133,12 +133,7 @@ def evaluate_provider(provider: str, config: Optional[Mapping[str, Any]] = None)
             return ProviderReadiness(
                 provider, Readiness.EXPLICIT_ONLY, "explicit_only",
                 f"{name} is set up but only runs when asked for (provider=\"{provider}\").",
-                (f'provider="{provider}"', _cli(f"config set-auto-allow {provider} on"),
-                 # Auto search only tries providers in the priority list, and one
-                 # that is explicit-only by default (donsetch) is not in it.
-                 *([_cli(f"config set-priority {provider}")]
-                   if spec.supports_search and provider not in auto.get("provider_priority", DEFAULT_PROVIDER_PRIORITY)
-                   else [])), source, credential)
+                (f'provider="{provider}"', _cli(f"config set-auto-allow {provider} on")), source, credential)
         return ProviderReadiness(provider, Readiness.READY, ready_code,
                                  ready_reason or f"{name} is ready.", (), source, credential)
 

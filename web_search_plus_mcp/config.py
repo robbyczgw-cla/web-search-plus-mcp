@@ -470,6 +470,13 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
                 continue
             provider = _normalize_routing_provider_config(str(raw_provider))
             normalized_allow[provider] = bool(allowed)
+            # Allowed for automatic search means it joins the order: auto
+            # routing only tries provider_priority, so the flag alone left an
+            # explicit-only provider (donsetch) out. It goes last.
+            priority = auto.get("provider_priority")
+            if (normalized_allow[provider] and priority and provider not in priority and auto.get("enabled", True) is not False
+                    and PROVIDER_SPECS[provider].supports_search):
+                priority.append(provider)
         auto["auto_allow"] = normalized_allow
     else:
         auto["auto_allow"] = dict(DEFAULT_CONFIG["auto_routing"].get("auto_allow", {}))
@@ -1158,21 +1165,15 @@ def add_provider_setup_guidance(
         if explicit_only:
             first = explicit_only[0]
             names = ", ".join(PROVIDER_SPECS[p].display_name for p in explicit_only)
-            allow = [f"web-search-plus-mcp config set-auto-allow {first} on"]
-            extract = capability == "extract"
-            key = "extract_provider_priority" if extract else "provider_priority"
-            if first not in auto.get(key, DEFAULT_CONFIG["auto_routing"][key]):
-                # Auto routing only tries providers in the priority list; one
-                # that is explicit-only by default (donsetch) is not in it.
-                allow.append(f"web-search-plus-mcp config set-{'extract-' if extract else ''}priority {first}")
+            allow = f"web-search-plus-mcp config set-auto-allow {first} on"
             payload.update({
                 "error": (
                     f"No provider for automatic {'extraction' if capability == 'extract' else capability} is configured. {names} is set up but only runs "
-                    f"when asked for: call again with provider=\"{first}\", or let it join automatic routing: {' then '.join(allow)}"
+                    f"when asked for: call again with provider=\"{first}\", or let it join automatic routing: {allow}"
                 ),
                 "error_type": "explicit_only_provider_configured",
                 "explicit_only_providers": explicit_only,
-                "how_to_fix": [f'provider="{first}"', *allow],
+                "how_to_fix": [f'provider="{first}"', allow],
             })
             return
     # The user set something up that cannot work (a placeholder key, a blocked

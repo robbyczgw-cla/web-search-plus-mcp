@@ -202,8 +202,7 @@ def test_every_recommended_cli_command_is_one_the_mcp_cli_accepts(config, call, 
     ({"brave": False}, {"BRAVE_API_KEY": "brave-real-key-123456"},
      ['provider="brave"', "web-search-plus-mcp config set-auto-allow brave on"]),
     ({}, {"DONSETCH_BIN": "donsetch"},
-     ['provider="donsetch"', "web-search-plus-mcp config set-auto-allow donsetch on",
-      "web-search-plus-mcp config set-priority donsetch"]),
+     ['provider="donsetch"', "web-search-plus-mcp config set-auto-allow donsetch on"]),
 ], ids=["brave-auto-allow-off", "donsetch-default"])
 def test_auto_search_names_the_provider_that_only_runs_when_asked_for(auto_allow, env, fix, monkeypatch, tmp_path, capsys):
     # 5.1.7 said "No configured search provider" and sent the user to setup,
@@ -238,8 +237,9 @@ def test_auto_search_names_the_provider_that_only_runs_when_asked_for(auto_allow
 
 
 def test_status_fix_for_donsetch_puts_it_into_auto_search(monkeypatch, tmp_path, capsys):
-    # 5.1.7 status advised only "config set-auto-allow donsetch on", after
-    # which auto search still left DonSeTch out (it is not in the priority list).
+    # 5.1.7 status advised "config set-auto-allow donsetch on", after which auto
+    # search still left DonSeTch out (it is not in the priority list). The one
+    # command now works, without set-priority reordering every search.
     from web_search_plus_mcp import config, routing, server
 
     (tmp_path / "config.json").write_text("{}")
