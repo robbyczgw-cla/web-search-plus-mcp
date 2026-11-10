@@ -196,7 +196,9 @@ def _normalize_behavior_config(
     auto = normalized["auto_routing"]
     if not isinstance(auto, dict):
         raise ValueError("auto_routing must be an object")
-    auto["enabled"] = bool(auto["enabled"])
+    # The engine's reading of the switch (bool("false") is True, which turned
+    # auto routing back on with the next CLI edit).
+    auto["enabled"] = validate_config_candidate({"auto_routing": {"enabled": auto["enabled"]}})["auto_routing"]["enabled"]
     fallback = _canonical_provider(str(auto["fallback_provider"]))
     if fallback in RETIRED_ANSWER_PROVIDERS and migrate_retired:
         fallback = "serper"
