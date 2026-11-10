@@ -7,6 +7,7 @@ the MCP client receives) cannot pass.
 
 import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import sys
@@ -92,14 +93,13 @@ def _stdio_call(home, calls):
 
 
 @pytest.mark.parametrize("detail", ["compact", "full"])
-def test_stdio_client_sees_guidance_and_is_error_without_keys(tmp_path, detail):
+def test_stdio_client_sees_guidance_and_is_error_without_keys(tmp_path, detail, capsys, monkeypatch):
     search, explicit, extract = _stdio_call(tmp_path, [
         ("web_search", {"query": "python asyncio taskgroup", "detail": detail}),
         ("web_search", {"query": "python asyncio taskgroup", "provider": "tinyfish", "detail": detail}),
         ("web_extract", {"urls": ["https://example.com"], "detail": detail}),
     ])
-    # Only commands the MCP CLI accepts: it has no per-provider setup and no
-    # extract preset, so those name the env var instead.
+    # Per-provider guidance names the env var; automatic search offers a preset.
     for result, fix in ((search, "web-search-plus-mcp setup --preset starter"),
                         (explicit, "set TINYFISH_API_KEY in the MCP client's env block"),
                         (extract, "in the MCP client's env block")):
@@ -112,3 +112,12 @@ def test_stdio_client_sees_guidance_and_is_error_without_keys(tmp_path, detail):
     explicit_payload = json.loads(explicit["content"][0]["text"])
     guidance = explicit_payload["error_v3"]["details"] if detail == "full" else explicit_payload
     assert guidance["env_var"] == "TINYFISH_API_KEY"
+    from web_search_plus_mcp import server
+
+    monkeypatch.chdir(tmp_path)
+    payload = json.loads(search["content"][0]["text"])
+    guidance = payload["error_v3"]["details"] if detail == "full" else payload
+    command = next(step for step in guidance["how_to_fix"] if step.startswith("web-search-plus-mcp setup"))
+    assert server.cli_main(shlex.split(command)[1:] + ["--dry-run", "--json"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["keys"] == guidance["env_vars"]

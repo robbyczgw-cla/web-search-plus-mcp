@@ -35,7 +35,10 @@ from mcp.types import (
     Tool,
 )
 
-from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
+from .provider_registry import (
+    DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, EXTRACT_PROVIDER_IDS,
+    PROVIDER_SPECS, SETUP_PRESETS, preset_env_vars,
+)
 from . import jev_setup
 from .env_loader import candidate_env_paths, clean_env_value
 from .config import runtime_config_path, validate_config_candidate, _unique_timestamped_path
@@ -56,12 +59,6 @@ SEARCH_PROVIDERS = {
     if spec.supports_search
 }
 EXTRACT_PROVIDERS = list(EXTRACT_PROVIDER_IDS)
-PRESETS = {
-    "starter": ["YOU_API_KEY", "SERPER_API_KEY", "LINKUP_API_KEY"],
-    "minimal": ["YOU_API_KEY"],
-    "lean": ["YOU_API_KEY", "LINKUP_API_KEY"],
-    "all": [meta["env"] for meta in SEARCH_PROVIDERS.values()],
-}
 
 CONFIG_ENV_VAR = "WEB_SEARCH_PLUS_CONFIG"
 DETAIL_ENV_VAR = "WEB_SEARCH_PLUS_MCP_DETAIL"
@@ -1394,7 +1391,8 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     list_p = sub.add_parser("list", help="List providers or presets")
     list_p.add_argument("what", choices=["providers", "presets"])
     setup = sub.add_parser("setup", help="Write a provider .env template and print MCP config snippet")
-    setup.add_argument("--preset", choices=sorted(PRESETS), default="starter")
+    setup_presets = [name for name in SETUP_PRESETS if name != "self-hosted"] + ["all"]
+    setup.add_argument("--preset", choices=[*setup_presets, "minimal"], default="starter")
     setup.add_argument("--env-file", default=".env")
     setup.add_argument("--dry-run", action="store_true")
     setup.add_argument("--force", action="store_true")
@@ -1478,10 +1476,14 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             for name, meta in SEARCH_PROVIDERS.items():
                 print(f"{name}: {meta['env']} ({', '.join(meta['capabilities'])})")
         else:
-            for name, keys in PRESETS.items():
+            for name in setup_presets:
+                keys = [spec.env_var for spec in PROVIDER_SPECS.values()] if name == "all" else preset_env_vars(name)
                 print(f"{name}: {', '.join(keys)}")
         return 0
     if args.command == "setup":
+        if args.preset == "minimal":
+            print("Preset 'minimal' is an alias for 'lean'; using 'lean'.", file=sys.stderr)
+            args.preset = "lean"
         path = Path(args.env_file).expanduser().resolve()
         if args.config_path:
             os.environ[CONFIG_ENV_VAR] = args.config_path
@@ -1499,7 +1501,10 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
                 extra_values[jev_setup.JEV_ENV_FILE] = str(Path(jev_key_file).expanduser())
             else:
                 extra_keys.append(jev_setup.JEV_ENV)
-        keys = list(PRESETS[args.preset]) + extra_keys
+        keys = (
+            [spec.env_var for spec in PROVIDER_SPECS.values()]
+            if args.preset == "all" else preset_env_vars(args.preset)
+        ) + extra_keys
         candidates = [p.expanduser().resolve() for p in candidate_env_paths(__file__)]
         note = (
             f"The server reads {path} at startup."
@@ -1508,11 +1513,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
             "Copy its keys into the MCP client's env block or a server env file."
         )
         note += " Server env files, in precedence order: " + ", ".join(map(str, candidates)) + ". Existing process environment wins. Restart after changes."
-        snippet_env = {
-            "LINKUP_API_KEY": "your_linkup_key",
-            "TAVILY_API_KEY": "your_tavily_key",
-            "BRAVE_API_KEY": "your_brave_key",
-        }
+        snippet_env = {key: f"your_{key.lower().removesuffix('_api_key')}_key" for key in keys}
         if want_jev:
             if jev_key_file:
                 snippet_env["TYPESAFE_API_KEY_FILE"] = jev_key_file
