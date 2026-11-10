@@ -697,7 +697,7 @@ def _compact_payload(
         # The receipt's fallback_reason is "none" without a fallback; only a real
         # fallback is worth a field, and it is named for what it is.
         fallback_reason = receipt.get("fallback_reason")
-        if fallback_reason and str(fallback_reason).lower() != "none" and not setup_error:
+        if fallback_reason and str(fallback_reason).lower() != "none" and projected.get("provider") is not None and not setup_error:
             routing["fallback_reason"] = _short_message(fallback_reason)
         fallback = []
         for attempt in attempts:
@@ -712,7 +712,7 @@ def _compact_payload(
             )
             if failed_or_empty and attempt.get("provider") not in fallback:
                 fallback.append(attempt.get("provider"))
-        if fallback and projected.get("provider") != "research" and not setup_error:
+        if fallback and projected.get("provider") not in {None, "research"} and not setup_error:
             routing["fallback_from"] = fallback
         if routing:
             compact["routing"] = routing
@@ -797,6 +797,8 @@ def _compact_payload(
         compact.setdefault("error", _short_message(projected.get("error_v3")) or "Web Search Plus request failed")
         reasons = []
         for attempt in [] if setup_error else attempts:
+            if attempt.get("skip_reason") == "policy_excluded":
+                continue
             empty = attempt.get("outcome") == "success" and attempt.get("result_count") == 0
             # A call cut off by the deadline (or lost by the engine) failed; one
             # cancelled because another provider or the research quorum won did not.

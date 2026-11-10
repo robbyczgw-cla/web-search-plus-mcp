@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- **Failed extraction lists useful provider errors.** A missing page listed four untried providers as `policy_excluded` and claimed a fallback although nobody delivered content. Compact failures now omit policy exclusions and show fallback fields only when a provider delivered; attempt-limit and deadline failures remain visible.
 - **Setup presets match the missing-key guidance.** `starter` wrote You.com/Serper/Linkup while errors asked for Brave/Serper/Exa/Linkup, and every MCP snippet named the same three keys. Setup and snippets now use the registry's starter, lean, search and extract presets plus all; `minimal` remains a lean alias with a stderr notice.
 - **Self-hosted profile with SearXNG set in the environment.** With `profile: self_hosted` and `SEARXNG_INSTANCE_URL` set in the environment or the MCP client's `env` block, `status` reported SearXNG as ready, but every automatic search failed with "self_hosted profile requires searxng.base_url": the profile check read the URL from config.json only. It now uses the same readiness answer as `status`; the profile is unavailable only when no SearXNG URL is set anywhere the server reads one and Keenable cannot run.
 - **A damaged search-cache file no longer breaks the command line.** In the standalone `search.py` command line, a cache file holding a JSON list, a non-numeric timestamp or bytes that are not UTF-8 raised an error on every run of the same query and was never removed. Such a file now counts as a miss and is removed.
