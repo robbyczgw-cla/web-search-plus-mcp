@@ -21,6 +21,8 @@ def cli_env(tmp_path):
         "WEB_SEARCH_PLUS_CONFIG": str(tmp_path / "config.json"),
         "WSP_CACHE_DIR": str(tmp_path / "cache"),
         "WSP_FORCE_SUBPROCESS": "0",
+        # This checkout, not whatever web_search_plus_mcp the interpreter has installed.
+        "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
     }
 
 

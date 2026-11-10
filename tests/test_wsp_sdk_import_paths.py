@@ -7,8 +7,12 @@ an unclassified failure.
 
 from __future__ import annotations
 
+from pathlib import Path
 import subprocess
 import sys
+
+# This checkout, not whatever wsp_sdk the interpreter has installed.
+REPO = str(Path(__file__).resolve().parents[1])
 
 CHECK = """
 import sys
@@ -32,7 +36,7 @@ def test_sdk_submodules_are_one_object_per_name(tmp_path):
     proc = subprocess.run(
         [sys.executable, "-c", CHECK],
         capture_output=True, text=True, cwd=tmp_path,
-        env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)},
+        env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "PYTHONPATH": REPO},
         timeout=60,
     )
     assert proc.returncode == 0, proc.stderr
@@ -43,7 +47,7 @@ def test_conformance_does_not_load_unittest_mock_at_import(tmp_path):
     proc = subprocess.run(
         [sys.executable, "-c", "import sys, wsp_sdk.conformance; print('unittest.mock' in sys.modules)"],
         capture_output=True, text=True, cwd=tmp_path,
-        env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)},
+        env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "PYTHONPATH": REPO},
         timeout=60,
     )
     assert proc.returncode == 0, proc.stderr

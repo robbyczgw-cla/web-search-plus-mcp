@@ -36,6 +36,8 @@ print(json.dumps(out))
 def _run(tmp_path, *, package_env=None, profile_env=None, config=None, extra_env=None):
     root = tmp_path / "install"
     shutil.copytree(PACKAGE, root / "web_search_plus_mcp", ignore=shutil.ignore_patterns("__pycache__"))
+    # wsp_sdk too: otherwise the copy imports an installed (possibly old) one.
+    shutil.copytree(PACKAGE.parent / "wsp_sdk", root / "wsp_sdk", ignore=shutil.ignore_patterns("__pycache__"))
     home = tmp_path / "hermes"
     home.mkdir()
     if package_env is not None:

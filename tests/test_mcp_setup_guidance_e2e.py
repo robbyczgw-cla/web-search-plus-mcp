@@ -7,6 +7,7 @@ the MCP client receives) cannot pass.
 
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 
@@ -60,7 +61,9 @@ def test_untrusted_config_error_text_stays_redacted(body):
 
 
 def _stdio_call(home, calls):
-    env = {"PATH": os.environ["PATH"], "HOME": str(home), "TMPDIR": str(home)}
+    env = {"PATH": os.environ["PATH"], "HOME": str(home), "TMPDIR": str(home),
+           # This checkout, not whatever web_search_plus_mcp the interpreter has installed.
+           "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
     proc = subprocess.Popen(
         [sys.executable, "-m", "web_search_plus_mcp.server"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
