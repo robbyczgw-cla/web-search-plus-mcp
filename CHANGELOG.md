@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- **Overlong extraction URLs fail before provider dispatch.** URLs over 8,192 characters previously reached DonSeTch and could block a write to its stdio pipe. `web_extract` now returns the existing argument error before any provider call; the input schema is unchanged.
 - **DonSeTch honors longer configured sessions.** With `donsetch.timeout: 300`, MCP stopped the request after 195 seconds although the adapter allowed 300. The outer limit now follows the adapter's effective 5–600 second timeout plus 15 seconds; the default stays 195 and Extract keeps its per-URL multiplier.
 - **Failed extraction lists useful provider errors.** A missing page listed four untried providers as `policy_excluded` and claimed a fallback although nobody delivered content. Compact failures now omit policy exclusions and show fallback fields only when a provider delivered; attempt-limit and deadline failures remain visible.
 - **Setup presets match the missing-key guidance.** `starter` wrote You.com/Serper/Linkup while errors asked for Brave/Serper/Exa/Linkup, and every MCP snippet named the same three keys. Setup and snippets now use the registry's starter, lean, search and extract presets plus all; `minimal` remains a lean alias with a stderr notice.

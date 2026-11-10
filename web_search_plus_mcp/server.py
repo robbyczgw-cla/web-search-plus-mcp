@@ -1227,6 +1227,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         problem = _unsafe_variadic_values("urls", urls)
         if problem or not urls:
             return _invalid_arguments_payload(problem or "Invalid urls: at least one URL is required", detail=detail)
+        if any(len(url) > 8192 for url in urls):
+            return _invalid_arguments_payload("Invalid urls: entries must not exceed 8192 characters", detail=detail)
         cmd = [
             sys.executable,
             str(SEARCH_SCRIPT),
