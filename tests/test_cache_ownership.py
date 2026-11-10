@@ -51,3 +51,17 @@ def test_cache_stats_ignores_invalid_utf8_foreign_json(tmp_path, monkeypatch):
 
     assert stats["total_entries"] == 1
     assert invalid.read_bytes() == b"\xff\xfe\x00not-utf8"
+
+
+def test_damaged_search_cache_file_is_a_miss_and_is_removed(tmp_path, monkeypatch):
+    """A file that was JSON but not an entry (or not text at all) raised on
+    every read and was never removed, so the same query kept crashing."""
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
+    for damaged in (b"[]", b'{"_cache_timestamp": "yesterday"}', b"\xff\xfe", b"{not json"):
+        cache.cache_put("query", "brave", 5, {"results": ["ok"]})
+        path = cache._get_cache_path(cache._get_cache_key("query", "brave", 5, None))
+        assert cache.cache_get("query", "brave", 5)["results"] == ["ok"]
+        path.write_bytes(damaged)
+
+        assert cache.cache_get("query", "brave", 5) is None, damaged
+        assert not path.exists(), damaged

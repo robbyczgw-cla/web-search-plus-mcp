@@ -391,5 +391,46 @@ def test_long_provider_snippets_are_capped_in_compact_only():
     assert size <= 8 * 1300 + 2000, size
 
 
-def test_short_snippets_are_untouched():
-    assert server._compact_snippet("short text") == "short text"
+@pytest.mark.parametrize("snippet", ["short text", "  short\n text  ", "", "x" * 1200])
+def test_short_snippets_are_untouched(snippet):
+    case = deepcopy(CASES[0])
+    for row in case["canonical"]["results"]:
+        row["snippet"] = snippet
+    compact = project(case, "compact")
+    assert all(row["snippet"] == snippet for row in compact["results"])
+
+
+@pytest.mark.parametrize("snippet,expected", [
+    ("x" * 1201, "x" * 1201),  # A truncation marker would be longer than the source.
+    ("x" * 2000, "x" * 1200 + " … [TRUNCATED: showing first 1200 of 2000 characters]"),
+    ("x " * 800, "x " * 599 + "x … [TRUNCATED: showing first 1199 of 1600 characters]"),
+    ("short" + " " * 2000 + "text", "short text"),
+])
+def test_long_snippet_projection_keeps_historical_cut_and_marker(snippet, expected):
+    case = deepcopy(CASES[0])
+    for row in case["canonical"]["results"]:
+        row["snippet"] = snippet
+    compact = project(case, "compact")
+    full = project(case, "full")
+    assert all(row["snippet"] == expected for row in compact["results"])
+    assert all(row["snippet"] == snippet for row in full["results"])
+
+
+def test_failure_reasons_name_a_provider_cut_off_by_the_deadline():
+    # A failed search whose only provider ran out of time reported no
+    # provider_errors at all; one that lost to a winner did not fail.
+    case = deepcopy(CASES[3])
+    case["canonical"]["provider_attempts"] = [
+        {
+            "provider": "serper",
+            "outcome": "cancelled",
+            "error": {"message": "request deadline exceeded", "details": {"end_reason": "deadline"}},
+        },
+        {
+            "provider": "brave",
+            "outcome": "cancelled",
+            "error": {"message": "another provider answered first", "details": {"end_reason": "superseded_by_winner"}},
+        },
+    ]
+    payload = project(case, "compact")
+    assert payload["provider_errors"] == ["serper: request deadline exceeded"]

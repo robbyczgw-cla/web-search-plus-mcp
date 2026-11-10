@@ -36,6 +36,8 @@ print(json.dumps(out))
 def _run(tmp_path, *, package_env=None, profile_env=None, config=None, extra_env=None):
     root = tmp_path / "install"
     shutil.copytree(PACKAGE, root / "web_search_plus_mcp", ignore=shutil.ignore_patterns("__pycache__"))
+    # wsp_sdk too: otherwise the copy imports an installed (possibly old) one.
+    shutil.copytree(PACKAGE.parent / "wsp_sdk", root / "wsp_sdk", ignore=shutil.ignore_patterns("__pycache__"))
     home = tmp_path / "hermes"
     home.mkdir()
     if package_env is not None:
@@ -117,10 +119,196 @@ def test_compact_and_v3_name_the_setup_problem_not_the_serper_filler(monkeypatch
     assert compact["status"] == "failed"
     assert compact["error"].startswith("BRAVE_API_KEY still holds a template placeholder")
     assert compact["how_to_fix"] == ["set BRAVE_API_KEY=<real value> in the MCP client's env block or the server's .env"]
+    # Nothing from the serper filler attempt the user never chose.
+    assert compact.get("env_var") != "SERPER_API_KEY"
+    assert "provider_errors" not in compact
+    assert "fallback_from" not in compact.get("routing", {})
 
     payload, _code = search.run_cli_contract_v3(["--contract-v3", "--query", "python release notes", "--no-cache"])
     error = payload["error"]
     assert (error["error_class"], error["retryable"]) == ("config", False)
     assert error["details"]["readiness"][0]["reason_code"] == "placeholder_value"
+    assert "provider" not in error and "env_var" not in error["details"]
     schema = json.loads((PACKAGE.parent / "schemas/v3/response.schema.json").read_text())
     assert list(Draft202012Validator(schema).iter_errors(payload)) == []
+
+
+
+def test_invalid_detail_environment_warns_once_and_keeps_argument_precedence(tmp_path, monkeypatch, capsys):
+    from web_search_plus_mcp import server
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"mcp": {"detail": "full"}}))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_MCP_DETAIL", " verbose ")
+    monkeypatch.setattr(server, "_DETAIL_ENV_WARNED", False)
+
+    async def fake_run(*args, **kwargs):
+        return {"contract_version": "3.0", "status": "ok", "results": []}
+
+    monkeypatch.setattr(server, "_run_subprocess", fake_run)
+    explicit = json.loads(asyncio.run(server.call_tool("web_search", {"query": "q", "detail": "compact"}))[0].text)
+    assert explicit["detail"] == "compact"
+    assert capsys.readouterr().err == ""
+    for _ in range(2):
+        configured = json.loads(asyncio.run(server.call_tool("web_search", {"query": "q"}))[0].text)
+        assert configured["contract_version"] == "3.0"
+        assert "detail" not in configured
+    assert capsys.readouterr().err == json.dumps({
+        "warning": "WEB_SEARCH_PLUS_MCP_DETAIL must be compact or full; ignoring it",
+    }) + "\n"
+
+
+@pytest.mark.parametrize("config,call", [
+    ({}, "status"),
+    ({}, ("web_search", {"query": "q"})),
+    ({}, ("web_search", {"query": "q", "provider": "brave"})),
+    ({}, ("web_search", {"query": "q", "provider": "searxng"})),
+    ({}, ("web_extract", {"urls": ["https://example.com"]})),
+    ({"profile": "self_hosted"}, ("web_search", {"query": "q"})),
+], ids=["status", "auto", "explicit-brave", "explicit-searxng", "extract", "self-hosted"])
+def test_every_recommended_cli_command_is_one_the_mcp_cli_accepts(config, call, monkeypatch, tmp_path, capsys):
+    # 5.1.7 recommended "web-search-plus-mcp setup brave" and
+    # "setup --preset extract"; the MCP CLI rejected both with exit 2.
+    import shlex
+    from web_search_plus_mcp import server
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.json").write_text(json.dumps(config))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(tmp_path / "config.json"))
+    for meta in server.SEARCH_PROVIDERS.values():
+        monkeypatch.delenv(meta["env"], raising=False)
+    monkeypatch.delenv("SEARXNG_INSTANCE_URL", raising=False)
+    if call == "status":
+        out = server._status_payload()
+    else:
+        out = json.loads(asyncio.run(server.call_tool(call[0], {**call[1], "detail": "full"}))[0].text)
+
+    def strings(obj):
+        if isinstance(obj, dict):
+            return [s for value in obj.values() for s in strings(value)]
+        if isinstance(obj, list):
+            return [s for value in obj for s in strings(value)]
+        return [obj] if isinstance(obj, str) else []
+
+    commands = {s for s in strings(out) if s.startswith("web-search-plus-mcp ")}
+    for command in commands:
+        argv = shlex.split(command)[1:]
+        assert server.cli_main(argv + (["--dry-run"] if argv[0] == "setup" else [])) == 0, command
+    capsys.readouterr()
+
+
+@pytest.mark.parametrize("auto_allow,env,fix", [
+    ({"brave": False}, {"BRAVE_API_KEY": "brave-real-key-123456"},
+     ['provider="brave"', "web-search-plus-mcp config set-auto-allow brave on"]),
+    ({}, {"DONSETCH_BIN": "donsetch"},
+     ['provider="donsetch"', "web-search-plus-mcp config set-auto-allow donsetch on"]),
+], ids=["brave-auto-allow-off", "donsetch-default"])
+def test_auto_search_names_the_provider_that_only_runs_when_asked_for(auto_allow, env, fix, monkeypatch, tmp_path, capsys):
+    # 5.1.7 said "No configured search provider" and sent the user to setup,
+    # although status showed the provider as set up (explicit_only).
+    from web_search_plus_mcp import server
+
+    (tmp_path / "config.json").write_text(json.dumps({"auto_routing": {"auto_allow": auto_allow}}))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(tmp_path / "config.json"))
+    for meta in server.SEARCH_PROVIDERS.values():
+        monkeypatch.delenv(meta["env"], raising=False)
+    if "DONSETCH_BIN" in env:
+        binary = tmp_path / "donsetch"
+        binary.write_text("#!/bin/sh\n")
+        binary.chmod(0o755)
+        env = {"DONSETCH_BIN": str(binary)}
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+
+    def search():
+        return json.loads(asyncio.run(server.call_tool("web_search", {"query": "q", "detail": "full"}))[0].text)
+
+    details = search()["error_v3"]["details"]
+    assert details["error_type"] == "explicit_only_provider_configured"
+    assert details["how_to_fix"] == fix
+    # Following the advice puts the provider into automatic routing.
+    for command in fix[1:]:
+        assert server.cli_main(command.split()[1:]) == 0
+    from web_search_plus_mcp import config, routing
+
+    assert routing.route_query("q", config.load_config())["provider"] == fix[0].split('"')[1]
+    capsys.readouterr()
+
+
+def test_status_fix_for_donsetch_puts_it_into_auto_search(monkeypatch, tmp_path, capsys):
+    # 5.1.7 status advised "config set-auto-allow donsetch on", after which auto
+    # search still left DonSeTch out (it is not in the priority list). The one
+    # command now works, without set-priority reordering every search.
+    from web_search_plus_mcp import config, routing, server
+
+    (tmp_path / "config.json").write_text("{}")
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(tmp_path / "config.json"))
+    for meta in server.SEARCH_PROVIDERS.values():
+        monkeypatch.delenv(meta["env"], raising=False)
+    binary = tmp_path / "donsetch"
+    binary.write_text("#!/bin/sh\n")
+    binary.chmod(0o755)
+    monkeypatch.setenv("DONSETCH_BIN", str(binary))
+
+    status = server._status_payload()["providers"]["donsetch"]
+    assert status["state"] == "explicit_only"
+    for command in status["fix"][1:]:
+        assert server.cli_main(command.split()[1:]) == 0
+    assert routing.route_query("q", config.load_config())["provider"] == "donsetch"
+    capsys.readouterr()
+
+
+@pytest.mark.parametrize("auto_routing,auto_ready", [
+    ({"auto_allow": {"brave": False}}, False),
+    ({"disabled_providers": ["brave"]}, False),
+    ({}, True),
+], ids=["explicit-only", "disabled", "ready"])
+def test_status_says_when_no_provider_runs_automatically(auto_routing, auto_ready, monkeypatch, tmp_path, capsys):
+    # 5.1.7 printed "✓ brave" and "Search configured: yes" for a Brave that auto
+    # search never used; the first search then failed.
+    from web_search_plus_mcp import server
+
+    (tmp_path / "config.json").write_text(json.dumps({"auto_routing": auto_routing}))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(tmp_path / "config.json"))
+    for meta in server.SEARCH_PROVIDERS.values():
+        monkeypatch.delenv(meta["env"], raising=False)
+    monkeypatch.setenv("BRAVE_API_KEY", "brave-real-key-123456")
+
+    assert server.cli_main(["status"]) == 0
+    text = capsys.readouterr().out
+    assert ("Automatic search: no" in text) is not auto_ready
+    assert ("  ✓ brave:" in text) is auto_ready
+    assert ("  ~ brave:" in text) is not auto_ready
+    assert server._status_payload()["search_auto_ready"] is auto_ready
+
+
+@pytest.mark.parametrize("file,priority,warned", [
+    ({"profile": "self_hosted"}, ["searxng", "keenable"], False),
+    ({"auto_routing": {"provider_priority": []}}, [], False),
+    ({"profile": "cloud"}, None, True),
+], ids=["self-hosted", "empty-priority", "engine-rejects"])
+def test_status_and_config_show_are_what_the_engine_runs_with(file, priority, warned, monkeypatch, tmp_path, capsys):
+    # 5.1.7 showed brave/serper for profile=self_hosted (the engine used
+    # searxng/keenable), the full default list for provider_priority=[], and no
+    # warning for a file the first search then moved aside.
+    from web_search_plus_mcp import config, server
+
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(file))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(path))
+
+    status = server._status_payload()
+    assert server.cli_main(["config", "show"]) == 0
+    show = json.loads(capsys.readouterr().out)
+    assert server.cli_main(["status"]) in (0, 1)
+    text = capsys.readouterr().out
+    assert path.exists(), "status must not move the file"
+    engine = config.load_config()
+    assert status["routing_preferences"] == show["routing_preferences"] == engine["auto_routing"]
+    if priority is not None:
+        assert engine["auto_routing"]["provider_priority"] == priority
+    assert ("Invalid config" in status.get("config_warning", "")) is warned
+    assert ("Invalid config" in show.get("warning", "")) is warned
+    assert ("Warning: Invalid config" in text) is warned
+    capsys.readouterr()

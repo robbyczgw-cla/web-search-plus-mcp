@@ -396,16 +396,19 @@ def apply_profile_effects(config: Dict[str, Any]) -> Dict[str, Any]:
 def self_hosted_profile_error(config: Dict[str, Any]) -> Optional[SelfHostedProfileError]:
     """Return a typed readiness error when self-hosted AUTO has no provider.
 
-    This deliberately checks only local configuration state. URL reachability
-    belongs to request execution; status/doctor must never make a provider call.
+    Readiness decides: the profile is unavailable only when no SearXNG URL is
+    set anywhere this host reads one and Keenable cannot run. A URL that is
+    set but blocked or ignored is not this error; the setup guidance names it.
+    URL reachability belongs to request execution.
     """
     if not is_self_hosted_profile(config):
         return None
-    searxng = config.get("searxng", {})
-    has_searxng_url = isinstance(searxng, dict) and bool(
-        searxng.get("base_url") or searxng.get("instance_url")
-    )
-    if has_searxng_url or provider_configured("keenable", config):
+    from .readiness import Readiness, evaluate_provider
+
+    if (
+        evaluate_provider("searxng", config).state is not Readiness.NOT_CONFIGURED
+        or provider_configured("keenable", config)
+    ):
         return None
     return SelfHostedProfileError(
         "self_hosted profile requires searxng.base_url or an enabled Keenable keyless/public endpoint"
@@ -416,6 +419,14 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     auto = config.get("auto_routing", {})
     if not isinstance(auto, dict):
         raise ValueError("auto_routing must be an object")
+    # One reading of the routing switch, here: the engine tests `is False`, so
+    # 0 or "false" kept auto routing on while the MCP status showed it off.
+    enabled = auto.get("enabled", True)
+    if not isinstance(enabled, bool):
+        word = str(enabled).strip().lower()
+        if word not in {"0", "1", "false", "true", "off", "on", "no", "yes"}:
+            raise ValueError("auto_routing.enabled must be true or false")
+        auto["enabled"] = word in {"1", "true", "on", "yes"}
     if config.get("default_provider"):
         if _is_removed_provider_id(config["default_provider"]):
             config["default_provider"] = DEFAULT_CONFIG["default_provider"]
@@ -467,6 +478,13 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
                 continue
             provider = _normalize_routing_provider_config(str(raw_provider))
             normalized_allow[provider] = bool(allowed)
+            # Allowed for automatic search means it joins the order: auto
+            # routing only tries provider_priority, so the flag alone left an
+            # explicit-only provider (donsetch) out. It goes last.
+            priority = auto.get("provider_priority")
+            if (normalized_allow[provider] and priority and provider not in priority and auto.get("enabled", True) is not False
+                    and PROVIDER_SPECS[provider].supports_search):
+                priority.append(provider)
         auto["auto_allow"] = normalized_allow
     else:
         auto["auto_allow"] = dict(DEFAULT_CONFIG["auto_routing"].get("auto_allow", {}))
@@ -593,7 +611,9 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     jev = config.get("jev", DEFAULT_CONFIG["jev"])
     if not isinstance(jev, dict):
         raise ValueError("jev must be an object")
-    if "api_key" in jev and str(jev.get("api_key") or "").strip():
+    # Neither a key nor a key file in config.json is read (keys come from the
+    # host or the environment); say so once instead of running Jev without one.
+    if str(jev.get("api_key") or "").strip() or str(jev.get("api_key_file") or "").strip():
         _warn_ignored_file_key("jev")
     for flag in ("enabled", "search_type", "extract_quality", "language_fill"):
         if not isinstance(jev.get(flag, False), bool):
@@ -996,23 +1016,36 @@ def validate_config_candidate(user_config: Any) -> Dict[str, Any]:
     return _validate_runtime_config(config)
 
 
-def load_config() -> Dict[str, Any]:
-    """Load configuration from config.json if it exists, with defaults."""
-    config = _deepcopy_default_config()
-    config_path = runtime_config_path()
+def read_runtime_config(config_path: Path) -> Tuple[Dict[str, Any], Optional[str]]:
+    """The config the engine runs with, and why the file was rejected (None if not).
 
+    Reads only: :func:`load_config` moves a rejected file aside, status shows
+    the same view without touching the file.
+    """
+    config = _deepcopy_default_config()
+    error = None
     if config_path.exists():
         try:
             with open(config_path, encoding="utf-8") as f:
                 config = validate_config_candidate(json.load(f))
-        except (json.JSONDecodeError, IOError, ValueError, TypeError) as e:
-            _quarantine_runtime_config(config_path, str(e))
-            config = _deepcopy_default_config()
+        # A number too large for a float or nesting too deep for the parser is
+        # as invalid as a type error; uncaught, it failed every search.
+        except (json.JSONDecodeError, IOError, ValueError, TypeError, OverflowError, RecursionError) as e:
+            error = str(e) or type(e).__name__
 
     config = _apply_desktop_settings(config, _desktop_settings(config_path))
     # Defaults need no migration, but applying this here keeps direct/default
     # loads on the same profile-derived path as persisted configurations.
-    return apply_profile_effects(config)
+    return apply_profile_effects(config), error
+
+
+def load_config() -> Dict[str, Any]:
+    """Load configuration from config.json if it exists, with defaults."""
+    config_path = runtime_config_path()
+    config, error = read_runtime_config(config_path)
+    if error is not None:
+        _quarantine_runtime_config(config_path, error)
+    return config
 
 
 _logger = logging.getLogger(__name__)
@@ -1110,7 +1143,8 @@ def provider_configured(provider: str, config: Dict[str, Any] = None) -> bool:
     """
     from .readiness import evaluate_provider
 
-    return evaluate_provider(provider, config, raise_scope_errors=True).accepted
+    # Callers pass arbitrary names (config values, removed ids such as "monid").
+    return provider in PROVIDER_SPECS and evaluate_provider(provider, config).accepted
 
 def add_provider_setup_guidance(
     payload: Dict[str, Any], capability: str, providers: List[str], config: Dict[str, Any],
@@ -1125,6 +1159,31 @@ def add_provider_setup_guidance(
     if not candidates or any(provider_configured(p, config) for p in candidates):
         return
     explicit = requested_provider in candidates
+    if not explicit:
+        # Set up, but kept out of automatic routing (auto_allow off): saying
+        # "nothing is configured" made users and the model think it was missing.
+        from .routing import _provider_auto_allowed
+
+        auto = (config or {}).get("auto_routing") or {}
+        explicit_only = [
+            name for name, spec in PROVIDER_SPECS.items()
+            if name not in candidates and getattr(spec, f"supports_{capability}", False)
+            and not _provider_auto_allowed(name, auto) and provider_configured(name, config)
+        ]
+        if explicit_only:
+            first = explicit_only[0]
+            names = ", ".join(PROVIDER_SPECS[p].display_name for p in explicit_only)
+            allow = f"web-search-plus-mcp config set-auto-allow {first} on"
+            payload.update({
+                "error": (
+                    f"No provider for automatic {'extraction' if capability == 'extract' else capability} is configured. {names} is set up but only runs "
+                    f"when asked for: call again with provider=\"{first}\", or let it join automatic routing: {allow}"
+                ),
+                "error_type": "explicit_only_provider_configured",
+                "explicit_only_providers": explicit_only,
+                "how_to_fix": [f'provider="{first}"', allow],
+            })
+            return
     # The user set something up that cannot work (a placeholder key, a blocked
     # SearXNG URL, a disabled provider): name it and its fix instead of
     # "nothing is configured".
@@ -1144,15 +1203,17 @@ def add_provider_setup_guidance(
         })
         return
     preset = "self-hosted" if is_self_hosted_profile(config) else ("extract" if capability == "extract" else "starter")
-    target = requested_provider if explicit else f"--preset {preset}"
-    command = f"web-search-plus-mcp setup {target}"
+    env_vars = [PROVIDER_SPECS[requested_provider].env_var] if explicit else preset_env_vars(preset)
+    # The MCP CLI has no per-provider setup and only the starter preset of
+    # these three; anything else is set in the environment.
+    command = ("web-search-plus-mcp setup --preset starter" if not explicit and preset == "starter"
+               else f"set {' or '.join(env_vars)} in the MCP client's env block or the server's .env")
     message = (f"Requested provider '{requested_provider}' is not configured." if explicit
                else f"No configured {capability} provider is available for this request.")
     payload.update({
-        "error": f"{message} Run: {command}",
+        "error": f"{message} {'Run' if command.startswith('web-search-plus-mcp') else 'To fix'}: {command}",
         "error_type": "requested_provider_not_configured" if explicit else "provider_setup_required",
-        "env_vars": ([PROVIDER_SPECS[requested_provider].env_var] if explicit
-                     else preset_env_vars(preset)),
+        "env_vars": env_vars,
         "how_to_fix": [
             command,
             "Store API keys in the env block of your MCP client config or a .env file. Keyless public endpoints require explicit opt-in.",

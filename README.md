@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 5.1.7` (released 2026-11-08) makes `status`, setup guidance and tool errors agree with the engine on whether a provider can run, and say why not: template placeholder keys, private SearXNG URLs and disabled providers are named with the fix, a placeholder in a `.env` next to the package no longer hides the real key, and an empty `WEB_SEARCH_PLUS_MCP_DETAIL` no longer breaks the tools. 5.1.6 made extraction failures name their reason; see the [changelog](CHANGELOG.md).
+`web-search-plus-mcp 5.1.8` (released 2026-11-10) makes settings mean what they say: the error, `setup --preset starter` and the README name the same keys (Brave, Serper, Exa, Linkup), `status` and `config show` show what the engine runs with and warn before a bad config.json is moved aside, every suggested fix command is one the CLI accepts, `config set-auto-allow X on` alone adds a provider to automatic search, and `auto_routing.enabled: 0` turns routing off. 5.1.7 made status and the engine agree on whether a provider can run; see the [changelog](CHANGELOG.md) and the [5.1.8 release notes](docs/RELEASE_5_1_8.md).
 
 ### What's new in 5.1.3
 
@@ -114,7 +114,7 @@ Write a starter `.env` template and print a canonical MCP stdio snippet:
 web-search-plus-mcp setup --preset starter
 ```
 
-The recommended starter preset is **You.com + Serper + Linkup**. It gives a practical source-only baseline for fast current search, Google-style discovery, and extraction workflows without wiring every provider on day one.
+The recommended starter preset is **Brave + Serper + Exa + Linkup**, matching the automatic router's first choices and adding extraction. One key is enough to start; Brave covers most searches.
 
 `setup` prints the absolute template path and the exact `.env` files this installation reads at startup (also available as `server_env_files` and `env_file_auto_loaded` with `--json`). An arbitrary current-directory `.env` is a template only: copy its keys into the MCP client's `env` block or one of those server files, then restart the server. A separate `uvx` installation can have different package paths; the client `env` block works across installations.
 
@@ -134,7 +134,7 @@ Persistent routing preferences live in `config.json` rather than `.env`:
 web-search-plus-mcp config show
 web-search-plus-mcp config set-default you        # strict fixed-provider mode
 web-search-plus-mcp config set-routing on         # restore auto-routing
-web-search-plus-mcp config set-priority you,serper,exa,firecrawl,tavily,linkup,parallel,brave,keenable
+web-search-plus-mcp config set-priority brave,serper,exa,linkup,you,firecrawl,tavily,parallel,keenable
 web-search-plus-mcp config set-extract-priority serper,tavily,exa,linkup,parallel,firecrawl,you,keenable
 web-search-plus-mcp config set-fallback serper
 web-search-plus-mcp config disable parallel
@@ -150,10 +150,13 @@ Config edits validate the whole candidate with the engine before writing. Invali
 
 Other presets:
 
-- `minimal` — You.com only
-- `lean` — You.com + Linkup
-- `starter` — You.com + Serper + Linkup
+- `lean` — Brave + Linkup
+- `starter` — Brave + Serper + Exa + Linkup
+- `search` — Brave + Serper + Exa + Tavily + Firecrawl + Linkup
+- `extract` — Linkup + Firecrawl + Tavily
 - `all` — every supported provider env var
+
+`minimal` remains accepted as an alias for `lean` and prints a notice on stderr.
 
 ## 🤖 Grok Build plugin
 
@@ -215,7 +218,7 @@ The package exposes stdio only; the specification's Streamable HTTP session remo
 - **Parallel** — LLM-ready web search with long excerpts; joins automatic routing when a key is configured (`PARALLEL_API_KEY`)
 - **Tavily** — research and analysis
 - **Linkup** — source-backed grounding/citations
-- **Brave** — explicit-only independent web index by default (`BRAVE_API_KEY`, `auto_allow=false`)
+- **Brave** — independent web index; the automatic router's first choice for most searches (`BRAVE_API_KEY`)
 - **SearXNG** — privacy-first self-hosted meta-search
 - **SerpBase** — explicit-only Google SERP API (`SERPBASE_API_KEY`, `auto_allow=false`)
 - **Querit** — explicit-only multilingual, real-time AI search (`QUERIT_API_KEY`, `auto_allow=false`)

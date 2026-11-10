@@ -7,6 +7,8 @@ the MCP client receives) cannot pass.
 
 import json
 import os
+import shlex
+from pathlib import Path
 import subprocess
 import sys
 
@@ -60,7 +62,9 @@ def test_untrusted_config_error_text_stays_redacted(body):
 
 
 def _stdio_call(home, calls):
-    env = {"PATH": os.environ["PATH"], "HOME": str(home), "TMPDIR": str(home)}
+    env = {"PATH": os.environ["PATH"], "HOME": str(home), "TMPDIR": str(home),
+           # This checkout, not whatever web_search_plus_mcp the interpreter has installed.
+           "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
     proc = subprocess.Popen(
         [sys.executable, "-m", "web_search_plus_mcp.server"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -89,19 +93,31 @@ def _stdio_call(home, calls):
 
 
 @pytest.mark.parametrize("detail", ["compact", "full"])
-def test_stdio_client_sees_guidance_and_is_error_without_keys(tmp_path, detail):
+def test_stdio_client_sees_guidance_and_is_error_without_keys(tmp_path, detail, capsys, monkeypatch):
     search, explicit, extract = _stdio_call(tmp_path, [
         ("web_search", {"query": "python asyncio taskgroup", "detail": detail}),
         ("web_search", {"query": "python asyncio taskgroup", "provider": "tinyfish", "detail": detail}),
         ("web_extract", {"urls": ["https://example.com"], "detail": detail}),
     ])
-    for result in (search, explicit, extract):
+    # Per-provider guidance names the env var; automatic search offers a preset.
+    for result, fix in ((search, "web-search-plus-mcp setup --preset starter"),
+                        (explicit, "set TINYFISH_API_KEY in the MCP client's env block"),
+                        (extract, "in the MCP client's env block")):
         assert result["isError"] is True
         text = result["content"][0]["text"]
         payload = json.loads(text)
         assert payload["status"] == "failed"
-        assert "web-search-plus-mcp setup" in text
+        assert fix in text
         assert "config.json" not in text
     explicit_payload = json.loads(explicit["content"][0]["text"])
     guidance = explicit_payload["error_v3"]["details"] if detail == "full" else explicit_payload
     assert guidance["env_var"] == "TINYFISH_API_KEY"
+    from web_search_plus_mcp import server
+
+    monkeypatch.chdir(tmp_path)
+    payload = json.loads(search["content"][0]["text"])
+    guidance = payload["error_v3"]["details"] if detail == "full" else payload
+    command = next(step for step in guidance["how_to_fix"] if step.startswith("web-search-plus-mcp setup"))
+    assert server.cli_main(shlex.split(command)[1:] + ["--dry-run", "--json"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["keys"] == guidance["env_vars"]

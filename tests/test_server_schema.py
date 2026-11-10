@@ -337,7 +337,8 @@ def test_cli_status_json_and_setup_dry_run(tmp_path, monkeypatch, capsys):
     assert setup["preset"] == "starter"
     assert "web_answer_enabled" not in setup
     assert "WSP_ENABLE_WEB_ANSWER" not in setup["snippet"]["mcpServers"]["web-search-plus"]["env"]
-    assert "YOU_API_KEY" in setup["keys"]
+    assert "BRAVE_API_KEY" in setup["keys"]
+    assert "EXA_API_KEY" in setup["keys"]
     assert "SERPER_API_KEY" in setup["keys"]
     assert "LINKUP_API_KEY" in setup["keys"]
     assert not env_file.exists()

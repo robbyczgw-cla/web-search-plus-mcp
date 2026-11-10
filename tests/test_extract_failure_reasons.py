@@ -133,6 +133,9 @@ def test_missing_page_names_the_reason_and_costs_one_call(world):
     # 5.1.5: "Provider returned an invalid response", results [], three paid calls.
     assert "invalid response" not in json.dumps(out)
     assert calls == ["api.tavily.com"]
+    assert out["provider"] is None
+    assert out["provider_errors"] == ["tavily: Provider could not read the requested pages"]
+    assert out["routing"] == {"auto_routed": True}
 
 
 def test_mixed_batch_keeps_the_page_and_names_the_missing_one(world):
@@ -151,6 +154,14 @@ def test_site_that_refuses_everyone_lists_tried_and_untried(world):
     assert "tried tavily, exa, linkup" in out["error"]
     assert "not tried (limit of 3 provider attempts per request)" in out["error"]
     assert calls == ["api.tavily.com", "api.exa.ai", "api.linkup.so"]
+    assert out["provider"] is None
+    assert out["routing"] == {"auto_routed": True}
+    assert out["provider_errors"] == [
+        "tavily: Provider could not read the requested pages",
+        "exa: Provider could not read the requested pages",
+        "linkup: Provider could not read the requested pages",
+        "parallel: budget_blocked", "firecrawl: budget_blocked",
+    ]
 
 
 def test_firecrawl_404_page_is_an_error_not_content_and_not_cached(world):

@@ -118,3 +118,19 @@ def test_status_json_includes_jev_off_by_default(monkeypatch, capsys):
     assert "api_key" not in payload["jev"]
     blob = json.dumps(payload)
     assert "brv-test" not in blob or payload["jev"]["key_present"] is False
+
+
+def test_status_counts_only_the_key_sources_the_runtime_reads(tmp_path, monkeypatch):
+    # 5.1.7 status said key=yes for jev.api_key / jev.api_key_file in
+    # config.json; jev_optional never reads either, so Jev ran without a key.
+    from web_search_plus_mcp import jev_optional
+
+    key_file = tmp_path / "typesafe"
+    key_file.write_text("typesafe-key\n")
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.delenv("TYPESAFE_API_KEY_FILE", raising=False)
+    for jev in ({"enabled": True, "api_key_file": str(key_file)}, {"enabled": True, "api_key": "inline"}):
+        assert status_payload({}, {"jev": jev})["key_present"] is bool(jev_optional._key()) is False
+    monkeypatch.setenv("TYPESAFE_API_KEY_FILE", str(key_file))
+    payload = status_payload({"TYPESAFE_API_KEY_FILE": str(key_file)}, {"jev": {"enabled": True}})
+    assert (payload["key_present"], payload["key_source"]) == (True, "file") and jev_optional._key() == "typesafe-key"

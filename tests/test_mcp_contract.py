@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
@@ -91,15 +93,15 @@ def canonical_response(*, capability="search", status="ok", results=None, error=
 
 def test_release_version_is_consistent_across_public_surfaces():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert project["project"]["version"] == "5.1.7"
+    assert project["project"]["version"] == "5.1.8"
     assert project["project"]["scripts"]["web-search-plus-mcp"] == (
         "web_search_plus_mcp.server:cli_main"
     )
-    assert web_search_plus_mcp.__version__ == "5.1.7"
-    assert server.__version__ == "5.1.7"
+    assert web_search_plus_mcp.__version__ == "5.1.8"
+    assert server.__version__ == "5.1.8"
     initialization = server.app.create_initialization_options()
     assert initialization.server_name == "web-search-plus"
-    assert initialization.server_version == "5.1.7"
+    assert initialization.server_version == "5.1.8"
 
 
 def test_ci_ruff_policy_is_repo_local_and_pinned():
@@ -155,7 +157,7 @@ def test_source_only_provider_surface_is_15_search_and_9_extract():
 def test_readme_describes_current_source_only_release_surface():
     readme = (ROOT / "README.md").read_text()
     release = (ROOT / "docs/RELEASE_4_1_0.md").read_text()
-    assert "`web-search-plus-mcp 5.1.7`" in readme
+    assert "`web-search-plus-mcp 5.1.8`" in readme
     assert "DonSeTch 4.2.9" in readme
     assert "**15 search providers" in readme
     assert "not ported" in readme.lower() or "not ported" in release.lower()
@@ -604,8 +606,13 @@ def test_subprocess_timeout_is_typed_retryable_and_secret_free(monkeypatch):
     assert secret not in json.dumps(payload)
 
 
-def test_donsetch_subprocess_budget_covers_inner_stdio_timeout(monkeypatch):
+@pytest.mark.parametrize("inner_timeout,outer_timeout", [(180, 195), (300, 315)])
+def test_donsetch_subprocess_budget_covers_inner_stdio_timeout(monkeypatch, tmp_path, inner_timeout, outer_timeout):
     calls = []
+    config_path = tmp_path / "config.json"
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
+    donsetch = {"timeout": inner_timeout}
+    config_path.write_text(json.dumps({"donsetch": donsetch}))
 
     async def capture_run(_cmd, **kwargs):
         calls.append(kwargs["timeout"])
@@ -629,17 +636,63 @@ def test_donsetch_subprocess_budget_covers_inner_stdio_timeout(monkeypatch):
         "urls": ["https://example.com", "https://example.org"],
         "provider": "donsetch",
     }))
+    auto = {"detail": "full", "query": "donsetch auto budget", "provider": "auto"}
+    allowed = {"donsetch": donsetch, "auto_routing": {"auto_allow": {"donsetch": True}, "provider_priority": ["donsetch"]}}
+    # DONSETCH_BIN alone: DonSeTch is explicit-only, auto search never runs it.
     monkeypatch.setenv("DONSETCH_BIN", "/bin/true")
-    run(server.call_tool("web_search", {
-        "detail": "full",
-        "query": "donsetch auto budget",
-        "provider": "auto",
-    }))
+    config_path.write_text(json.dumps({"donsetch": donsetch}))
+    run(server.call_tool("web_search", auto))
+    config_path.write_text(json.dumps(allowed))
+    run(server.call_tool("web_search", auto))
+    # 5.1.7 gave a binary from config.json the 75 s search budget, killing a
+    # DonSeTch session that may run 180 s.
+    monkeypatch.delenv("DONSETCH_BIN")
+    config_path.write_text(json.dumps({**allowed, "donsetch": {**donsetch, "binary": "/bin/true"}}))
+    run(server.call_tool("web_search", auto))
+    run(server.call_tool("web_extract", {"urls": ["https://example.com", "https://example.org"]}))
 
     assert calls == [
-        server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS,
-        server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS,
-        server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS * 2,
-        server.DEFAULT_DONSETCH_SUBPROCESS_TIMEOUT_SECONDS,
+        outer_timeout,
+        outer_timeout,
+        outer_timeout * 2,
+        server.DEFAULT_SEARCH_SUBPROCESS_TIMEOUT_SECONDS,
+        outer_timeout,
+        outer_timeout,
+        outer_timeout * 2,
     ]
     assert calls[0] > 180
+
+
+@pytest.mark.parametrize("value", [None, 0, 5, 180, 300, 600, 601, "300", "invalid", 5.9, True, float("inf"), float("nan"), 10**400])
+def test_donsetch_outer_budget_matches_adapter_bounds_and_reads_config_once(monkeypatch, value):
+    from web_search_plus_mcp.provider_registry import PROVIDER_SPECS
+
+    reads = []
+
+    def read_config(path):
+        reads.append(path)
+        return {"donsetch": {"timeout": value}}, None
+
+    monkeypatch.setattr(runtime_config, "read_runtime_config", read_config)
+    adapter = PROVIDER_SPECS["donsetch"].execute_search.__globals__
+    expected = adapter["_bounded_int"](value, 180, 5, 600) + 15
+    assert server._donsetch_outer_budget_seconds("donsetch") == expected
+    assert len(reads) == 1
+
+
+@pytest.mark.parametrize("budget,expected_timeout", [
+    (None, 65), ("invalid", 65), (float("nan"), 65), (float("inf"), 65),
+    (-1, 11), (100, 85), (1.2, 12), (55, 65),
+])
+def test_direct_research_calls_keep_the_outer_budget_fallback_and_clamp(monkeypatch, budget, expected_timeout):
+    seen = {}
+
+    async def capture_run(_cmd, **kwargs):
+        seen.update(kwargs)
+        return []
+
+    monkeypatch.setattr(server, "_run_cmd", capture_run)
+    run(server.call_tool("web_search", {
+        "query": "research budget", "mode": "research", "research_time_budget": budget,
+    }))
+    assert seen["timeout"] == expected_timeout

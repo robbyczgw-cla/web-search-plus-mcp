@@ -31,16 +31,15 @@ def parse_decisions(raw: Optional[str]) -> tuple[str, ...]:
 
 
 def key_source(env: Optional[Mapping[str, str]] = None, config: Optional[Mapping[str, Any]] = None) -> Optional[str]:
+    """Where the runtime (``jev_optional._key``) gets the TypeSafe key: the environment only.
+
+    ``jev.api_key`` and ``jev.api_key_file`` in config.json are never read, so
+    they do not count; ``config`` is kept for callers.
+    """
     env = env or {}
     if str(env.get(JEV_ENV) or "").strip():
         return "env"
     path = str(env.get(JEV_ENV_FILE) or "").strip()
-    if not path and isinstance(config, Mapping):
-        jev = config.get("jev")
-        if isinstance(jev, Mapping):
-            path = str(jev.get("api_key_file") or "").strip()
-            if str(jev.get("api_key") or "").strip():
-                return "config"
     if path:
         try:
             if Path(path).expanduser().read_text(encoding="utf-8").strip():

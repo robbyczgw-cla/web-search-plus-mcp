@@ -68,6 +68,8 @@ def stdio_research(tmp_path, scenario, context_chars=1000):
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps(config))
     env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path),
+           # This checkout, not whatever web_search_plus_mcp the interpreter has installed.
+           "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
            "WEB_SEARCH_PLUS_CONFIG": str(config_path), "TAVILY_API_KEY": "fixture-only",
            "WSP_CACHE_DIR": str(tmp_path / "cache"),
            "HTTP_TRACE": str(tmp_path / "http-trace"), "EVIDENCE_SCENARIO": scenario}

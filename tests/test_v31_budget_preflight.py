@@ -311,3 +311,25 @@ def test_preflight_receipt_satisfies_response_json_schema(tmp_path) -> None:
     )
 
     jsonschema.validate(execution.response.to_dict(), schema)
+
+
+def test_one_response_cache_per_request_when_preflight_runs(tmp_path, monkeypatch) -> None:
+    """The v3 settings and ResponseCacheV3 were built twice per request when the
+    budget preflight ran (once inside the preflight branch, once after it)."""
+    from web_search_plus_mcp import orchestrator_v3
+
+    built: list[str] = []
+    real = orchestrator_v3.ResponseCacheV3
+
+    def counting(root):
+        built.append(str(root))
+        return real(root)
+
+    monkeypatch.setattr(orchestrator_v3, "ResponseCacheV3", counting)
+    seen: list[tuple] = []
+    execution = execute_v3_request(
+        _request(), _adapter(seen), _runtime_config(tmp_path, max_provider_calls_per_request=1)
+    )
+
+    assert execution.response.routing_receipt["budget_preflight"]["action"] == "degrade"
+    assert built == [str(tmp_path)]

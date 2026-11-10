@@ -230,7 +230,7 @@ class KeenableExtractTests(unittest.TestCase):
 
         self.assertEqual(result["provider"], "keenable")
         self.assertEqual(result["error_type"], "requested_provider_not_configured")
-        self.assertIn("web-search-plus-mcp setup", result["error"])
+        self.assertIn("set KEENABLE_API_KEY in the MCP client's env block", result["error"])
         self.assertEqual(search.provider_in_cooldown("keenable"), (False, 0))
 
 

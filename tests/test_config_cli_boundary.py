@@ -21,6 +21,8 @@ def cli_env(tmp_path):
         "WEB_SEARCH_PLUS_CONFIG": str(tmp_path / "config.json"),
         "WSP_CACHE_DIR": str(tmp_path / "cache"),
         "WSP_FORCE_SUBPROCESS": "0",
+        # This checkout, not whatever web_search_plus_mcp the interpreter has installed.
+        "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
     }
 
 
@@ -153,6 +155,48 @@ def test_engine_recovers_wrong_json_shape(tmp_path, monkeypatch, value):
     path = tmp_path / "config.json"
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(path))
     path.write_text(json.dumps(value))
+    engine.load_config()
+    assert not path.exists()
+    assert len(list(tmp_path.glob("*.broken-*"))) == 1
+
+
+@pytest.mark.parametrize("raw_config", [
+    "[]",
+    '{"mcp": {"detail": []}}',
+    '{"defaults": []}',
+    '{"auto_routing": {"confidence_threshold": {}}}',
+    '{"auto_routing": {"confidence_threshold": ' + "9" * 1000 + "}}",
+    "[" * 1100 + "0" + "]" * 1100,
+])
+def test_status_reports_invalid_config_without_moving_or_rewriting_it(tmp_path, monkeypatch, capsys, raw_config):
+    path = tmp_path / "config.json"
+    path.write_text(raw_config)
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(path))
+
+    server.cli_main(["status", "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    # The MCP server's own reader or the engine's (which names the move the
+    # next search makes); status itself never moves the file.
+    assert payload["config_warning"].startswith(("Invalid config ignored by the MCP server settings: ",
+                                                 "Invalid config: the next search moves "))
+    assert payload["default_provider"] == "serper"
+    assert payload["routing_preferences"]["disabled_providers"] == []
+    assert payload["tools_if_started_now"] == ["web_search", "web_extract"]
+    assert path.read_text() == raw_config
+    assert list(tmp_path.glob("config.json.*")) == []
+
+
+@pytest.mark.parametrize("raw_config", [
+    '{"auto_routing": {"confidence_threshold": ' + "9" * 1000 + "}}",
+    "[" * 100_000 + "]" * 100_000,
+], ids=["number-too-large", "nesting-too-deep"])
+def test_engine_moves_a_config_it_cannot_read_instead_of_failing_every_search(tmp_path, monkeypatch, raw_config):
+    # 5.1.7: OverflowError escaped load_config; every web_search answered
+    # "Web Search Plus subprocess failed." and the file stayed in place.
+    path = tmp_path / "config.json"
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(path))
+    path.write_text(raw_config)
     engine.load_config()
     assert not path.exists()
     assert len(list(tmp_path.glob("*.broken-*"))) == 1

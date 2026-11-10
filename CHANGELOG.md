@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [5.1.8] - 2026-11-10
+
+### Fixed
+
+- **Overlong extraction URLs fail before provider dispatch.** URLs over 8,192 characters previously reached DonSeTch and could block a write to its stdio pipe. `web_extract` now returns the existing argument error before any provider call; the input schema is unchanged.
+- **DonSeTch honors longer configured sessions.** With `donsetch.timeout: 300`, MCP stopped the request after 195 seconds although the adapter allowed 300. The outer limit now follows the adapter's effective 5–600 second timeout plus 15 seconds; the default stays 195 and Extract keeps its per-URL multiplier.
+- **Failed extraction lists useful provider errors.** A missing page listed four untried providers as `policy_excluded` and claimed a fallback although nobody delivered content. Compact failures now omit policy exclusions and show fallback fields only when a provider delivered; attempt-limit and deadline failures remain visible.
+- **Setup presets match the missing-key guidance.** `starter` wrote You.com/Serper/Linkup while errors asked for Brave/Serper/Exa/Linkup, and every MCP snippet named the same three keys. Setup and snippets now use the registry's starter, lean, search and extract presets plus all; `minimal` remains a lean alias with a stderr notice.
+- **Self-hosted profile with SearXNG set in the environment.** With `profile: self_hosted` and `SEARXNG_INSTANCE_URL` set in the environment or the MCP client's `env` block, `status` reported SearXNG as ready, but every automatic search failed with "self_hosted profile requires searxng.base_url": the profile check read the URL from config.json only. It now uses the same readiness answer as `status`; the profile is unavailable only when no SearXNG URL is set anywhere the server reads one and Keenable cannot run.
+- **A damaged search-cache file no longer breaks the command line.** In the standalone `search.py` command line, a cache file holding a JSON list, a non-numeric timestamp or bytes that are not UTF-8 raised an error on every run of the same query and was never removed. Such a file now counts as a miss and is removed.
+- **A config.json the engine cannot read no longer fails every search.** A number too large for a float (or nesting too deep) raised an error out of the config loader: every `web_search` answered "Web Search Plus subprocess failed." and the file stayed. It is now moved aside like any invalid config.
+- **Status and `config show` show what the engine runs with.** With `profile: self_hosted` they listed brave/serper while searches used searxng/keenable; with `provider_priority: []` they showed the full default list; a file the engine rejects (`"profile": "cloud"`) had no warning until the first search moved it aside. Both now read the engine's view and say when the next search will move the file. Status never moves it.
+- **Status says when no provider runs automatically.** With only an explicit-only or disabled provider, status printed "Search configured: yes" and ✓, and the first search without `provider` failed. Such providers are now marked `~` with their reason and fix, status prints "Automatic search: no …", and the JSON has `search_auto_ready`. The exit code is unchanged.
+- **Auto search names a provider that only runs when asked for.** With only Brave (`auto_allow` off) or DonSeTch set up, auto search said "No configured search provider" and sent the user to setup. It now names the provider, `provider="X"` and `config set-auto-allow X on`.
+- **`config set-auto-allow <provider> on` is enough.** It only wrote the flag, and automatic search tries the providers in `provider_priority`, where DonSeTch, Octen and TinyFish are not: the search still went to the Serper fallback while status said "ready". A provider you allow for automatic search is now added to the end of the order when the config is read; the order by query type stays, and `off` takes it out again.
+- **`auto_routing.enabled: 0` (or `"false"`, `"off"`) turns automatic routing off.** The engine kept it on for anything but the literal `false`, while status showed it off; the next `config` command even wrote `"false"` back as `true`. Values that are neither on nor off make the config invalid, like any other bad value.
+- **`jev.api_key_file` in config.json is named once in the log**, like `jev.api_key`: neither is read, and Jev ran without a key without saying why.
+- **Fix commands are ones the MCP CLI accepts.** Status and setup errors recommended `web-search-plus-mcp setup brave` and `setup --preset extract`, which the CLI rejects (exit 2). They now name the env var to set; `setup --preset starter` stays where that preset exists.
+- **Setup errors name the user's problem, not the Serper filler.** With nothing usable under auto routing, compact output still carried `env_var: SERPER_API_KEY`, "serper: Missing API key" and `fallback_from: ["serper"]`. Only the readiness answer remains; an explicit request keeps its own provider's details.
+- **Failed searches name providers cut off by the deadline.** Compact `provider_errors` skipped cancelled attempts, so a search whose providers ran out of time listed none. Deadline cancellations are listed; providers that lost to a faster one are not.
+- **Jev status counts only keys the runtime reads.** `jev.api_key` and `jev.api_key_file` in config.json showed `key=yes`, but Jev reads only `TYPESAFE_API_KEY` / `TYPESAFE_API_KEY_FILE` from the environment.
+- **DonSeTch from config.json gets its full time.** An auto-allowed DonSeTch whose binary came from `donsetch.binary` got the 75 s search budget and was killed mid-session; the long budget followed `DONSETCH_BIN` only. It now follows readiness.
+
+Same engine changes as the Hermes plugin 5.1.9.
+
 ## [5.1.7] - 2026-11-08
 
 ### Fixed
