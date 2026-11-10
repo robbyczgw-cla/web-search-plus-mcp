@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.1.8] - 2026-11-10
+
 ### Fixed
 
 - **Overlong extraction URLs fail before provider dispatch.** URLs over 8,192 characters previously reached DonSeTch and could block a write to its stdio pipe. `web_extract` now returns the existing argument error before any provider call; the input schema is unchanged.
@@ -22,6 +24,8 @@
 - **Failed searches name providers cut off by the deadline.** Compact `provider_errors` skipped cancelled attempts, so a search whose providers ran out of time listed none. Deadline cancellations are listed; providers that lost to a faster one are not.
 - **Jev status counts only keys the runtime reads.** `jev.api_key` and `jev.api_key_file` in config.json showed `key=yes`, but Jev reads only `TYPESAFE_API_KEY` / `TYPESAFE_API_KEY_FILE` from the environment.
 - **DonSeTch from config.json gets its full time.** An auto-allowed DonSeTch whose binary came from `donsetch.binary` got the 75 s search budget and was killed mid-session; the long budget followed `DONSETCH_BIN` only. It now follows readiness.
+
+Same engine changes as the Hermes plugin 5.1.9.
 
 ## [5.1.7] - 2026-11-08
 

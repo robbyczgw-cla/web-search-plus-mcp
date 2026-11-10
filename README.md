@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 5.1.7` (released 2026-11-08) makes `status`, setup guidance and tool errors agree with the engine on whether a provider can run, and say why not: template placeholder keys, private SearXNG URLs and disabled providers are named with the fix, a placeholder in a `.env` next to the package no longer hides the real key, and an empty `WEB_SEARCH_PLUS_MCP_DETAIL` no longer breaks the tools. 5.1.6 made extraction failures name their reason; see the [changelog](CHANGELOG.md).
+`web-search-plus-mcp 5.1.8` (released 2026-11-10) makes settings mean what they say: the error, `setup --preset starter` and the README name the same keys (Brave, Serper, Exa, Linkup), `status` and `config show` show what the engine runs with and warn before a bad config.json is moved aside, every suggested fix command is one the CLI accepts, `config set-auto-allow X on` alone adds a provider to automatic search, and `auto_routing.enabled: 0` turns routing off. 5.1.7 made status and the engine agree on whether a provider can run; see the [changelog](CHANGELOG.md) and the [5.1.8 release notes](docs/RELEASE_5_1_8.md).
 
 ### What's new in 5.1.3
 
