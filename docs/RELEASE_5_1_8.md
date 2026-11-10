@@ -17,5 +17,5 @@ Released 2026-11-10. Settings mean what they say: what `status`, setup and tool 
 ## Checked before release
 
 - Each fix has a test that fails without it; full suite green on Python 3.10, 3.12 and 3.14, also with an old web-search-plus-mcp installed in the same interpreter.
-- Test run on Hermi (throwaway checkout, real MCP stdio client): all scenarios pass, including the setup keys matching the error, every suggested command accepted by the CLI, DonSeTch with `timeout: 300`, and a real search, research call and 404 extract with production keys.
+- Separate test installation with a real MCP stdio client: all scenarios pass, including the setup keys matching the error, every suggested command accepted by the CLI, DonSeTch with `timeout: 300`, and a real search, research call and 404 extract.
 - The provider-try engine was compared with the previous one over 12,000 generated scenarios: no difference.
