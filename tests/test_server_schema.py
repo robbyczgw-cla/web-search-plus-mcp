@@ -51,7 +51,7 @@ def test_web_search_schema_exposes_v1_source_providers_and_controls():
 def test_mcp_search_forwards_no_cache_and_cache_ttl(monkeypatch):
     seen = {}
 
-    def fake_run(cmd, capture_output, text, env, timeout):
+    def fake_run(cmd, capture_output, encoding, env, timeout):
         seen["cmd"] = cmd
         return SimpleNamespace(returncode=0, stdout=json.dumps({"ok": True}), stderr="")
 
@@ -72,7 +72,7 @@ def test_mcp_search_forwards_no_cache_and_cache_ttl(monkeypatch):
 def test_mcp_search_omits_cache_flags_by_default(monkeypatch):
     seen = {}
 
-    def fake_run(cmd, capture_output, text, env, timeout):
+    def fake_run(cmd, capture_output, encoding, env, timeout):
         seen["cmd"] = cmd
         return SimpleNamespace(returncode=0, stdout=json.dumps({"ok": True}), stderr="")
 
@@ -225,7 +225,7 @@ def test_search_projection_builds_requested_quality_report_from_v3_evidence():
 def test_web_search_call_maps_mcp_args_to_cli(monkeypatch):
     seen = {}
 
-    def fake_run(cmd, capture_output, text, env, timeout):
+    def fake_run(cmd, capture_output, encoding, env, timeout):
         seen["cmd"] = cmd
         seen["timeout"] = timeout
         return SimpleNamespace(returncode=0, stdout=json.dumps({"ok": True}), stderr="")
@@ -265,7 +265,7 @@ def test_web_search_max_research_budget_has_outer_timeout_grace(monkeypatch):
     seen = {}
     monkeypatch.delenv("DONSETCH_BIN", raising=False)
 
-    def fake_run(cmd, capture_output, text, env, timeout):
+    def fake_run(cmd, capture_output, encoding, env, timeout):
         seen["timeout"] = timeout
         return SimpleNamespace(returncode=0, stdout=json.dumps({"ok": True}), stderr="")
 
@@ -283,7 +283,7 @@ def test_web_search_max_research_budget_has_outer_timeout_grace(monkeypatch):
 def test_web_extract_call_maps_mcp_args_to_cli(monkeypatch):
     seen = {}
 
-    def fake_run(cmd, capture_output, text, env, timeout):
+    def fake_run(cmd, capture_output, encoding, env, timeout):
         seen["cmd"] = cmd
         seen["timeout"] = timeout
         return SimpleNamespace(returncode=0, stdout=json.dumps({"results": []}), stderr="")

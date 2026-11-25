@@ -44,7 +44,7 @@ def test_sdk_v2_negotiates_modern_and_legacy_stdio_eras():
 
 
 def test_readme_documents_dual_era_stdio_boundary():
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "MCP Python SDK v2" in readme
     assert "server/discover" in readme
     assert "2026-07-28" in readme
