@@ -100,15 +100,15 @@ def canonical_response(*, capability="search", status="ok", results=None, error=
 
 def test_release_version_is_consistent_across_public_surfaces():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert project["project"]["version"] == "5.1.8"
+    assert project["project"]["version"] == "5.1.9"
     assert project["project"]["scripts"]["web-search-plus-mcp"] == (
         "web_search_plus_mcp.server:cli_main"
     )
-    assert web_search_plus_mcp.__version__ == "5.1.8"
-    assert server.__version__ == "5.1.8"
+    assert web_search_plus_mcp.__version__ == "5.1.9"
+    assert server.__version__ == "5.1.9"
     initialization = server.app.create_initialization_options()
     assert initialization.server_name == "web-search-plus"
-    assert initialization.server_version == "5.1.8"
+    assert initialization.server_version == "5.1.9"
 
 
 def test_ci_ruff_policy_is_repo_local_and_pinned():
@@ -164,7 +164,7 @@ def test_source_only_provider_surface_is_15_search_and_9_extract():
 def test_readme_describes_current_source_only_release_surface():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     release = (ROOT / "docs/RELEASE_4_1_0.md").read_text()
-    assert "`web-search-plus-mcp 5.1.8`" in readme
+    assert "`web-search-plus-mcp 5.1.9`" in readme
     assert "DonSeTch 4.2.9" in readme
     assert "**15 search providers" in readme
     assert "not ported" in readme.lower() or "not ported" in release.lower()

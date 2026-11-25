@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 5.1.8` (released 2026-11-10) makes settings mean what they say: the error, `setup --preset starter` and the README name the same keys (Brave, Serper, Exa, Linkup), `status` and `config show` show what the engine runs with and warn before a bad config.json is moved aside, every suggested fix command is one the CLI accepts, `config set-auto-allow X on` alone adds a provider to automatic search, and `auto_routing.enabled: 0` turns routing off. 5.1.7 made status and the engine agree on whether a provider can run; see the [changelog](CHANGELOG.md) and the [5.1.8 release notes](docs/RELEASE_5_1_8.md).
+`web-search-plus-mcp 5.1.9` (released 2026-11-25) keeps settings with non-ASCII text on any system locale (a valid `config.json` with `ü` or `”` used to fall back to defaults), lets Brave, Tavily and Exa search go through a compatible proxy (`brave.api_url`, `tavily.search_url`, `exa.base_url`, thanks to @hardworkDAD), and fixes help texts that still named Serper for shopping. 5.1.8 made settings mean what they say; see the [changelog](CHANGELOG.md) and the [5.1.9 release notes](docs/RELEASE_5_1_9.md).
 
 ### What's new in 5.1.3
 
