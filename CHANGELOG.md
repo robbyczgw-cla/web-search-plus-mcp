@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Configuration and CLI output use UTF-8.** Non-UTF-8 locales could trigger false config warnings, BOM files fell back to defaults, and setup could crash with cp1252 output. Valid UTF-8 config now keeps its settings, and CLI output is UTF-8.
+- **Routing and setup guidance match automatic search.** The help named Serper for shopping, examples pointed to older provider choices, and the migration guide suggested changing priority to opt in. The help now names Brave for shopping, setup lists the current starter keys, and the guide shows that `set-auto-allow` is enough.
+
 ## [5.1.8] - 2026-11-10
 
 ### Fixed
