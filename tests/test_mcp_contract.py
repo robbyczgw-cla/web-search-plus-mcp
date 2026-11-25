@@ -14,6 +14,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
     tomllib = importlib.import_module("tomli")
 
 import web_search_plus_mcp
+from web_search_plus_mcp.routing import INTENT_FIRST_PROVIDER
 import web_search_plus_mcp.server as server
 import web_search_plus_mcp.search as search
 
@@ -47,6 +48,12 @@ def test_filter_help_and_live_schema_cover_exa_and_tinyfish():
     assert "currently serper and tinyfish" in help_text
     assert "searxng, exa, tavily, and tinyfish" in help_text
     assert "serper and tinyfish serve news natively" in search_type["description"].lower()
+
+
+def test_search_help_matches_shopping_route():
+    help_text = search.build_parser(runtime_config._deepcopy_default_config()).format_help()
+    provider = INTENT_FIRST_PROVIDER["shopping"].capitalize()
+    assert re.search(rf"(?m)^  shopping\s+→ {provider}\b", help_text)
 
 
 def canonical_response(*, capability="search", status="ok", results=None, error=None):

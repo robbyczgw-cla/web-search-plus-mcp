@@ -107,16 +107,17 @@ Example:
 The MCP server starts through `uvx`, so [uv](https://docs.astral.sh/uv/) must
 be installed. Provider keys are read from the environment; the plugin ships none.
 
-Recommended starter set: You.com + Serper + Linkup.
+Recommended starter set: Brave + Serper + Exa + Linkup.
 
 ```bash
-export YOU_API_KEY=...      # fast current and multilingual search
+export BRAVE_API_KEY=...    # first choice for most automatic searches
 export SERPER_API_KEY=...   # Google-style facts, news, local, shopping
+export EXA_API_KEY=...      # academic and documentation searches
 export LINKUP_API_KEY=...   # source-grounded results and clean extraction
 ```
 
-Optional: `TAVILY_API_KEY`, `EXA_API_KEY`, `FIRECRAWL_API_KEY`, `PARALLEL_API_KEY`,
-`BRAVE_API_KEY`, `KEENABLE_API_KEY`, `SEARXNG_INSTANCE_URL`.
+Optional: `TAVILY_API_KEY`, `YOU_API_KEY`, `FIRECRAWL_API_KEY`, `PARALLEL_API_KEY`,
+`KEENABLE_API_KEY`, `SEARXNG_INSTANCE_URL`.
 
 Check what is configured:
 

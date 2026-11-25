@@ -1,22 +1,19 @@
 """Query-intent detector for first-provider routing.
 
 ``classify_intent(query)`` labels a query with one of eight intents
-(academic, community, docs, general, local, news, security, shopping). The 5.0
-router uses the label to pick the first provider: Exa first for ``academic``
-and ``docs``, Serper first for ``security`` and ``shopping``, Brave first for
-everything else.
+(academic, community, docs, general, local, news, security, shopping). With
+measured routing, Exa leads for ``academic`` and ``docs``. Brave leads for
+the other intents, including ``security`` and ``shopping``.
 web_search_plus_mcp/routing.py holds that table; this module only classifies.
 
 Design
 ------
 * Pure stdlib, no network, deterministic, about 50 microseconds per query. All
   patterns are compiled at import (about 160 cues, 190 regexes).
-* Precision over recall for the three labels that send a query away from the
-  Brave default. A wrong ``academic`` / ``docs`` / ``shopping`` label sends the
-  query to a provider that is bad for it (Exa's nDCG on community queries is
-  0.27); a missed one costs little because Brave is
-  a good default. So those three are only emitted on clear evidence (see
-  Selection); otherwise the query falls back to another intent or ``general``.
+* Require clear evidence for ``academic``, ``docs`` and ``shopping`` (see
+  Selection). A false ``academic`` or ``docs`` label can send a query to Exa
+  even when Brave is a better match (Exa's nDCG on community queries is 0.27).
+  Without clear evidence the query falls back to another intent or ``general``.
 * Cues are general linguistic and structural signals in English, German,
   French, Spanish and Italian: topic words (paper, Studie, prix,
   Oeffnungszeiten, CVE ids), phrase patterns ("how to ... in <language>",

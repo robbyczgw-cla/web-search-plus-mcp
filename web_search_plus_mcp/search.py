@@ -290,11 +290,11 @@ def build_parser(config: Dict[str, Any]) -> argparse.ArgumentParser:
         description="Web Search Plus — Intelligent multi-provider search with smart auto-routing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Automatic routing (provider "auto"):
+Automatic routing (provider "auto", measured order):
   The query gets one of eight intents; the intent picks the first provider.
 
   academic, docs   → Exa      papers, studies, DOIs; API docs, error messages, code
-  shopping         → Serper   buy, price, deals, "best ... under 300 euros"
+  shopping         → Brave    buy, price, deals, "best ... under 300 euros"
   everything else  → Brave    community, general, local, news, security
 
   A missing provider is skipped (Brave, Serper, Exa, Tavily, then
