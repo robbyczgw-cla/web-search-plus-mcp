@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 5.1.8
+Version: 5.1.9
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
 Brave Search, SerpBase, Querit, Parallel, SearXNG, Keenable.
 Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com, Keenable, Serper.
@@ -290,11 +290,11 @@ def build_parser(config: Dict[str, Any]) -> argparse.ArgumentParser:
         description="Web Search Plus — Intelligent multi-provider search with smart auto-routing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Automatic routing (provider "auto"):
+Automatic routing (provider "auto", measured order):
   The query gets one of eight intents; the intent picks the first provider.
 
   academic, docs   → Exa      papers, studies, DOIs; API docs, error messages, code
-  shopping         → Serper   buy, price, deals, "best ... under 300 euros"
+  shopping         → Brave    buy, price, deals, "best ... under 300 euros"
   everything else  → Brave    community, general, local, news, security
 
   A missing provider is skipped (Brave, Serper, Exa, Tavily, then
@@ -788,7 +788,17 @@ def run_cli_contract_v3(argv: List[str], *, config: Optional[Dict[str, Any]] = N
     return payload, 1 if payload.get("status") == "failed" else 0
 
 
+def _utf8_stdio() -> None:
+    """Print UTF-8 even where the console encoding (cp1252 on Windows) cannot."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main():
+    _utf8_stdio()
     # Maintenance commands live in modules a search never needs; load them here.
     from . import state_migration_v3 as _state_migration
 

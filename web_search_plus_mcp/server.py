@@ -40,6 +40,7 @@ from .provider_registry import (
     PROVIDER_SPECS, SETUP_PRESETS, preset_env_vars,
 )
 from . import jev_setup
+from .cache import _atomic_write_text
 from .env_loader import candidate_env_paths, clean_env_value
 from .config import runtime_config_path, validate_config_candidate, _unique_timestamped_path
 from .daemon_tasks import DaemonTask
@@ -264,7 +265,7 @@ def _load_behavior_config(
     if not path.exists():
         return _default_behavior_config(), None
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
         serialized = json.dumps(data, sort_keys=True)
         retired_present = any(provider in serialized for provider in RETIRED_ANSWER_PROVIDERS)
         normalized = _normalize_behavior_config(data, migrate_retired=True)
@@ -292,13 +293,10 @@ def _write_behavior_config(config: dict[str, Any], path: Optional[Path] = None, 
     path = path or runtime_config_path()
     normalized = _normalize_behavior_config(config)
     validate_config_candidate(normalized)
-    path.parent.mkdir(parents=True, exist_ok=True)
     if backup and path.exists():
         backup_path = _unique_timestamped_path(path, "bak")
-        backup_path.write_text(path.read_text())
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(normalized, indent=2, ensure_ascii=False) + "\n")
-    tmp.replace(path)
+        backup_path.write_bytes(path.read_bytes())
+    _atomic_write_text(path, json.dumps(normalized, indent=2, ensure_ascii=False) + "\n")
     return path
 
 
@@ -307,7 +305,7 @@ def _read_config_for_edit(path: Path) -> dict[str, Any]:
     if not path.exists():
         return _default_behavior_config()
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
         return _normalize_behavior_config(data, migrate_retired=True)
     except (OSError, ValueError, TypeError) as exc:
         raise SystemExit(f"Config unchanged at {path}: {exc}") from exc
@@ -358,7 +356,7 @@ def _load_env_file() -> None:
     for env_file in (Path(__file__).parent / ".env", Path(__file__).parent.parent / ".env"):
         if not env_file.exists():
             continue
-        for line in env_file.read_text().splitlines():
+        for line in env_file.read_text(encoding="utf-8-sig", errors="replace").splitlines():
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue
@@ -1092,7 +1090,7 @@ async def _run_subprocess(cmd: list[str], timeout: int) -> dict[str, Any]:
             subprocess.run,
             argv,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             env=env,
             timeout=timeout,
         )
@@ -1451,6 +1449,13 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     if args.command in (None, "serve"):
         run()
         return 0
+
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError, OSError):
+            pass
+
     if args.command == "status":
         payload = _status_payload()
         if args.json:
@@ -1558,7 +1563,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
                 raise SystemExit(f"Refusing to overwrite existing {path}. Pass --force to replace it.")
             lines = ["# web-search-plus-mcp provider config"]
             lines.extend(f"{key}={extra_values.get(key, '')}" for key in keys)
-            path.write_text("\n".join(lines) + "\n")
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
             if want_jev:
                 config = _read_config_for_edit(runtime_config_path())
                 jev_setup.apply_jev_config(config, enabled=True, decisions=jev_decisions)

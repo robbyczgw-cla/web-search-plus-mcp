@@ -13,7 +13,7 @@
 
 **Give your AI app better web search and clean page reading.** `web-search-plus-mcp` works with Claude Desktop, Cursor, NanoBot, Hermes, and other MCP apps. It searches across the services you choose, returns the original sources, and can try another service when one fails.
 
-`web-search-plus-mcp 5.1.8` (released 2026-11-10) makes settings mean what they say: the error, `setup --preset starter` and the README name the same keys (Brave, Serper, Exa, Linkup), `status` and `config show` show what the engine runs with and warn before a bad config.json is moved aside, every suggested fix command is one the CLI accepts, `config set-auto-allow X on` alone adds a provider to automatic search, and `auto_routing.enabled: 0` turns routing off. 5.1.7 made status and the engine agree on whether a provider can run; see the [changelog](CHANGELOG.md) and the [5.1.8 release notes](docs/RELEASE_5_1_8.md).
+`web-search-plus-mcp 5.1.9` (released 2026-11-25) keeps settings with non-ASCII text on any system locale (a valid `config.json` with `ü` or `”` used to fall back to defaults), lets Brave, Tavily and Exa search go through a compatible proxy (`brave.api_url`, `tavily.search_url`, `exa.base_url`, thanks to @hardworkDAD), and fixes help texts that still named Serper for shopping. 5.1.8 made settings mean what they say; see the [changelog](CHANGELOG.md) and the [5.1.9 release notes](docs/RELEASE_5_1_9.md).
 
 ### What's new in 5.1.3
 
@@ -233,7 +233,7 @@ The adapter executes Octen's `/search` endpoint through [Monid's documented HTTP
 
 ### TinyFish source search
 
-Configure your own `TINYFISH_API_KEY` and select `provider="tinyfish"`; TinyFish remains outside automatic routing and fallback. Web Search Plus MCP does not provide, pool, proxy, or share TinyFish credentials. Review the [TinyFish Search API reference](https://docs.tinyfish.ai/search-api/reference) and [TinyFish Terms](https://www.tinyfish.ai/terms) before use: the published Terms grant broad rights over Customer Data, including queries, for analysis, training, fine-tuning, evaluation, and model improvement. This integration therefore treats TinyFish as high risk and makes no no-training claim.
+Configure your own `TINYFISH_API_KEY` and select `provider="tinyfish"`. TinyFish is explicit-only by default. Use `web-search-plus-mcp config set-auto-allow tinyfish on` to opt in to automatic search. Web Search Plus MCP does not provide, pool, proxy, or share TinyFish credentials. Review the [TinyFish Search API reference](https://docs.tinyfish.ai/search-api/reference) and [TinyFish Terms](https://www.tinyfish.ai/terms) before use: the published Terms grant broad rights over Customer Data, including queries, for analysis, training, fine-tuning, evaluation, and model improvement. This integration therefore treats TinyFish as high risk and makes no no-training claim.
 
 ## 📄 Extract Providers
 
@@ -390,20 +390,22 @@ Example MCP arguments:
 
 Result shape: `results` holds one entry per requested URL, in request order. Each entry has `url` (where the page was actually fetched, after redirects and normalization), `requested_url` (the URL you passed in, so you can match results to inputs without relying on order), `content`, and `error` when the URL failed. URLs past the per-call limit (default 10) and URLs a provider never reached after a rate-limit, credit or auth error come back as their own entries with `error: "not tried: …"`; pages fetched before such an error are kept. `requested_url` is additive: `url` is unchanged.
 
-## 🧠 Classic Routing v2 examples
+## 🧠 Automatic routing examples
 
-- `東京 AI ニュース 今日` → You.com multilingual/current search
+With measured ordering and the listed provider configured and enabled:
+
+- `東京 AI ニュース 今日` → Brave multilingual/current search
 - `arXiv 2024 LLM scaling laws` → Exa academic discovery
 - `CVE-2025 openssl advisory` → Brave security/current search
 - `best bookshelf speakers under 1000 EUR Austria` → Brave shopping/local search, with Serper as a later fallback
-- `open source alternatives to Linear` → Exa/Firecrawl OSS discovery
+- `open source alternatives to Linear` → Brave general search
 - `recent RAG vs fine-tuning benchmark sources` → source-result discovery; the MCP host may synthesize from returned sources
 
-Guarded providers can still be called explicitly. To let one participate in `provider="auto"`, opt in:
+Guarded providers can still be called explicitly. For a configured provider, `set-auto-allow` is enough to opt into automatic search.
 
 ```bash
-web-search-plus-mcp config set-auto-allow parallel on
-web-search-plus-mcp config set-auto-allow parallel off
+web-search-plus-mcp config set-auto-allow serpbase on
+web-search-plus-mcp config set-auto-allow serpbase off
 web-search-plus-mcp config set-auto-allow donsetch on
 web-search-plus-mcp config set-auto-allow donsetch off
 ```

@@ -42,7 +42,7 @@ def fixture_http(req, timeout=30):
         good = urls if scenario == "success" else urls[:1] if scenario == "partial" else []
         data = {
             "results": [{"url": url, "raw_content":
-                "EXTRACTED_PAGE_SENTINEL_7f31 " + "page evidence café. " * 2000}
+                "EXTRACTED_PAGE_SENTINEL_7f31 " + "page evidence caf\u00e9. " * 2000}
                 for url in good],
             "failed_results": [{"url": url, "error": "HTTP 404 page not found"}
                 for url in urls if url not in good],
@@ -87,7 +87,7 @@ def stdio_research(tmp_path, scenario, context_chars=1000):
                              "detail": detail, "no_cache": True}}})
     proc = subprocess.Popen([sys.executable, "-c", BOOTSTRAP],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, text=True, env=env, cwd=tmp_path)
+                            stderr=subprocess.PIPE, encoding="utf-8", env=env, cwd=tmp_path)
     outputs = []
     try:
         for message in messages:

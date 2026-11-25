@@ -85,7 +85,7 @@ def test_agent_plugin_files_are_root_level_package_boundaries():
 
 
 def test_readme_documents_the_portable_agent_plugins_package():
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "Agent Plugins 1.0" in readme
     assert "[`plugin.json`](plugin.json)" in readme

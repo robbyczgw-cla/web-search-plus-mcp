@@ -32,13 +32,7 @@ Native `perplexity` and `kilo-perplexity` are no longer public search providers.
 - A retired default or fallback provider is replaced in memory with `serper` and reported through a config migration warning.
 - Loading old config does not silently rewrite the file. Review the warning, then save an explicit 1.0 configuration with the CLI if desired.
 
-Use one of the 12 source-result providers instead. Guarded providers can be opted into automatic routing explicitly:
-
-```bash
-web-search-plus-mcp config set-fallback serper
-web-search-plus-mcp config set-auto-allow parallel on
-web-search-plus-mcp config set-priority serper,brave,tavily,linkup,you,exa,firecrawl,parallel
-```
+Use one of the source-result providers. Starting with 5.1.8, `config set-auto-allow <provider> on` is enough to let a configured guarded provider participate in automatic search. In 1.0, the provider also had to be in the priority list.
 
 ## Response compatibility
 

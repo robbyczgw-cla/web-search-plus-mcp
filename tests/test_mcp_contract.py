@@ -14,6 +14,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
     tomllib = importlib.import_module("tomli")
 
 import web_search_plus_mcp
+from web_search_plus_mcp.routing import INTENT_FIRST_PROVIDER
 import web_search_plus_mcp.server as server
 import web_search_plus_mcp.search as search
 
@@ -31,7 +32,7 @@ def tool(name):
 
 
 def test_readme_provider_enum_matches_live_schema():
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
     provider_line = next(
         line for line in readme.splitlines() if line.startswith("- `provider` —")
     )
@@ -47,6 +48,12 @@ def test_filter_help_and_live_schema_cover_exa_and_tinyfish():
     assert "currently serper and tinyfish" in help_text
     assert "searxng, exa, tavily, and tinyfish" in help_text
     assert "serper and tinyfish serve news natively" in search_type["description"].lower()
+
+
+def test_search_help_matches_shopping_route():
+    help_text = search.build_parser(runtime_config._deepcopy_default_config()).format_help()
+    provider = INTENT_FIRST_PROVIDER["shopping"].capitalize()
+    assert re.search(rf"(?m)^  shopping\s+→ {provider}\b", help_text)
 
 
 def canonical_response(*, capability="search", status="ok", results=None, error=None):
@@ -93,15 +100,15 @@ def canonical_response(*, capability="search", status="ok", results=None, error=
 
 def test_release_version_is_consistent_across_public_surfaces():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert project["project"]["version"] == "5.1.8"
+    assert project["project"]["version"] == "5.1.9"
     assert project["project"]["scripts"]["web-search-plus-mcp"] == (
         "web_search_plus_mcp.server:cli_main"
     )
-    assert web_search_plus_mcp.__version__ == "5.1.8"
-    assert server.__version__ == "5.1.8"
+    assert web_search_plus_mcp.__version__ == "5.1.9"
+    assert server.__version__ == "5.1.9"
     initialization = server.app.create_initialization_options()
     assert initialization.server_name == "web-search-plus"
-    assert initialization.server_version == "5.1.8"
+    assert initialization.server_version == "5.1.9"
 
 
 def test_ci_ruff_policy_is_repo_local_and_pinned():
@@ -155,9 +162,9 @@ def test_source_only_provider_surface_is_15_search_and_9_extract():
 
 
 def test_readme_describes_current_source_only_release_surface():
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
     release = (ROOT / "docs/RELEASE_4_1_0.md").read_text()
-    assert "`web-search-plus-mcp 5.1.8`" in readme
+    assert "`web-search-plus-mcp 5.1.9`" in readme
     assert "DonSeTch 4.2.9" in readme
     assert "**15 search providers" in readme
     assert "not ported" in readme.lower() or "not ported" in release.lower()
@@ -180,7 +187,7 @@ def test_readme_describes_current_source_only_release_surface():
 
 
 def test_readme_starts_with_plain_language_and_quick_start():
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
     intro = readme.split("## 🧭 Easier onboarding", 1)[0].lower()
 
     assert intro.index("## 🚀 quick start") < intro.index("## ✨ what it does")
@@ -200,7 +207,7 @@ def test_readme_starts_with_plain_language_and_quick_start():
 def test_donsetch_release_surfaces_preserve_attribution_and_separate_install():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
     dependencies = set(project["project"]["dependencies"])
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
     guide = (ROOT / "docs/DONSETCH.md").read_text()
     release = (ROOT / "docs/RELEASE_4_0_0.md").read_text()
     current = "\n".join((readme, guide, release))
@@ -278,7 +285,7 @@ def test_search_projects_canonical_v3_to_additive_legacy_shape(monkeypatch):
     }])
     seen = {}
 
-    def fake_run(cmd, capture_output, text, env, timeout):
+    def fake_run(cmd, capture_output, encoding, env, timeout):
         seen["cmd"] = cmd
         return SimpleNamespace(returncode=0, stdout=json.dumps(canonical), stderr="")
 
@@ -343,7 +350,7 @@ def test_research_projection_preserves_aggregate_identity_and_v3_evidence(monkey
     }
     seen = {}
 
-    def fake_run(cmd, capture_output, text, env, timeout):
+    def fake_run(cmd, capture_output, encoding, env, timeout):
         seen["cmd"] = cmd
         return SimpleNamespace(returncode=0, stdout=json.dumps(canonical), stderr="")
 
@@ -405,7 +412,7 @@ def test_extract_cache_hit_projection_preserves_body_and_cache_provenance(monkey
     }
     canonical["provider_attempts"] = []
 
-    def fake_run(cmd, capture_output, text, env, timeout):
+    def fake_run(cmd, capture_output, encoding, env, timeout):
         return SimpleNamespace(returncode=0, stdout=json.dumps(canonical), stderr="")
 
     monkeypatch.setattr(server.subprocess, "run", fake_run)
@@ -470,7 +477,7 @@ def test_extract_projection_preserves_bounds_and_page_on_demand_reference(monkey
         "details": {"truncated_result_count": 1},
     }]
 
-    def fake_run(cmd, capture_output, text, env, timeout):
+    def fake_run(cmd, capture_output, encoding, env, timeout):
         return SimpleNamespace(returncode=0, stdout=json.dumps(canonical), stderr="")
 
     monkeypatch.setattr(server.subprocess, "run", fake_run)
@@ -506,7 +513,7 @@ def test_subprocess_nonzero_canonical_error_remains_typed(monkeypatch):
     }
     canonical = canonical_response(status="failed", error=error)
 
-    def fake_run(cmd, capture_output, text, env, timeout):
+    def fake_run(cmd, capture_output, encoding, env, timeout):
         return SimpleNamespace(returncode=1, stdout="", stderr=json.dumps(canonical))
 
     monkeypatch.setattr(server.subprocess, "run", fake_run)
@@ -528,7 +535,7 @@ def test_subprocess_non_json_failure_is_typed_legacy_compatible_and_secret_free(
 ):
     secret = "super-secret-subprocess-token"
 
-    def fake_run(cmd, capture_output, text, env, timeout):
+    def fake_run(cmd, capture_output, encoding, env, timeout):
         return SimpleNamespace(
             returncode=1,
             stdout="",
@@ -552,7 +559,7 @@ def test_subprocess_non_json_failure_is_typed_legacy_compatible_and_secret_free(
 def test_subprocess_non_json_success_is_typed_and_secret_free(monkeypatch):
     secret = "super-secret-stdout-token"
 
-    def fake_run(cmd, capture_output, text, env, timeout):
+    def fake_run(cmd, capture_output, encoding, env, timeout):
         return SimpleNamespace(
             returncode=0,
             stdout=f"unexpected output containing {secret}",
@@ -576,7 +583,7 @@ def test_subprocess_non_json_success_is_typed_and_secret_free(monkeypatch):
 def test_subprocess_timeout_is_typed_retryable_and_secret_free(monkeypatch):
     secret = "super-secret-timeout-output"
 
-    def fake_run(cmd, capture_output, text, env, timeout):
+    def fake_run(cmd, capture_output, encoding, env, timeout):
         raise server.subprocess.TimeoutExpired(
             cmd=[*cmd, secret],
             timeout=timeout,

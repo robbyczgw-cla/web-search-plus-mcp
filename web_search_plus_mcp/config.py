@@ -901,7 +901,7 @@ def _desktop_settings(config_path: Path) -> Dict[str, Any]:
         yaml_path = config_path.parent.parent / "config.yaml"
         if not yaml_path.is_file():
             return {}
-        data = _read_yaml_mapping(yaml_path.read_text(encoding="utf-8"))
+        data = _read_yaml_mapping(yaml_path.read_text(encoding="utf-8-sig", errors="replace"))
         if not isinstance(data, dict):
             return {}
         plugins = data.get("plugins")
@@ -1034,7 +1034,7 @@ def read_runtime_config(config_path: Path) -> Tuple[Dict[str, Any], Optional[str
     error = None
     if config_path.exists():
         try:
-            with open(config_path, encoding="utf-8") as f:
+            with open(config_path, encoding="utf-8-sig") as f:
                 config = validate_config_candidate(json.load(f))
         # A number too large for a float or nesting too deep for the parser is
         # as invalid as a type error; uncaught, it failed every search.

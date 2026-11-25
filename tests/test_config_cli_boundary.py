@@ -1,6 +1,7 @@
 """Real CLI writes and MCP stdio reads must agree on persisted policy."""
 import asyncio
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -29,14 +30,14 @@ def cli_env(tmp_path):
 def cli(env, *args):
     return subprocess.run(
         [sys.executable, "-m", "web_search_plus_mcp.server", *args],
-        env=env, cwd=env["HOME"], capture_output=True, text=True, timeout=30,
+        env=env, cwd=env["HOME"], capture_output=True, encoding="utf-8", timeout=30,
     )
 
 
 def runtime(env):
     proc = subprocess.run(
         [sys.executable, "-c", "import json; from web_search_plus_mcp.config import load_config; print(json.dumps(load_config()))"],
-        env=env, cwd=env["HOME"], capture_output=True, text=True, timeout=30,
+        env=env, cwd=env["HOME"], capture_output=True, encoding="utf-8", timeout=30,
     )
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)
@@ -200,3 +201,57 @@ def test_engine_moves_a_config_it_cannot_read_instead_of_failing_every_search(tm
     engine.load_config()
     assert not path.exists()
     assert len(list(tmp_path.glob("*.broken-*"))) == 1
+
+
+@pytest.mark.parametrize("bom", [b"", b"\xef\xbb\xbf"], ids=["utf8", "utf8-bom"])
+def test_real_cli_preserves_utf8_config_in_ascii_locale(cli_env, bom):
+    cli_env.update(LC_ALL="C", PYTHONUTF8="0", PYTHONCOERCECLOCALE="0")
+    path = Path(cli_env["WEB_SEARCH_PLUS_CONFIG"])
+    original = bom + '{"note": "Grüße ”", "auto_routing": {"enabled": false}}'.encode("utf-8")
+    path.write_bytes(original)
+
+    status = json.loads(cli(cli_env, "status", "--json").stdout)
+    shown = json.loads(cli(cli_env, "config", "show").stdout)
+    assert not status.get("config_warning")
+    assert "warning" not in shown
+    assert status["routing_preferences"]["enabled"] is False
+    assert shown["routing_preferences"]["enabled"] is False
+    assert path.read_bytes() == original
+
+    edited = cli(cli_env, "config", "set-routing", "off")
+    assert edited.returncode == 0, edited.stderr
+    assert runtime(cli_env)["note"] == "Grüße ”"
+    assert json.loads(path.read_text(encoding="utf-8"))["note"] == "Grüße ”"
+    assert not list(path.parent.glob("*.broken-*"))
+
+
+def test_invalid_utf8_is_rejected_and_quarantined_byte_for_byte(cli_env):
+    path = Path(cli_env["WEB_SEARCH_PLUS_CONFIG"])
+    original = b'{"note": "\xff", "auto_routing": {"enabled": false}}'
+    path.write_bytes(original)
+    edited = cli(cli_env, "config", "set-routing", "off")
+    assert edited.returncode != 0
+    assert path.read_bytes() == original
+    assert runtime(cli_env)["auto_routing"]["enabled"] is True
+    assert not path.exists()
+    (quarantined,) = path.parent.glob("*.broken-*")
+    assert quarantined.read_bytes() == original
+
+
+def test_real_cli_emits_utf8_with_cp1252_stdio(cli_env):
+    cli_env.update(PYTHONUTF8="1", PYTHONIOENCODING="cp1252")
+    config_path = Path(cli_env["HOME"]) / "設定.json"
+    key_path = config_path.with_suffix(".key")
+    env_path = config_path.with_suffix(".env")
+    # Keep UTF-8 path bytes when the parent test runner uses an ASCII locale.
+    env_arg, config_arg, key_arg = (
+        os.fsdecode(str(path).encode("utf-8")) for path in (env_path, config_path, key_path)
+    )
+    setup = cli(cli_env, "setup", "--json", "--env-file", env_arg,
+                "--config-path", config_arg, "--jev", "--jev-key-file", key_arg)
+    assert setup.returncode == 0, setup.stderr
+    assert json.loads(setup.stdout)["env_file"] == str(env_path)
+    assert f"TYPESAFE_API_KEY_FILE={key_path}" in Path(env_arg).read_text(encoding="utf-8")
+    shown = cli(cli_env, "config", "--config-path", config_arg, "show")
+    assert shown.returncode == 0, shown.stderr
+    assert json.loads(shown.stdout)["config_path"] == str(config_path)

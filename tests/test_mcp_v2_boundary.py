@@ -33,18 +33,18 @@ def test_sdk_v2_negotiates_modern_and_legacy_stdio_eras():
 
     assert modern == {
         "protocol": "2026-07-28",
-        "server_version": "5.1.8",
+        "server_version": "5.1.9",
         "tools": ["web_search", "web_extract"],
     }
     assert legacy == {
         "protocol": "2025-11-25",
-        "server_version": "5.1.8",
+        "server_version": "5.1.9",
         "tools": ["web_search", "web_extract"],
     }
 
 
 def test_readme_documents_dual_era_stdio_boundary():
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "MCP Python SDK v2" in readme
     assert "server/discover" in readme
     assert "2026-07-28" in readme

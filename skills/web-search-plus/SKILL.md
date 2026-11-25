@@ -99,7 +99,7 @@ Example:
 2. `web_extract` the one or two URLs that actually answer the question.
 3. Cite the URLs you used. Say when sources disagree.
 4. If `web_search` returns an error that no provider is configured, tell the
-   user to run `uvx --from web-search-plus-mcp==5.1.8 web-search-plus-mcp status`
+   user to run `uvx --from web-search-plus-mcp==5.1.9 web-search-plus-mcp status`
    and set at least one provider key (see Setup). Do not guess results.
 
 ## Setup (first run)
@@ -107,27 +107,28 @@ Example:
 The MCP server starts through `uvx`, so [uv](https://docs.astral.sh/uv/) must
 be installed. Provider keys are read from the environment; the plugin ships none.
 
-Recommended starter set: You.com + Serper + Linkup.
+Recommended starter set: Brave + Serper + Exa + Linkup.
 
 ```bash
-export YOU_API_KEY=...      # fast current and multilingual search
+export BRAVE_API_KEY=...    # first choice for most automatic searches
 export SERPER_API_KEY=...   # Google-style facts, news, local, shopping
+export EXA_API_KEY=...      # academic and documentation searches
 export LINKUP_API_KEY=...   # source-grounded results and clean extraction
 ```
 
-Optional: `TAVILY_API_KEY`, `EXA_API_KEY`, `FIRECRAWL_API_KEY`, `PARALLEL_API_KEY`,
-`BRAVE_API_KEY`, `KEENABLE_API_KEY`, `SEARXNG_INSTANCE_URL`.
+Optional: `TAVILY_API_KEY`, `YOU_API_KEY`, `FIRECRAWL_API_KEY`, `PARALLEL_API_KEY`,
+`KEENABLE_API_KEY`, `SEARXNG_INSTANCE_URL`.
 
 Check what is configured:
 
 ```bash
-uvx --from web-search-plus-mcp==5.1.8 web-search-plus-mcp status
+uvx --from web-search-plus-mcp==5.1.9 web-search-plus-mcp status
 ```
 
 Write a starter `.env` template:
 
 ```bash
-uvx --from web-search-plus-mcp==5.1.8 web-search-plus-mcp setup --preset starter
+uvx --from web-search-plus-mcp==5.1.9 web-search-plus-mcp setup --preset starter
 ```
 
 Full provider list, routing rules, and tool reference:
